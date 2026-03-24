@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useCallback } from "react";
+﻿import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type {
   OGSMData,
   Strategy,
@@ -6,6 +6,8 @@ import type {
   WorkspaceData,
   Department,
   PeriodData,
+  Team,
+  TeamMember,
 } from "./types/ogsm";
 import { parseOGSM, avgRate, genId, computeStatus } from "./utils/csvParser";
 import {
@@ -82,8 +84,77 @@ export default function App() {
     null,
   );
   const [filterOwner, setFilterOwner] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
   const [importing, setImporting] = useState(false);
+  const [showTeamSettings, setShowTeamSettings] = useState(false);
+
+  const teams: Team[] = workspace.teams ?? [];
+  const allMembers = teams.flatMap((t) => t.members);
+
+  // ─── Undo / Redo history ──────────────────────────────────────────────
+  const MAX_HISTORY = 50;
+  const historyRef = useRef<string[]>([JSON.stringify(getInitialWorkspace())]);
+  const historyIndexRef = useRef(0);
+  const isUndoRedoRef = useRef(false);
+
+  const pushHistory = useCallback((ws: WorkspaceData) => {
+    const json = JSON.stringify(ws);
+    const idx = historyIndexRef.current;
+    // truncate any redo states beyond current position
+    const stack = historyRef.current.slice(0, idx + 1);
+    stack.push(json);
+    if (stack.length > MAX_HISTORY) stack.shift();
+    historyRef.current = stack;
+    historyIndexRef.current = stack.length - 1;
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current -= 1;
+    const ws: WorkspaceData = JSON.parse(
+      historyRef.current[historyIndexRef.current],
+    );
+    isUndoRedoRef.current = true;
+    setWorkspace(ws);
+    saveWorkspace(ws);
+  }, []);
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current += 1;
+    const ws: WorkspaceData = JSON.parse(
+      historyRef.current[historyIndexRef.current],
+    );
+    isUndoRedoRef.current = true;
+    setWorkspace(ws);
+    saveWorkspace(ws);
+  }, []);
+
+  // Keyboard shortcut: Ctrl+Z / Ctrl+Y
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // skip when typing in inputs/textareas
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "z"
+      ) {
+        e.preventDefault();
+        undo();
+      } else if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key.toLowerCase() === "y" ||
+          (e.shiftKey && e.key.toLowerCase() === "z"))
+      ) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [undo, redo]);
+  // ─────────────────────────────────────────────────────────────────────
 
   // Derive active dept/period with fallback
   const activeDept =
@@ -100,10 +171,25 @@ export default function App() {
     overallRate: 0,
   };
 
-  const updateWorkspace = useCallback((next: WorkspaceData) => {
-    setWorkspace(next);
-    saveWorkspace(next);
-  }, []);
+  const updateWorkspace = useCallback(
+    (next: WorkspaceData) => {
+      if (isUndoRedoRef.current) {
+        isUndoRedoRef.current = false;
+      } else {
+        pushHistory(next);
+      }
+      setWorkspace(next);
+      saveWorkspace(next);
+    },
+    [pushHistory],
+  );
+
+  const handleUpdateTeams = useCallback(
+    (nextTeams: Team[]) => {
+      updateWorkspace({ ...workspace, teams: nextTeams });
+    },
+    [workspace, updateWorkspace],
+  );
 
   const updateData = useCallback(
     (nextData: OGSMData) => {
@@ -210,7 +296,6 @@ export default function App() {
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
       setFilterOwner("all");
-      setFilterStatus("all");
     },
     [workspace],
   );
@@ -305,7 +390,6 @@ export default function App() {
     setSelectedGoalId(null);
     setSelectedStrategyId(null);
     setFilterOwner("all");
-    setFilterStatus("all");
   }, []);
 
   // --- OGSM Data handlers ---
@@ -314,26 +398,13 @@ export default function App() {
   const selectedStrategy =
     selectedGoal?.strategies.find((s) => s.id === selectedStrategyId) ?? null;
 
-  const owners = useMemo(() => {
-    const s = new Set<string>();
-    data.goals.forEach((g) =>
-      g.strategies.forEach((st) => {
-        st.owner
-          .split(/[,\uff0c\u3001/]/)
-          .forEach((o) => o.trim() && s.add(o.trim()));
-      }),
-    );
-    return Array.from(s);
-  }, [data]);
-
   const filteredStrategies = useMemo(() => {
     if (!selectedGoal) return [];
     return selectedGoal.strategies.filter((s) => {
       if (filterOwner !== "all" && !s.owner.includes(filterOwner)) return false;
-      if (filterStatus !== "all" && s.status !== filterStatus) return false;
       return true;
     });
-  }, [selectedGoal, filterOwner, filterStatus]);
+  }, [selectedGoal, filterOwner]);
 
   const handleUpdateStrategy = useCallback(
     (updated: Strategy) => {
@@ -609,6 +680,12 @@ export default function App() {
           >
             {"\uD83D\uDCE6 \u532f\u51fa\u5168\u90e8"}
           </button>
+          <button
+            className="btn-secondary"
+            onClick={() => setShowTeamSettings(true)}
+          >
+            ⚙ 團隊設定
+          </button>
         </div>
       </header>
 
@@ -659,10 +736,8 @@ export default function App() {
               onUpdateGoal={handleUpdateGoal}
               onDeleteStrategy={handleDeleteStrategy}
               filterOwner={filterOwner}
-              filterStatus={filterStatus}
               onFilterOwner={setFilterOwner}
-              onFilterStatus={setFilterStatus}
-              owners={owners}
+              teams={teams}
             />
             {selectedStrategy && (
               <DetailPanel
@@ -672,10 +747,185 @@ export default function App() {
                 onClose={() => setSelectedStrategyId(null)}
                 onUpdate={handleUpdateStrategy}
                 onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
+                teams={teams}
+                allMembers={allMembers}
               />
             )}
           </>
         )}
+      </div>
+
+      {/* Team Settings Modal */}
+      {showTeamSettings && (
+        <TeamSettingsModal
+          teams={teams}
+          onSave={handleUpdateTeams}
+          onClose={() => setShowTeamSettings(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Team Settings Modal ────────────────────────────────────────────────
+function TeamSettingsModal({
+  teams,
+  onSave,
+  onClose,
+}: {
+  teams: Team[];
+  onSave: (teams: Team[]) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<Team[]>(() =>
+    JSON.parse(JSON.stringify(teams)),
+  );
+
+  const addTeam = () => {
+    setDraft([...draft, { id: genId("team"), name: "", members: [] }]);
+  };
+
+  const updateTeamName = (teamId: string, name: string) => {
+    setDraft(draft.map((t) => (t.id === teamId ? { ...t, name } : t)));
+  };
+
+  const deleteTeam = (teamId: string) => {
+    setDraft(draft.filter((t) => t.id !== teamId));
+  };
+
+  const addMember = (teamId: string) => {
+    setDraft(
+      draft.map((t) =>
+        t.id !== teamId
+          ? t
+          : {
+              ...t,
+              members: [
+                ...t.members,
+                { id: genId("mbr"), name: "" } as TeamMember,
+              ],
+            },
+      ),
+    );
+  };
+
+  const updateMemberName = (teamId: string, memberId: string, name: string) => {
+    setDraft(
+      draft.map((t) =>
+        t.id !== teamId
+          ? t
+          : {
+              ...t,
+              members: t.members.map((m) =>
+                m.id === memberId ? { ...m, name } : m,
+              ),
+            },
+      ),
+    );
+  };
+
+  const deleteMember = (teamId: string, memberId: string) => {
+    setDraft(
+      draft.map((t) =>
+        t.id !== teamId
+          ? t
+          : { ...t, members: t.members.filter((m) => m.id !== memberId) },
+      ),
+    );
+  };
+
+  const handleSave = () => {
+    // trim empty names
+    const cleaned = draft
+      .map((t) => ({
+        ...t,
+        name: t.name.trim(),
+        members: t.members.filter((m) => m.name.trim()),
+      }))
+      .filter((t) => t.name);
+    onSave(cleaned);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content team-settings-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2>⚙ 團隊設定</h2>
+          <button className="detail-close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 12 }}>
+          設定團隊（負責單位）與成員，用於策略負責單位與 M
+          項目主責者的下拉選單。
+        </p>
+        <div className="team-list">
+          {draft.map((team) => (
+            <div key={team.id} className="team-card">
+              <div className="team-card-header">
+                <input
+                  className="team-name-input"
+                  value={team.name}
+                  onChange={(e) => updateTeamName(team.id, e.target.value)}
+                  placeholder="團隊名稱（如：George team）"
+                />
+                <button
+                  className="plan-del-btn"
+                  onClick={() => deleteTeam(team.id)}
+                  title="刪除團隊"
+                  style={{ color: "var(--text3)" }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="team-members">
+                {team.members.map((m) => (
+                  <div key={m.id} className="team-member-row">
+                    <span style={{ fontSize: 13, color: "var(--text3)" }}>
+                      👤
+                    </span>
+                    <input
+                      className="team-member-input"
+                      value={m.name}
+                      onChange={(e) =>
+                        updateMemberName(team.id, m.id, e.target.value)
+                      }
+                      placeholder="成員名稱"
+                    />
+                    <button
+                      className="plan-item-del"
+                      onClick={() => deleteMember(team.id, m.id)}
+                      style={{ color: "var(--text3)" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  className="plan-add-item"
+                  onClick={() => addMember(team.id)}
+                >
+                  + 新增成員
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button className="detail-add-btn" onClick={addTeam}>
+          + 新增團隊
+        </button>
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn-add" onClick={handleSave}>
+            儲存
+          </button>
+        </div>
       </div>
     </div>
   );

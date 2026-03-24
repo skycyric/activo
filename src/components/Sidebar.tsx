@@ -398,7 +398,7 @@ export default function Sidebar({
                                   ? "#f59e0b"
                                   : s.completionRate > 0
                                     ? "#ef4444"
-                                    : "#6b7280",
+                                    : "#4b5563",
                           marginTop: 4,
                           flexShrink: 0,
                         }}
@@ -416,7 +416,7 @@ export default function Sidebar({
                                   ? "#f59e0b"
                                   : s.completionRate > 0
                                     ? "#ef4444"
-                                    : "#6b7280",
+                                    : "#4b5563",
                         }}
                       >
                         {s.completionRate > 0

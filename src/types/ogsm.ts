@@ -91,7 +91,20 @@ export interface Department {
   periods: PeriodData[];
 }
 
+export interface TeamMember {
+  id: string;
+  name: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  members: TeamMember[];
+}
+
 export interface WorkspaceData {
   departments: Department[];
   version: number;
+  teams?: Team[];
+  _migratedClearOwners?: boolean;
 }

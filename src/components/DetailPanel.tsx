@@ -5,6 +5,8 @@ import type {
   PlanItem,
   KPI,
   Measure,
+  Team,
+  TeamMember,
 } from "../types/ogsm";
 import { genId, computeStatus } from "../utils/csvParser";
 
@@ -14,6 +16,8 @@ interface Props {
   onClose: () => void;
   onUpdate: (s: Strategy) => void;
   onDelete: () => void;
+  teams: Team[];
+  allMembers: TeamMember[];
 }
 
 function InlineEdit({
@@ -47,7 +51,7 @@ function InlineEdit({
         title="雙擊編輯"
       >
         {value || (
-          <span style={{ color: "#9ca3af", fontStyle: "italic" }}>
+          <span style={{ color: "#4b5563", fontStyle: "italic" }}>
             {placeholder.replace("點擊", "雙擊")}
           </span>
         )}
@@ -114,7 +118,7 @@ function KpiCard({
           ? "#f59e0b"
           : rate > 0
             ? "#ef4444"
-            : "#9ca3af";
+            : "#4b5563";
 
   return (
     <div className="kpi-card">
@@ -158,7 +162,7 @@ function KpiCard({
           placeholder="KPI 名稱"
         />
         {typeof linkedTotal !== "undefined" && linkedTotal > 0 && (
-          <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>
+          <div style={{ fontSize: 10, color: "var(--text)", marginBottom: 6 }}>
             關聯項目：{linkedDone}/{linkedTotal} 項
           </div>
         )}
@@ -263,103 +267,22 @@ function toIsoDate(s: string | undefined, year: number): string {
   return "";
 }
 
-function getQuarterForMonth(month: number): string {
-  if (month <= 3) return "Q1";
-  if (month <= 6) return "Q2";
-  if (month <= 9) return "Q3";
-  return "Q4";
-}
-
-function getSpannedQuarters(
-  startDate: string | undefined,
-  endDate: string | undefined,
-): string[] {
-  if (!startDate) return [];
-  const s = parseMonthDay(startDate);
-  if (!s) return [];
-  if (!endDate) return [getQuarterForMonth(s.month)];
-  const e = parseMonthDay(endDate);
-  if (!e) return [getQuarterForMonth(s.month)];
-  const quarters: string[] = [];
-  for (let m = s.month; m <= e.month; m++) {
-    const q = getQuarterForMonth(m);
-    if (!quarters.includes(q)) quarters.push(q);
-  }
-  return quarters;
-}
-
-/** Determine the "source" quarter for a plan item (earliest quarter based on start date). */
-function getItemSourceQuarter(item: PlanItem): string | null {
-  const d = parseMonthDay(item.startDate ?? item.date ?? "");
-  if (!d) return null;
-  return getQuarterForMonth(d.month);
-}
-
-// Cross-quarter sync: when a plan item's dates span multiple quarters,
-// ensure copies exist in each relevant quarter's action plan.
-function syncItemAcrossQuarters(
-  actionPlans: ActionPlan[],
-  item: PlanItem,
-  currentQuarter: string,
-): ActionPlan[] {
-  const quarters = getSpannedQuarters(
-    item.startDate ?? item.date,
-    item.endDate,
-  );
-  if (quarters.length <= 1) {
-    // Remove copies from other quarters
-    return actionPlans.map((p) =>
-      p.quarter === currentQuarter
-        ? p
-        : { ...p, items: p.items.filter((it) => it.id !== item.id) },
-    );
-  }
-  // Get the latest version of the item from the current quarter
-  const latest =
-    actionPlans
-      .filter((p) => p.quarter === currentQuarter)
-      .flatMap((p) => p.items)
-      .find((it) => it.id === item.id) ?? item;
-
-  let result = [...actionPlans];
-  for (const q of quarters) {
-    if (q === currentQuarter) continue;
-    const apIdx = result.findIndex((p) => p.quarter === q);
-    if (apIdx >= 0) {
-      const existing = result[apIdx].items.find((it) => it.id === item.id);
-      if (!existing) {
-        result[apIdx] = {
-          ...result[apIdx],
-          items: [...result[apIdx].items, { ...latest }],
-        };
-      } else {
-        result[apIdx] = {
-          ...result[apIdx],
-          items: result[apIdx].items.map((it) =>
-            it.id === item.id ? { ...latest } : it,
-          ),
-        };
-      }
-    } else {
-      result.push({
-        id: genId("plan"),
-        quarter: q,
-        title: q + " 計畫",
-        items: [{ ...latest }],
-      });
-    }
-  }
-  // Remove from quarters that the item no longer spans
-  const allQ = ["Q1", "Q2", "Q3", "Q4"];
-  for (const q of allQ) {
-    if (q === currentQuarter || quarters.includes(q)) continue;
-    result = result.map((p) =>
-      p.quarter === q
-        ? { ...p, items: p.items.filter((it) => it.id !== item.id) }
-        : p,
-    );
-  }
-  return result;
+// Check if a plan item's date range overlaps with a given quarter
+function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
+  const start = item.startDate ?? item.date;
+  if (!start) return false;
+  const s = parseMonthDay(start);
+  if (!s) return false;
+  const e = item.endDate ? parseMonthDay(item.endDate) : null;
+  const endMonth = e ? e.month : s.month;
+  const qMonths: Record<string, [number, number]> = {
+    Q1: [1, 3],
+    Q2: [4, 6],
+    Q3: [7, 9],
+    Q4: [10, 12],
+  };
+  const [qStart, qEnd] = qMonths[quarter] ?? [1, 3];
+  return s.month <= qEnd && endMonth >= qStart;
 }
 
 // ─── Plan Calendar View (Monthly Grid) ────────────────────────────────────────
@@ -586,6 +509,8 @@ export default function DetailPanel({
   onClose,
   onUpdate,
   onDelete,
+  teams,
+  allMembers,
 }: Props) {
   const year = period
     ? parseInt(period.match(/\d{4}/)?.[0] ?? "") || new Date().getFullYear()
@@ -595,6 +520,10 @@ export default function DetailPanel({
     "list",
   );
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [filterOwner, setFilterOwner] = useState<string>("all");
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
 
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = localStorage.getItem("ogsm_panel_width");
@@ -604,29 +533,6 @@ export default function DetailPanel({
   useEffect(() => {
     localStorage.setItem("ogsm_panel_width", panelWidth.toString());
   }, [panelWidth]);
-
-  // Auto-sync cross-quarter plan items on load
-  useEffect(() => {
-    let synced = [...strategy.actionPlans];
-    let changed = false;
-    for (const ap of strategy.actionPlans) {
-      for (const item of ap.items) {
-        const quarters = getSpannedQuarters(
-          item.startDate ?? item.date,
-          item.endDate,
-        );
-        if (quarters.length > 1) {
-          const before = JSON.stringify(synced);
-          synced = syncItemAcrossQuarters(synced, item, ap.quarter);
-          if (JSON.stringify(synced) !== before) changed = true;
-        }
-      }
-    }
-    if (changed) {
-      onUpdate({ ...strategy, actionPlans: synced });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strategy.id]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -661,7 +567,7 @@ export default function DetailPanel({
           ? "#f59e0b"
           : effectiveRate > 0
             ? "#ef4444"
-            : "#6b7280";
+            : "#4b5563";
 
   // KPI helpers
   const updateKPI = (msrId: string, kpiId: string, updated: KPI) => {
@@ -736,16 +642,6 @@ export default function DetailPanel({
   };
 
   const addChecklistItemToMeasure = (msrId: string) => {
-    // ensure there's an actionPlan for selectedQuarter
-    let ap = strategy.actionPlans.find((p) => p.quarter === selectedQuarter);
-    if (!ap) {
-      ap = {
-        id: genId("plan"),
-        quarter: selectedQuarter,
-        title: selectedQuarter + " 計畫",
-        items: [],
-      };
-    }
     const newItem: PlanItem = {
       id: genId("item"),
       date: "",
@@ -754,10 +650,27 @@ export default function DetailPanel({
       completed: false,
       linkedMeasureId: msrId,
     };
-    const newActionPlans = strategy.actionPlans
-      .filter((p) => p.quarter !== selectedQuarter)
-      .concat({ ...ap, items: [...(ap.items || []), newItem] });
-    onUpdate({ ...strategy, actionPlans: newActionPlans });
+    const existingAp = strategy.actionPlans.find(
+      (p) => p.quarter === selectedQuarter,
+    );
+    if (existingAp) {
+      // Add item to the existing plan, preserving all other plans
+      const newActionPlans = strategy.actionPlans.map((p) =>
+        p.id === existingAp.id ? { ...p, items: [...p.items, newItem] } : p,
+      );
+      onUpdate({ ...strategy, actionPlans: newActionPlans });
+    } else {
+      const ap: ActionPlan = {
+        id: genId("plan"),
+        quarter: selectedQuarter,
+        title: selectedQuarter + " 計畫",
+        items: [newItem],
+      };
+      onUpdate({
+        ...strategy,
+        actionPlans: [...strategy.actionPlans, ap],
+      });
+    }
   };
 
   const copyMeasure = (msrId: string) => {
@@ -783,6 +696,16 @@ export default function DetailPanel({
   };
 
   const deleteMeasure = (msrId: string) => {
+    const linkedCount = strategy.actionPlans
+      .flatMap((p) => p.items)
+      .filter((i) => i.linkedMeasureId === msrId).length;
+    const msrName =
+      strategy.measures.find((m) => m.id === msrId)?.rawText || "此活動";
+    const msg =
+      linkedCount > 0
+        ? `確定要刪除「${msrName}」嗎？\n將同時刪除 ${linkedCount} 筆關聯的行動計畫項目。`
+        : `確定要刪除「${msrName}」嗎？`;
+    if (!window.confirm(msg)) return;
     const newMeasures = strategy.measures.filter((m) => m.id !== msrId);
     const newActionPlans = strategy.actionPlans.map((p) => ({
       ...p,
@@ -812,9 +735,17 @@ export default function DetailPanel({
     });
   };
 
-  const [measureCollapsed, setMeasureCollapsed] = useState<
-    Record<string, boolean>
-  >({});
+  const defaultCollapsed = () => {
+    const map: Record<string, boolean> = {};
+    strategy.measures.forEach((m) => {
+      map[m.id] = true;
+    });
+    return map;
+  };
+  const [measureCollapsed, setMeasureCollapsed] =
+    useState<Record<string, boolean>>(defaultCollapsed);
+  const [planSectionCollapsed, setPlanSectionCollapsed] =
+    useState<Record<string, boolean>>(defaultCollapsed);
 
   const allKpis = strategy.measures.flatMap((m) =>
     m.kpis.map((k) => ({ ...k, msrId: m.id })),
@@ -835,7 +766,76 @@ export default function DetailPanel({
           ? "#f59e0b"
           : progressRate > 0
             ? "#ef4444"
-            : "#6b7280";
+            : "#4b5563";
+
+  // ─── Filter helpers ──────────────────────────────────────────────────────────
+  const hasActiveFilter =
+    searchQuery.trim() !== "" ||
+    filterOwner !== "all" ||
+    filterDateFrom !== "" ||
+    filterDateTo !== "";
+
+  // Collect unique owners from measures + plan items
+  const measureOwners = Array.from(
+    new Set(
+      strategy.measures
+        .map((m) => m.owner?.trim())
+        .concat(
+          strategy.actionPlans
+            .flatMap((p) => p.items)
+            .map((i) => i.owner?.trim()),
+        )
+        .filter(Boolean) as string[],
+    ),
+  ).sort();
+
+  function itemMatchesDateRange(item: PlanItem): boolean {
+    if (!filterDateFrom && !filterDateTo) return true;
+    const isoStart = toIsoDate(item.startDate ?? item.date, year);
+    const isoEnd = toIsoDate(item.endDate, year) || isoStart;
+    if (!isoStart) return true; // no date = show always
+    if (filterDateFrom && isoEnd < filterDateFrom) return false;
+    if (filterDateTo && isoStart > filterDateTo) return false;
+    return true;
+  }
+
+  function measureMatchesFilter(m: Measure): boolean {
+    const q = searchQuery.trim().toLowerCase();
+    const ownerOk =
+      filterOwner === "all" || (m.owner ?? "").includes(filterOwner);
+    const textOk =
+      !q ||
+      (m.rawText ?? "").toLowerCase().includes(q) ||
+      (m.owner ?? "").toLowerCase().includes(q);
+    if (!ownerOk || !textOk) return false;
+    // If date filter is active, measure passes if any linked item passes
+    if (filterDateFrom || filterDateTo) {
+      const linked = strategy.actionPlans
+        .flatMap((p) => p.items)
+        .filter((i) => i.linkedMeasureId === m.id);
+      if (linked.length > 0 && !linked.some(itemMatchesDateRange)) return false;
+    }
+    return true;
+  }
+
+  function planItemMatchesFilter(item: PlanItem): boolean {
+    const q = searchQuery.trim().toLowerCase();
+    const ownerOk =
+      filterOwner === "all" || (item.owner ?? "").includes(filterOwner);
+    const textOk =
+      !q ||
+      item.description.toLowerCase().includes(q) ||
+      (item.owner ?? "").toLowerCase().includes(q);
+    const dateOk = itemMatchesDateRange(item);
+    return ownerOk && textOk && dateOk;
+  }
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setFilterOwner("all");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+  };
 
   return (
     <aside className="detail-panel" style={{ width: panelWidth }}>
@@ -849,7 +849,18 @@ export default function DetailPanel({
             className="detail-title-edit"
             placeholder="策略名稱"
           />
-          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              flexShrink: 0,
+              alignItems: "flex-end",
+            }}
+          >
+            <button className="detail-close" onClick={onClose}>
+              ✕
+            </button>
             <button
               className="detail-del-btn"
               onClick={onDelete}
@@ -857,19 +868,31 @@ export default function DetailPanel({
             >
               🗑 刪除
             </button>
-            <button className="detail-close" onClick={onClose}>
-              ✕
-            </button>
           </div>
         </div>
 
         <div className="detail-meta">
-          <InlineEdit
-            value={strategy.owner}
-            onSave={(v) => onUpdate({ ...strategy, owner: v })}
-            className="owner-chip owner-edit"
-            placeholder="負責人"
-          />
+          {teams.length > 0 ? (
+            <select
+              className="owner-select"
+              value={strategy.owner}
+              onChange={(e) => onUpdate({ ...strategy, owner: e.target.value })}
+            >
+              <option value="">選擇負責單位</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <InlineEdit
+              value={strategy.owner}
+              onSave={(v) => onUpdate({ ...strategy, owner: v })}
+              className="owner-chip owner-edit"
+              placeholder="負責單位"
+            />
+          )}
         </div>
 
         {/* 進度 + 成效 雙指標 */}
@@ -952,6 +975,78 @@ export default function DetailPanel({
         </div>
       </div>
 
+      {/* Filter bar */}
+      <div className="detail-filter-bar">
+        <div className="detail-filter-row">
+          <div className="detail-filter-search-wrap">
+            <span className="detail-filter-icon">🔍</span>
+            <input
+              className="detail-filter-search"
+              placeholder="搜尋活動、項目或負責人…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                className="detail-filter-clear-x"
+                onClick={() => setSearchQuery("")}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <button
+            className={`detail-filter-toggle ${showFilters ? "active" : ""}`}
+            onClick={() => setShowFilters((v) => !v)}
+            title="進階篩選"
+          >
+            ▼ 篩選
+          </button>
+          {hasActiveFilter && (
+            <button className="detail-filter-clear-all" onClick={clearFilters}>
+              清除篩選
+            </button>
+          )}
+        </div>
+        {showFilters && (
+          <div className="detail-filter-expanded">
+            <label className="detail-filter-label">
+              <span>主責者</span>
+              <select
+                className="detail-filter-select"
+                value={filterOwner}
+                onChange={(e) => setFilterOwner(e.target.value)}
+              >
+                <option value="all">全部</option>
+                {measureOwners.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="detail-filter-label">
+              <span>日期起</span>
+              <input
+                type="date"
+                className="detail-filter-date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+              />
+            </label>
+            <label className="detail-filter-label">
+              <span>日期迄</span>
+              <input
+                type="date"
+                className="detail-filter-date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+
       {/* Tabs */}
       <div className="detail-tabs">
         <button
@@ -1024,21 +1119,6 @@ export default function DetailPanel({
                   </button>
                 ))}
               </div>
-              <div
-                style={{
-                  marginLeft: "auto",
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                }}
-              >
-                <input
-                  placeholder="搜尋活動或項目…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ padding: "6px 8px", borderRadius: 6 }}
-                />
-              </div>
             </div>
 
             <div
@@ -1048,37 +1128,38 @@ export default function DetailPanel({
             >
               {strategy.measures
                 .filter((m) => {
+                  // Hide if doesn't match search/filter
+                  if (hasActiveFilter && !measureMatchesFilter(m)) return false;
                   // Show measure if it belongs to this quarter
                   if ((m.quarter ?? selectedQuarter) === selectedQuarter)
                     return true;
-                  // Also show if it has plan items synced into this quarter
-                  const hasItems = strategy.actionPlans
-                    .filter((p) => p.quarter === selectedQuarter)
+                  // Also show if it has linked plan items whose dates overlap this quarter
+                  const hasOverlap = strategy.actionPlans
                     .flatMap((p) => p.items)
-                    .some((i) => i.linkedMeasureId === m.id);
-                  return hasItems;
+                    .some(
+                      (i) =>
+                        i.linkedMeasureId === m.id &&
+                        doesItemOverlapQuarter(i, selectedQuarter),
+                    );
+                  return hasOverlap;
                 })
                 .map((m) => {
                   const collapsed = !!measureCollapsed[m.id];
-                  const isSyncedMeasure =
+                  const isFromOtherQuarter =
                     (m.quarter ?? selectedQuarter) !== selectedQuarter;
                   return (
                     <div
                       key={m.id}
-                      className={`measure-block${isSyncedMeasure ? " synced-readonly" : ""}`}
-                      draggable={!isSyncedMeasure}
-                      onDragStart={
-                        isSyncedMeasure
-                          ? undefined
-                          : (e) => onMeasureDragStart(e, m.id)
-                      }
+                      className="measure-block"
+                      draggable
+                      onDragStart={(e) => onMeasureDragStart(e, m.id)}
                       style={{ marginBottom: 12 }}
                     >
                       <div
                         className="plan-section-header"
                         style={{ alignItems: "center" }}
                       >
-                        {isSyncedMeasure ? (
+                        {isFromOtherQuarter ? (
                           <span
                             className="synced-badge"
                             title={`來源: ${m.quarter}`}
@@ -1107,76 +1188,95 @@ export default function DetailPanel({
                         </span>
                         <InlineEdit
                           value={m.rawText || ""}
-                          onSave={
-                            isSyncedMeasure
-                              ? () => {}
-                              : (v) =>
-                                  onUpdate({
-                                    ...strategy,
-                                    measures: strategy.measures.map((ms) =>
-                                      ms.id === m.id
-                                        ? { ...ms, rawText: v }
-                                        : ms,
-                                    ),
-                                  })
+                          onSave={(v) =>
+                            onUpdate({
+                              ...strategy,
+                              measures: strategy.measures.map((ms) =>
+                                ms.id === m.id ? { ...ms, rawText: v } : ms,
+                              ),
+                            })
                           }
                           className="plan-title-edit"
                           placeholder="活動名稱/專案名稱"
                         />
-                        {!isSyncedMeasure && (
-                          <>
-                            <InlineEdit
-                              value={m.owner ?? ""}
-                              onSave={(v) =>
-                                onUpdate({
-                                  ...strategy,
-                                  measures: strategy.measures.map((ms) =>
-                                    ms.id === m.id ? { ...ms, owner: v } : ms,
-                                  ),
-                                })
-                              }
-                              className="owner-chip owner-edit"
-                              placeholder="主責者"
-                            />
-                            <label className="measure-date-label">
-                              最後更新
-                              <input
-                                type="date"
-                                className="measure-date-input"
-                                value={m.updatedAt ?? ""}
-                                title="最後更新日期"
-                                onChange={(e) =>
-                                  onUpdate({
-                                    ...strategy,
-                                    measures: strategy.measures.map((ms) =>
-                                      ms.id === m.id
-                                        ? { ...ms, updatedAt: e.target.value }
-                                        : ms,
-                                    ),
-                                  })
-                                }
-                              />
-                            </label>
-                            <select
-                              className="measure-status-select"
-                              value={m.status ?? "not-started"}
-                              onChange={(e) =>
-                                onUpdate({
-                                  ...strategy,
-                                  measures: strategy.measures.map((ms) =>
-                                    ms.id === m.id
-                                      ? { ...ms, status: e.target.value }
-                                      : ms,
-                                  ),
-                                })
-                              }
-                            >
-                              <option value="not-started">未開始</option>
-                              <option value="in-progress">進行中</option>
-                              <option value="completed">已完成</option>
-                            </select>
-                          </>
+                        {allMembers.length > 0 ? (
+                          <select
+                            className="owner-select"
+                            value={m.owner ?? ""}
+                            onChange={(e) =>
+                              onUpdate({
+                                ...strategy,
+                                measures: strategy.measures.map((ms) =>
+                                  ms.id === m.id
+                                    ? { ...ms, owner: e.target.value }
+                                    : ms,
+                                ),
+                              })
+                            }
+                          >
+                            <option value="">選擇主責者</option>
+                            {teams.map((t) => (
+                              <optgroup key={t.id} label={t.name}>
+                                {t.members.map((mb) => (
+                                  <option key={mb.id} value={mb.name}>
+                                    {mb.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        ) : (
+                          <InlineEdit
+                            value={m.owner ?? ""}
+                            onSave={(v) =>
+                              onUpdate({
+                                ...strategy,
+                                measures: strategy.measures.map((ms) =>
+                                  ms.id === m.id ? { ...ms, owner: v } : ms,
+                                ),
+                              })
+                            }
+                            className="owner-chip owner-edit"
+                            placeholder="主責者"
+                          />
                         )}
+                        <label className="measure-date-label">
+                          最後更新
+                          <input
+                            type="date"
+                            className="measure-date-input"
+                            value={m.updatedAt ?? ""}
+                            title="最後更新日期"
+                            onChange={(e) =>
+                              onUpdate({
+                                ...strategy,
+                                measures: strategy.measures.map((ms) =>
+                                  ms.id === m.id
+                                    ? { ...ms, updatedAt: e.target.value }
+                                    : ms,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                        <select
+                          className="measure-status-select"
+                          value={m.status ?? "not-started"}
+                          onChange={(e) =>
+                            onUpdate({
+                              ...strategy,
+                              measures: strategy.measures.map((ms) =>
+                                ms.id === m.id
+                                  ? { ...ms, status: e.target.value }
+                                  : ms,
+                              ),
+                            })
+                          }
+                        >
+                          <option value="not-started">未開始</option>
+                          <option value="in-progress">進行中</option>
+                          <option value="completed">已完成</option>
+                        </select>
                         <div
                           style={{
                             marginLeft: "auto",
@@ -1184,32 +1284,28 @@ export default function DetailPanel({
                             gap: 8,
                           }}
                         >
-                          {!isSyncedMeasure && (
-                            <>
-                              <button
-                                className="detail-add-btn"
-                                onClick={() => copyMeasure(m.id)}
-                                title="複製此活動"
-                                style={{ padding: "6px 10px" }}
-                              >
-                                📋 複製
-                              </button>
-                              <button
-                                className="detail-add-btn"
-                                onClick={() => addKpiToMeasure(m.id)}
-                                style={{ padding: "6px 10px" }}
-                              >
-                                + 新增 KPI
-                              </button>
-                              <button
-                                className="plan-del-btn"
-                                onClick={() => deleteMeasure(m.id)}
-                                title="刪除活動"
-                              >
-                                ✕
-                              </button>
-                            </>
-                          )}
+                          <button
+                            className="detail-add-btn"
+                            onClick={() => copyMeasure(m.id)}
+                            title="複製此活動"
+                            style={{ padding: "6px 10px" }}
+                          >
+                            📋 複製
+                          </button>
+                          <button
+                            className="detail-add-btn"
+                            onClick={() => addKpiToMeasure(m.id)}
+                            style={{ padding: "6px 10px" }}
+                          >
+                            + 新增 KPI
+                          </button>
+                          <button
+                            className="plan-del-btn"
+                            onClick={() => deleteMeasure(m.id)}
+                            title="刪除活動"
+                          >
+                            ✕
+                          </button>
                         </div>
                       </div>
                       {!collapsed && (
@@ -1329,227 +1425,231 @@ export default function DetailPanel({
                   ))}
                 </div>
 
-                {/* For the selected quarter, show each Measure's checklist items (derived, cannot add plan blocks) */}
+                {/* For the selected quarter, show each Measure's checklist items */}
                 {strategy.measures
                   .filter((m) => {
+                    // Hide if doesn't match search/filter
+                    if (hasActiveFilter && !measureMatchesFilter(m))
+                      return false;
                     // Show measure if it belongs to this quarter
                     if ((m.quarter ?? selectedQuarter) === selectedQuarter)
                       return true;
-                    // Also show measure if it has synced plan items in this quarter
-                    const hasItems = strategy.actionPlans
-                      .filter((p) => p.quarter === selectedQuarter)
+                    // Also show measure if it has linked items whose dates overlap this quarter
+                    const hasOverlap = strategy.actionPlans
                       .flatMap((p) => p.items)
-                      .some((i) => i.linkedMeasureId === m.id);
-                    return hasItems;
+                      .some(
+                        (i) =>
+                          i.linkedMeasureId === m.id &&
+                          doesItemOverlapQuarter(i, selectedQuarter),
+                      );
+                    return hasOverlap;
                   })
                   .map((m) => {
                     const itemsForMeasure = strategy.actionPlans
-                      .filter((p) => p.quarter === selectedQuarter)
                       .flatMap((p) => p.items)
-                      .filter((i) => i.linkedMeasureId === m.id);
-                    const isSyncedSection =
+                      .filter((i) => i.linkedMeasureId === m.id)
+                      .filter((i) => {
+                        // Item belongs to this quarter's ActionPlan, or its dates overlap
+                        const inQuarterPlan = strategy.actionPlans
+                          .filter((p) => p.quarter === selectedQuarter)
+                          .flatMap((p) => p.items)
+                          .some((pi) => pi.id === i.id);
+                        return (
+                          inQuarterPlan ||
+                          doesItemOverlapQuarter(i, selectedQuarter)
+                        );
+                      })
+                      .filter(
+                        (i) => !hasActiveFilter || planItemMatchesFilter(i),
+                      );
+                    // Deduplicate (item could match both conditions)
+                    const seen = new Set<string>();
+                    const dedupItems = itemsForMeasure.filter((i) => {
+                      if (seen.has(i.id)) return false;
+                      seen.add(i.id);
+                      return true;
+                    });
+                    const isFromOtherQuarter =
                       (m.quarter ?? selectedQuarter) !== selectedQuarter;
+                    const doneCount = dedupItems.filter(
+                      (it) => it.completed,
+                    ).length;
+                    const totalCount = dedupItems.length;
+                    const sectionCollapsed = !!planSectionCollapsed[m.id];
+                    const sectionProgress =
+                      totalCount > 0
+                        ? Math.round((doneCount / totalCount) * 100)
+                        : 0;
                     return (
-                      <div
-                        key={m.id}
-                        className="plan-section"
-                        style={{ marginBottom: 12 }}
-                      >
-                        <div className="plan-section-header">
-                          {isSyncedSection && (
+                      <div key={m.id} className="plan-section-card">
+                        <div
+                          className="plan-section-card-header"
+                          onClick={() =>
+                            setPlanSectionCollapsed((s) => ({
+                              ...s,
+                              [m.id]: !s[m.id],
+                            }))
+                          }
+                        >
+                          <span
+                            className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
+                          >
+                            ▾
+                          </span>
+                          {isFromOtherQuarter && (
                             <span
-                              className="synced-badge"
+                              className="synced-badge synced-badge-sm"
                               title={`來源: ${m.quarter}`}
                             >
                               ↩ {m.quarter}
                             </span>
                           )}
-                          <span className="plan-badge">
+                          <span className="plan-section-card-title">
                             {m.rawText || "活動"}
                           </span>
-                          <InlineEdit
-                            value={m.rawText || ""}
-                            onSave={
-                              isSyncedSection
-                                ? () => {}
-                                : (v) =>
-                                    onUpdate({
-                                      ...strategy,
-                                      measures: strategy.measures.map((ms) =>
-                                        ms.id === m.id
-                                          ? { ...ms, rawText: v }
-                                          : ms,
-                                      ),
-                                    })
-                            }
-                            className="plan-title-edit"
-                          />
-                          <span className="plan-progress">
-                            {
-                              itemsForMeasure.filter((it) => it.completed)
-                                .length
-                            }
-                            /{itemsForMeasure.length}
+                          {m.owner && (
+                            <span className="plan-section-card-owner">
+                              {m.owner}
+                            </span>
+                          )}
+                          <span className="plan-section-card-count">
+                            {doneCount}/{totalCount}
                           </span>
+                          <div className="plan-section-card-bar">
+                            <div
+                              className="plan-section-card-bar-fill"
+                              style={{
+                                width: `${sectionProgress}%`,
+                                background:
+                                  sectionProgress >= 100
+                                    ? "#10b981"
+                                    : sectionProgress > 0
+                                      ? "#6366f1"
+                                      : "#e5e7eb",
+                              }}
+                            />
+                          </div>
                         </div>
-                        <div className="plan-items">
-                          {itemsForMeasure.map((item) => {
-                            const itemSource = getItemSourceQuarter(item);
-                            const isItemSynced =
-                              itemSource !== null &&
-                              itemSource !== selectedQuarter;
-                            return (
-                              <div
-                                key={item.id}
-                                className={`plan-item ${item.completed ? "done" : ""}${isItemSynced ? " synced-readonly" : ""}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={item.completed}
-                                  disabled={isItemSynced}
-                                  onChange={() => {
-                                    const newActionPlans =
-                                      strategy.actionPlans.map((p) => ({
-                                        ...p,
-                                        items: p.items.map((it) =>
-                                          it.id === item.id
-                                            ? {
-                                                ...it,
-                                                completed: !it.completed,
-                                              }
-                                            : it,
-                                        ),
-                                      }));
-                                    onUpdate({
-                                      ...strategy,
-                                      actionPlans: newActionPlans,
-                                    });
-                                  }}
-                                />
-                                {isItemSynced && (
-                                  <span
-                                    className="synced-badge synced-badge-sm"
-                                    title={`來源: ${itemSource}`}
-                                  >
-                                    ↩ {itemSource}
-                                  </span>
-                                )}
-                                <input
-                                  type="date"
-                                  className="plan-date-input"
-                                  value={toIsoDate(
-                                    item.startDate ?? item.date,
-                                    year,
+                        {!sectionCollapsed && (
+                          <div className="plan-section-card-body">
+                            {dedupItems.map((item) => {
+                              // Find which quarter's ActionPlan this item lives in
+                              const itemSourceQuarter =
+                                strategy.actionPlans.find((p) =>
+                                  p.items.some((pi) => pi.id === item.id),
+                                )?.quarter;
+                              const isFromOtherQ =
+                                itemSourceQuarter !== selectedQuarter;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className={`plan-item ${item.completed ? "done" : ""}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={item.completed}
+                                    onChange={() => {
+                                      const newActionPlans =
+                                        strategy.actionPlans.map((p) => ({
+                                          ...p,
+                                          items: p.items.map((it) =>
+                                            it.id === item.id
+                                              ? {
+                                                  ...it,
+                                                  completed: !it.completed,
+                                                }
+                                              : it,
+                                          ),
+                                        }));
+                                      onUpdate({
+                                        ...strategy,
+                                        actionPlans: newActionPlans,
+                                      });
+                                    }}
+                                  />
+                                  {isFromOtherQ && itemSourceQuarter && (
+                                    <span
+                                      className="synced-badge synced-badge-sm"
+                                      title={`來源: ${itemSourceQuarter}`}
+                                    >
+                                      ↩ {itemSourceQuarter}
+                                    </span>
                                   )}
-                                  title="起始日期"
-                                  readOnly={isItemSynced}
-                                  onChange={
-                                    isItemSynced
-                                      ? undefined
-                                      : (e) => {
-                                          const v = e.target.value;
-                                          const updatedItem = {
-                                            ...item,
-                                            startDate: v,
-                                            date: v,
-                                          };
-                                          let newActionPlans =
-                                            strategy.actionPlans.map((p) => ({
-                                              ...p,
-                                              items: p.items.map((it) =>
-                                                it.id === item.id
-                                                  ? {
-                                                      ...it,
-                                                      startDate: v,
-                                                      date: v,
-                                                    }
-                                                  : it,
-                                              ),
-                                            }));
-                                          newActionPlans =
-                                            syncItemAcrossQuarters(
-                                              newActionPlans,
-                                              {
-                                                ...updatedItem,
-                                                endDate: item.endDate,
-                                              },
-                                              selectedQuarter,
-                                            );
-                                          onUpdate({
-                                            ...strategy,
-                                            actionPlans: newActionPlans,
-                                          });
-                                        }
-                                  }
-                                />
-                                <input
-                                  type="date"
-                                  className="plan-date-input"
-                                  value={toIsoDate(item.endDate, year)}
-                                  title="結束日期"
-                                  readOnly={isItemSynced}
-                                  onChange={
-                                    isItemSynced
-                                      ? undefined
-                                      : (e) => {
-                                          const v = e.target.value;
-                                          const updatedItem = {
-                                            ...item,
-                                            endDate: v,
-                                          };
-                                          let newActionPlans =
-                                            strategy.actionPlans.map((p) => ({
-                                              ...p,
-                                              items: p.items.map((it) =>
-                                                it.id === item.id
-                                                  ? { ...it, endDate: v }
-                                                  : it,
-                                              ),
-                                            }));
-                                          newActionPlans =
-                                            syncItemAcrossQuarters(
-                                              newActionPlans,
-                                              updatedItem,
-                                              selectedQuarter,
-                                            );
-                                          onUpdate({
-                                            ...strategy,
-                                            actionPlans: newActionPlans,
-                                          });
-                                        }
-                                  }
-                                />
-                                <input
-                                  className="plan-desc-input"
-                                  value={item.description}
-                                  placeholder="新項目"
-                                  readOnly={isItemSynced}
-                                  onChange={
-                                    isItemSynced
-                                      ? undefined
-                                      : (e) => {
-                                          const newActionPlans =
-                                            strategy.actionPlans.map((p) => ({
-                                              ...p,
-                                              items: p.items.map((it) =>
-                                                it.id === item.id
-                                                  ? {
-                                                      ...it,
-                                                      description:
-                                                        e.target.value,
-                                                    }
-                                                  : it,
-                                              ),
-                                            }));
-                                          onUpdate({
-                                            ...strategy,
-                                            actionPlans: newActionPlans,
-                                          });
-                                        }
-                                  }
-                                />
+                                  <input
+                                    type="date"
+                                    className="plan-date-input"
+                                    value={toIsoDate(
+                                      item.startDate ?? item.date,
+                                      year,
+                                    )}
+                                    title="起始日期"
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const newActionPlans =
+                                        strategy.actionPlans.map((p) => ({
+                                          ...p,
+                                          items: p.items.map((it) =>
+                                            it.id === item.id
+                                              ? {
+                                                  ...it,
+                                                  startDate: v,
+                                                  date: v,
+                                                }
+                                              : it,
+                                          ),
+                                        }));
+                                      onUpdate({
+                                        ...strategy,
+                                        actionPlans: newActionPlans,
+                                      });
+                                    }}
+                                  />
+                                  <input
+                                    type="date"
+                                    className="plan-date-input"
+                                    value={toIsoDate(item.endDate, year)}
+                                    title="結束日期"
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const newActionPlans =
+                                        strategy.actionPlans.map((p) => ({
+                                          ...p,
+                                          items: p.items.map((it) =>
+                                            it.id === item.id
+                                              ? { ...it, endDate: v }
+                                              : it,
+                                          ),
+                                        }));
+                                      onUpdate({
+                                        ...strategy,
+                                        actionPlans: newActionPlans,
+                                      });
+                                    }}
+                                  />
+                                  <input
+                                    className="plan-desc-input"
+                                    value={item.description}
+                                    placeholder="新項目"
+                                    onChange={(e) => {
+                                      const newActionPlans =
+                                        strategy.actionPlans.map((p) => ({
+                                          ...p,
+                                          items: p.items.map((it) =>
+                                            it.id === item.id
+                                              ? {
+                                                  ...it,
+                                                  description: e.target.value,
+                                                }
+                                              : it,
+                                          ),
+                                        }));
+                                      onUpdate({
+                                        ...strategy,
+                                        actionPlans: newActionPlans,
+                                      });
+                                    }}
+                                  />
 
-                                {!isItemSynced && (
                                   <button
                                     className="plan-item-del"
                                     onClick={() => {
@@ -1568,20 +1668,215 @@ export default function DetailPanel({
                                   >
                                     ✕
                                   </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                          <button
-                            className="plan-add-item"
-                            onClick={() => addChecklistItemToMeasure(m.id)}
-                          >
-                            + 新增項目
-                          </button>
-                        </div>
+                                </div>
+                              );
+                            })}
+                            <button
+                              className="plan-add-item"
+                              onClick={() => addChecklistItemToMeasure(m.id)}
+                            >
+                              + 新增項目
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
+
+                {/* Unlinked items — items without linkedMeasureId */}
+                {(() => {
+                  const unlinkedItems = strategy.actionPlans
+                    .flatMap((p) => p.items)
+                    .filter((i) => !i.linkedMeasureId)
+                    .filter((i) => {
+                      const inQuarterPlan = strategy.actionPlans
+                        .filter((p) => p.quarter === selectedQuarter)
+                        .flatMap((p) => p.items)
+                        .some((pi) => pi.id === i.id);
+                      return (
+                        inQuarterPlan ||
+                        doesItemOverlapQuarter(i, selectedQuarter)
+                      );
+                    })
+                    .filter(
+                      (i) => !hasActiveFilter || planItemMatchesFilter(i),
+                    );
+                  // Deduplicate
+                  const seen = new Set<string>();
+                  const dedupUnlinked = unlinkedItems.filter((i) => {
+                    if (seen.has(i.id)) return false;
+                    seen.add(i.id);
+                    return true;
+                  });
+                  if (dedupUnlinked.length === 0) return null;
+                  const doneCount = dedupUnlinked.filter(
+                    (it) => it.completed,
+                  ).length;
+                  const totalCount = dedupUnlinked.length;
+                  const sectionCollapsed =
+                    !!planSectionCollapsed["__unlinked__"];
+                  const sectionProgress =
+                    totalCount > 0
+                      ? Math.round((doneCount / totalCount) * 100)
+                      : 0;
+                  return (
+                    <div className="plan-section-card">
+                      <div
+                        className="plan-section-card-header"
+                        onClick={() =>
+                          setPlanSectionCollapsed((s) => ({
+                            ...s,
+                            ["__unlinked__"]: !s["__unlinked__"],
+                          }))
+                        }
+                      >
+                        <span
+                          className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
+                        >
+                          ▾
+                        </span>
+                        <span className="plan-section-card-title">
+                          未分類項目
+                        </span>
+                        <span className="plan-section-card-count">
+                          {doneCount}/{totalCount}
+                        </span>
+                        <div className="plan-section-card-bar">
+                          <div
+                            className="plan-section-card-bar-fill"
+                            style={{
+                              width: `${sectionProgress}%`,
+                              background:
+                                sectionProgress >= 100
+                                  ? "#10b981"
+                                  : sectionProgress > 0
+                                    ? "#6366f1"
+                                    : "#e5e7eb",
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {!sectionCollapsed && (
+                        <div className="plan-section-card-body">
+                          {dedupUnlinked.map((item) => (
+                            <div
+                              key={item.id}
+                              className={`plan-item ${item.completed ? "done" : ""}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={item.completed}
+                                onChange={() => {
+                                  const newActionPlans =
+                                    strategy.actionPlans.map((p) => ({
+                                      ...p,
+                                      items: p.items.map((it) =>
+                                        it.id === item.id
+                                          ? { ...it, completed: !it.completed }
+                                          : it,
+                                      ),
+                                    }));
+                                  onUpdate({
+                                    ...strategy,
+                                    actionPlans: newActionPlans,
+                                  });
+                                }}
+                              />
+                              <input
+                                type="date"
+                                className="plan-date-input"
+                                value={toIsoDate(
+                                  item.startDate ?? item.date,
+                                  year,
+                                )}
+                                title="起始日期"
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const newActionPlans =
+                                    strategy.actionPlans.map((p) => ({
+                                      ...p,
+                                      items: p.items.map((it) =>
+                                        it.id === item.id
+                                          ? { ...it, startDate: v, date: v }
+                                          : it,
+                                      ),
+                                    }));
+                                  onUpdate({
+                                    ...strategy,
+                                    actionPlans: newActionPlans,
+                                  });
+                                }}
+                              />
+                              <input
+                                type="date"
+                                className="plan-date-input"
+                                value={toIsoDate(item.endDate, year)}
+                                title="結束日期"
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const newActionPlans =
+                                    strategy.actionPlans.map((p) => ({
+                                      ...p,
+                                      items: p.items.map((it) =>
+                                        it.id === item.id
+                                          ? { ...it, endDate: v }
+                                          : it,
+                                      ),
+                                    }));
+                                  onUpdate({
+                                    ...strategy,
+                                    actionPlans: newActionPlans,
+                                  });
+                                }}
+                              />
+                              <input
+                                className="plan-desc-input"
+                                value={item.description}
+                                placeholder="項目描述"
+                                onChange={(e) => {
+                                  const newActionPlans =
+                                    strategy.actionPlans.map((p) => ({
+                                      ...p,
+                                      items: p.items.map((it) =>
+                                        it.id === item.id
+                                          ? {
+                                              ...it,
+                                              description: e.target.value,
+                                            }
+                                          : it,
+                                      ),
+                                    }));
+                                  onUpdate({
+                                    ...strategy,
+                                    actionPlans: newActionPlans,
+                                  });
+                                }}
+                              />
+                              <button
+                                className="plan-item-del"
+                                onClick={() => {
+                                  const newActionPlans =
+                                    strategy.actionPlans.map((p) => ({
+                                      ...p,
+                                      items: p.items.filter(
+                                        (it) => it.id !== item.id,
+                                      ),
+                                    }));
+                                  onUpdate({
+                                    ...strategy,
+                                    actionPlans: newActionPlans,
+                                  });
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

@@ -23,10 +23,62 @@ export function saveWorkspace(ws: WorkspaceData): void {
 export function loadWorkspace(): WorkspaceData | null {
   try {
     const raw = localStorage.getItem(WORKSPACE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const ws: WorkspaceData = JSON.parse(raw);
+    if (migrateSyncDuplicates(ws)) {
+      saveWorkspace(ws);
+    }
+    // One-time: clear strategy owners when no teams configured
+    if (!ws._migratedClearOwners) {
+      if (!ws.teams || ws.teams.length === 0) {
+        for (const dept of ws.departments) {
+          for (const period of dept.periods) {
+            for (const goal of period.ogsm.goals) {
+              for (const strategy of goal.strategies) {
+                strategy.owner = "";
+              }
+            }
+          }
+        }
+      }
+      ws._migratedClearOwners = true;
+      saveWorkspace(ws);
+    }
+    return ws;
   } catch {
     return null;
   }
+}
+
+/** Remove duplicate PlanItems left by old cross-quarter sync mechanism. */
+function migrateSyncDuplicates(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          const seen = new Set<string>();
+          for (const ap of strategy.actionPlans) {
+            const before = ap.items.length;
+            ap.items = ap.items.filter((item) => {
+              if (seen.has(item.id)) return false;
+              seen.add(item.id);
+              return true;
+            });
+            // Strip legacy sourceQuarter field
+            for (const item of ap.items) {
+              if ("sourceQuarter" in item) {
+                delete (item as Record<string, unknown>).sourceQuarter;
+                changed = true;
+              }
+            }
+            if (ap.items.length !== before) changed = true;
+          }
+        }
+      }
+    }
+  }
+  return changed;
 }
 
 export function loadLegacyData(): OGSMData | null {

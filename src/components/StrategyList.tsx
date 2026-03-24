@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Goal, Strategy, Status } from "../types/ogsm";
+import type { Goal, Strategy, Status, Team } from "../types/ogsm";
 
 interface Props {
   goal: Goal | null;
@@ -10,10 +10,8 @@ interface Props {
   onUpdateGoal: (g: Goal) => void;
   onDeleteStrategy: (id: string) => void;
   filterOwner: string;
-  filterStatus: string;
   onFilterOwner: (v: string) => void;
-  onFilterStatus: (v: string) => void;
-  owners: string[];
+  teams: Team[];
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -28,7 +26,7 @@ const STATUS_COLOR: Record<Status, string> = {
   "on-track": "#6366f1",
   "at-risk": "#f59e0b",
   behind: "#ef4444",
-  "not-started": "#6b7280",
+  "not-started": "#4b5563",
 };
 
 function StrategyRow({
@@ -153,10 +151,8 @@ export default function StrategyList({
   onUpdateGoal,
   onDeleteStrategy,
   filterOwner,
-  filterStatus,
   onFilterOwner,
-  onFilterStatus,
-  owners,
+  teams,
 }: Props) {
   const [editingGoalTitle, setEditingGoalTitle] = useState(false);
   const [titleText, setTitleText] = useState("");
@@ -183,7 +179,7 @@ export default function StrategyList({
           ? "#f59e0b"
           : rate > 0
             ? "#ef4444"
-            : "#6b7280";
+            : "#4b5563";
   const totalWeight = strategies.length || 1;
 
   return (
@@ -198,7 +194,7 @@ export default function StrategyList({
               value={titleText}
               style={{
                 flex: 1,
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: 800,
                 padding: 4,
                 background: "rgba(99,102,241,.1)",
@@ -232,7 +228,7 @@ export default function StrategyList({
               title="雙擊編輯目標說明"
             >
               {goal.title || (
-                <span style={{ color: "#9ca3af", fontStyle: "italic" }}>
+                <span style={{ color: "#6b7280", fontStyle: "italic" }}>
                   雙擊輸入目標說明…
                 </span>
               )}
@@ -307,22 +303,10 @@ export default function StrategyList({
               value={filterOwner}
               onChange={(e) => onFilterOwner(e.target.value)}
             >
-              <option value="all">全部負責人</option>
-              {owners.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
-            <select
-              className="filter-select"
-              value={filterStatus}
-              onChange={(e) => onFilterStatus(e.target.value)}
-            >
-              <option value="all">全部狀態</option>
-              {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABEL[s]}
+              <option value="all">全部負責單位</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
                 </option>
               ))}
             </select>
