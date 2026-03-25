@@ -18,7 +18,24 @@ import {
   importJSON,
   readFileAsText,
 } from "./utils/storage";
+import {
+  isFileSystemAccessSupported,
+  pickDataFile,
+  peekDataFile,
+  hasSavedHandle,
+  authorizeDataFile,
+  readDataFile,
+  writeDataFile,
+  clearDataFile,
+} from "./utils/fileSync";
 import { exportWorkspaceXlsx } from "./utils/exportXlsx";
+import {
+  mergeWorkspaces,
+  detectConflicts,
+  type ConflictEntry,
+  type ConflictResolutions,
+} from "./utils/merge";
+import ConflictModal from "./components/ConflictModal";
 import Sidebar from "./components/Sidebar";
 import StrategyList from "./components/StrategyList";
 import DetailPanel from "./components/DetailPanel";
@@ -88,6 +105,230 @@ export default function App() {
   const [exportingXlsx, setExportingXlsx] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
 
+  // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
+  const fsSupported = isFileSystemAccessSupported();
+  type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
+  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("unlinked");
+  const [syncError, setSyncError] = useState("");
+  const authInProgressRef = useRef(false);
+  const pendingClickHandlerRef = useRef<EventListener | null>(null);
+  const loadedFileVersionRef = useRef<number | null>(null);
+  const [mergeToast, setMergeToast] = useState("");
+  // Manual save / dirty tracking
+  const [isDirty, setIsDirty] = useState(false);
+  // Conflict resolution state
+  const [conflictEntries, setConflictEntries] = useState<ConflictEntry[]>([]);
+  const [conflictResolutions, setConflictResolutions] =
+    useState<ConflictResolutions>({});
+  const conflictDiskWsRef = useRef<WorkspaceData | null>(null);
+
+  // Shared: attach handle + read file into workspace
+  const applyHandle = useCallback(async (handle: FileSystemFileHandle) => {
+    fileHandleRef.current = handle;
+    try {
+      const text = await readDataFile(handle);
+      const remote: WorkspaceData = JSON.parse(text);
+      loadedFileVersionRef.current = remote.version ?? null;
+      setWorkspace(remote);
+      saveWorkspace(remote);
+      setIsDirty(false);
+      setSyncStatus("saved");
+      setSyncError("");
+    } catch (e) {
+      setSyncStatus("error");
+      setSyncError("讀取檔案失敗：" + String(e));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On mount: query-only check; if needs re-grant, listen for first user click
+  useEffect(() => {
+    if (!fsSupported) return;
+    (async () => {
+      const handle = await peekDataFile();
+      if (handle) {
+        await applyHandle(handle);
+        return;
+      }
+      const savedExists = await hasSavedHandle();
+      if (!savedExists) return;
+      // Handle saved but needs user gesture to re-grant — auto-fire on first click
+      setSyncStatus("pending");
+      const handler: EventListener = () => {
+        if (authInProgressRef.current) return;
+        authInProgressRef.current = true;
+        authorizeDataFile()
+          .then(async (h) => {
+            if (h) await applyHandle(h);
+          })
+          .finally(() => {
+            authInProgressRef.current = false;
+          });
+      };
+      pendingClickHandlerRef.current = handler;
+      document.addEventListener("click", handler, { once: true });
+    })();
+    return () => {
+      if (pendingClickHandlerRef.current) {
+        document.removeEventListener("click", pendingClickHandlerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fileSaveNow = useCallback(async (ws: WorkspaceData) => {
+    const handle = fileHandleRef.current;
+    if (!handle) return;
+    setSyncStatus("saving");
+    try {
+      // Read current file to detect concurrent writes
+      const diskText = await readDataFile(handle);
+      const onDisk: WorkspaceData = JSON.parse(diskText);
+      let toWrite = ws;
+
+      if (
+        loadedFileVersionRef.current !== null &&
+        onDisk.version !== undefined &&
+        onDisk.version !== loadedFileVersionRef.current
+      ) {
+        // Version mismatch: check for user-visible conflicts first
+        const conflicts = detectConflicts(ws, onDisk);
+        if (conflicts.length > 0) {
+          // Suspend the save and let user resolve conflicts
+          conflictDiskWsRef.current = onDisk;
+          setConflictEntries(conflicts);
+          setConflictResolutions({});
+          setSyncStatus("saved"); // reset badge while modal is open
+          return;
+        }
+        // No conflicting edits: auto-merge additions/deletions silently
+        const { workspace: merged, autoMerged } = mergeWorkspaces(ws, onDisk);
+        toWrite = merged;
+        setWorkspace(merged);
+        saveWorkspace(merged);
+        if (autoMerged > 0) {
+          setMergeToast(`已自動合併 ${autoMerged} 項遠端新增/刪除`);
+          setTimeout(() => setMergeToast(""), 4000);
+        }
+      }
+
+      const payload: WorkspaceData = {
+        ...toWrite,
+        version: (toWrite.version ?? 1) + 1,
+        savedAt: new Date().toISOString(),
+      };
+      loadedFileVersionRef.current = payload.version;
+      await writeDataFile(handle, JSON.stringify(payload, null, 2));
+      setSyncStatus("saved");
+      setSyncError("");
+      setIsDirty(false);
+    } catch (e) {
+      setSyncStatus("error");
+      setSyncError("檔案寫入失敗：" + String(e));
+    }
+  }, []);
+
+  const handleLinkFile = useCallback(async () => {
+    const handle = await pickDataFile();
+    if (!handle) return;
+    fileHandleRef.current = handle;
+    try {
+      const text = await readDataFile(handle);
+      const content = text.trim();
+      if (content && content !== "{}") {
+        const remote: WorkspaceData = JSON.parse(content);
+        setWorkspace(remote);
+        saveWorkspace(remote);
+      } else {
+        await writeDataFile(handle, JSON.stringify(workspace, null, 2));
+      }
+    } catch {
+      // File is empty or unreadable — initialise with current workspace
+      await writeDataFile(handle, JSON.stringify(workspace, null, 2));
+    }
+    setSyncStatus("saved");
+    setSyncError("");
+    setIsDirty(false);
+  }, [workspace]);
+
+  const handleUnlinkFile = useCallback(async () => {
+    fileHandleRef.current = null;
+    await clearDataFile();
+    setSyncStatus("unlinked");
+    setSyncError("");
+    if (pendingClickHandlerRef.current) {
+      document.removeEventListener("click", pendingClickHandlerRef.current);
+      pendingClickHandlerRef.current = null;
+    }
+  }, []);
+
+  // Badge click when status is "pending": manual retry with user gesture
+  const handleReauthorize = useCallback(async () => {
+    if (authInProgressRef.current) return;
+    authInProgressRef.current = true;
+    // Remove the auto-listener to avoid double-firing
+    if (pendingClickHandlerRef.current) {
+      document.removeEventListener("click", pendingClickHandlerRef.current);
+      pendingClickHandlerRef.current = null;
+    }
+    try {
+      const handle = await authorizeDataFile();
+      if (handle) await applyHandle(handle);
+    } finally {
+      authInProgressRef.current = false;
+    }
+  }, [applyHandle]);
+
+  // Conflict resolution handlers
+  const handleConflictChange = useCallback(
+    (id: string, choice: "local" | "remote") => {
+      setConflictResolutions((prev) => ({ ...prev, [id]: choice }));
+    },
+    [],
+  );
+
+  const handleConflictConfirm = useCallback(async () => {
+    const onDisk = conflictDiskWsRef.current;
+    if (!onDisk || !fileHandleRef.current) return;
+    const { workspace: merged } = mergeWorkspaces(
+      workspace,
+      onDisk,
+      conflictResolutions,
+    );
+    setSyncStatus("saving");
+    try {
+      const payload: WorkspaceData = {
+        ...merged,
+        version: (merged.version ?? 1) + 1,
+        savedAt: new Date().toISOString(),
+      };
+      await writeDataFile(
+        fileHandleRef.current,
+        JSON.stringify(payload, null, 2),
+      );
+      loadedFileVersionRef.current = payload.version;
+      setWorkspace(merged);
+      saveWorkspace(merged);
+      setSyncStatus("saved");
+      setSyncError("");
+      setIsDirty(false);
+    } catch (e) {
+      setSyncStatus("error");
+      setSyncError("檔案寫入失敗：" + String(e));
+    } finally {
+      setConflictEntries([]);
+      conflictDiskWsRef.current = null;
+    }
+  }, [workspace, conflictResolutions]);
+
+  const handleConflictCancel = useCallback(() => {
+    setConflictEntries([]);
+    setConflictResolutions({});
+    conflictDiskWsRef.current = null;
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────
+
   const teams: Team[] = workspace.teams ?? [];
   const allMembers = teams.flatMap((t) => t.members);
 
@@ -117,6 +358,7 @@ export default function App() {
     isUndoRedoRef.current = true;
     setWorkspace(ws);
     saveWorkspace(ws);
+    setIsDirty(true);
   }, []);
 
   const redo = useCallback(() => {
@@ -128,6 +370,7 @@ export default function App() {
     isUndoRedoRef.current = true;
     setWorkspace(ws);
     saveWorkspace(ws);
+    setIsDirty(true);
   }, []);
 
   // Keyboard shortcut: Ctrl+Z / Ctrl+Y
@@ -181,13 +424,24 @@ export default function App() {
       }
       setWorkspace(next);
       saveWorkspace(next);
+      setIsDirty(true);
     },
     [pushHistory],
   );
 
   const handleUpdateTeams = useCallback(
     (nextTeams: Team[]) => {
-      updateWorkspace({ ...workspace, teams: nextTeams });
+      const now = new Date().toISOString();
+      const prevById = new Map((workspace.teams ?? []).map((t) => [t.id, t]));
+      const stamped = nextTeams.map((t) => {
+        const prev = prevById.get(t.id);
+        // Stamp updatedAt only if content actually changed
+        if (!prev || JSON.stringify(prev) !== JSON.stringify(t)) {
+          return { ...t, updatedAt: now };
+        }
+        return t;
+      });
+      updateWorkspace({ ...workspace, teams: stamped });
     },
     [workspace, updateWorkspace],
   );
@@ -402,13 +656,20 @@ export default function App() {
   const filteredStrategies = useMemo(() => {
     if (!selectedGoal) return [];
     return selectedGoal.strategies.filter((s) => {
-      if (filterOwner !== "all" && !s.owner.includes(filterOwner)) return false;
+      if (filterOwner !== "all") {
+        const ownerList = s.owners ?? (s.owner ? [s.owner] : []);
+        if (!ownerList.includes(filterOwner)) return false;
+      }
       return true;
     });
   }, [selectedGoal, filterOwner]);
 
   const handleUpdateStrategy = useCallback(
     (updated: Strategy) => {
+      const stamped: Strategy = {
+        ...updated,
+        updatedAt: new Date().toISOString(),
+      };
       updateData({
         ...data,
         goals: data.goals.map((g) =>
@@ -417,7 +678,7 @@ export default function App() {
             : {
                 ...g,
                 strategies: g.strategies.map((s) =>
-                  s.id === updated.id ? updated : s,
+                  s.id === stamped.id ? stamped : s,
                 ),
               },
         ),
@@ -442,6 +703,7 @@ export default function App() {
       completionRate: 0,
       manualRate: null,
       status: "not-started",
+      updatedAt: new Date().toISOString(),
     };
     const next = {
       ...data,
@@ -474,10 +736,35 @@ export default function App() {
               },
         ),
       };
-      updateData(next);
+      // Tombstone the deleted strategy so merge won't resurrect it
+      const wsNext: WorkspaceData = {
+        ...workspace,
+        deletedIds: [...(workspace.deletedIds ?? []), strategyId],
+      };
+      updateWorkspace({
+        ...wsNext,
+        departments: workspace.departments.map((d) =>
+          d.id !== activeDept?.id
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                ),
+              },
+        ),
+      });
       if (selectedStrategyId === strategyId) setSelectedStrategyId(null);
     },
-    [data, selectedGoalId, selectedStrategyId, updateData],
+    [
+      data,
+      selectedGoalId,
+      selectedStrategyId,
+      workspace,
+      activeDept,
+      activePeriod,
+      updateWorkspace,
+    ],
   );
 
   const handleAddGoal = useCallback(() => {
@@ -488,6 +775,7 @@ export default function App() {
       fullText: "\u9ede\u64ca\u53f3\u5074\u7de8\u8f2f\u76ee\u6a19\u63cf\u8ff0",
       strategies: [],
       completionRate: 0,
+      updatedAt: new Date().toISOString(),
     };
     const next = { ...data, goals: [...data.goals, g] };
     updateData(next);
@@ -499,7 +787,11 @@ export default function App() {
     (updated: Goal) => {
       updateData({
         ...data,
-        goals: data.goals.map((g) => (g.id === updated.id ? updated : g)),
+        goals: data.goals.map((g) =>
+          g.id === updated.id
+            ? { ...updated, updatedAt: new Date().toISOString() }
+            : g,
+        ),
       });
     },
     [data, updateData],
@@ -520,17 +812,44 @@ export default function App() {
         )
       )
         return;
+      const goal = data.goals.find((g) => g.id === goalId);
+      const strategyIds = goal?.strategies.map((s) => s.id) ?? [];
       const next = {
         ...data,
         goals: data.goals.filter((g) => g.id !== goalId),
       };
-      updateData(next);
+      // Tombstone the deleted goal and all its strategies
+      const tombstones = [goalId, ...strategyIds];
+      const wsNext: WorkspaceData = {
+        ...workspace,
+        deletedIds: [...(workspace.deletedIds ?? []), ...tombstones],
+      };
+      updateWorkspace({
+        ...wsNext,
+        departments: workspace.departments.map((d) =>
+          d.id !== activeDept?.id
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                ),
+              },
+        ),
+      });
       if (selectedGoalId === goalId) {
         setSelectedGoalId(next.goals[0]?.id ?? null);
         setSelectedStrategyId(null);
       }
     },
-    [data, selectedGoalId, updateData],
+    [
+      data,
+      selectedGoalId,
+      workspace,
+      activeDept,
+      activePeriod,
+      updateWorkspace,
+    ],
   );
 
   const handleExportXlsx = async () => {
@@ -639,7 +958,53 @@ export default function App() {
             {activeDept?.name ?? ""} &middot; {data.period}
           </span>
         </div>
+        {fsSupported && (
+          <div
+            className={`sp-sync-badge sp-sync-${syncStatus}`}
+            onClick={syncStatus === "pending" ? handleReauthorize : undefined}
+            style={syncStatus === "pending" ? { cursor: "pointer" } : undefined}
+            title={
+              syncStatus === "pending" ? "點此授權讀取資料檔案" : undefined
+            }
+          >
+            {syncStatus === "saving" && (
+              <>
+                <span className="sp-spin">⟳</span> 儲存中
+              </>
+            )}
+            {syncStatus === "saved" && "✓ 已儲存"}
+            {syncStatus === "unlinked" && "◌ 未連結"}
+            {syncStatus === "pending" && "🔐 點任意處啟用同步"}
+            {syncStatus === "error" && "✕ 寫入失敗"}
+          </div>
+        )}
         <div className="header-actions">
+          {fsSupported &&
+            (fileHandleRef.current ? (
+              <>
+                <button
+                  className={isDirty ? "btn-save-dirty" : "btn-secondary"}
+                  onClick={() => fileSaveNow(workspace)}
+                  disabled={syncStatus === "saving" || !isDirty}
+                  title={
+                    isDirty ? "有未儲存的變更，點擊儲檔" : "無變更需要儲存"
+                  }
+                >
+                  {syncStatus === "saving"
+                    ? "儲存中…"
+                    : isDirty
+                      ? "💾 存檔"
+                      : "✓ 已儲存"}
+                </button>
+                <button className="btn-secondary" onClick={handleUnlinkFile}>
+                  🔗 已連結檔案
+                </button>
+              </>
+            ) : (
+              <button className="btn-secondary" onClick={handleLinkFile}>
+                📁 連結資料檔案
+              </button>
+            ))}
           <button
             className="btn-secondary"
             onClick={handleExportXlsx}
@@ -678,6 +1043,21 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {syncStatus === "error" && syncError && (
+        <div className="sp-error-banner">⚠️ {syncError}</div>
+      )}
+      {mergeToast && <div className="merge-toast">🔀 {mergeToast}</div>}
+
+      {conflictEntries.length > 0 && (
+        <ConflictModal
+          conflicts={conflictEntries}
+          resolutions={conflictResolutions}
+          onChange={handleConflictChange}
+          onConfirm={handleConflictConfirm}
+          onCancel={handleConflictCancel}
+        />
+      )}
 
       <div className="app-body">
         <Sidebar

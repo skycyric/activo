@@ -30,12 +30,9 @@ function StrategyRow({
 }) {
   // Measures-based stats: count measures and count measures considered as "達標"
   const measuresTotal = s.measures.length;
-  const measuresAchieved = s.measures.filter((m) => {
-    const vals = m.kpis.map((k) => k.achievementRate ?? 0);
-    if (vals.length === 0) return false;
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    return avg >= 100;
-  }).length;
+  const measuresAchieved = s.measures.filter(
+    (m) => m.status === "completed",
+  ).length;
   const allItems = s.actionPlans.flatMap((p) => p.items);
   const totalItems = allItems.length;
   const doneItems = allItems.filter((i) => i.completed).length;
@@ -55,7 +52,10 @@ function StrategyRow({
   const kpiCount = s.measures
     .flatMap((m) => m.kpis)
     .filter((k) => k.achievementRate !== null).length;
-  const planCount = s.actionPlans.flatMap((p) => p.items).length;
+  const sBudget = s.measures.reduce((sum, m) => sum + (m.budget ?? 0), 0);
+  const sDays = s.measures.reduce((sum, m) => sum + (m.personDays ?? 0), 0);
+  const hasBudget = s.measures.some((m) => m.budget != null);
+  const hasDays = s.measures.some((m) => m.personDays != null);
 
   return (
     <div
@@ -71,12 +71,13 @@ function StrategyRow({
           <span className="strategy-s-label">S{index + 1}</span>
           <span className="strategy-row-title">{s.title}</span>
           <div className="strategy-row-meta">
-            {s.owner && <span className="owner-chip">{s.owner}</span>}
+            {(s.owners ?? (s.owner ? [s.owner] : [])).map((name) => (
+              <span key={name} className="owner-chip">
+                {name}
+              </span>
+            ))}
             {kpiCount > 0 && (
               <span className="meta-tag">📊 {kpiCount} KPI</span>
-            )}
-            {planCount > 0 && (
-              <span className="meta-tag">📅 {planCount} 計畫</span>
             )}
             {/* Measures-based summary */}
             {measuresTotal > 0 && (
@@ -84,24 +85,14 @@ function StrategyRow({
                 ✅ {measuresAchieved}/{measuresTotal} M
               </span>
             )}
+            {hasBudget && (
+              <span className="meta-tag">💰 {sBudget.toLocaleString()}</span>
+            )}
+            {hasDays && <span className="meta-tag">🕐 {sDays} 人/天</span>}
           </div>
         </div>
       </div>
       <div className="strategy-row-right">
-        <div className="progress-bar-wrap">
-          <div className="progress-bar-bg">
-            <div
-              className="progress-bar-fill"
-              style={{
-                width: `${Math.min(effectiveRate, 100)}%`,
-                background: barColor,
-              }}
-            />
-          </div>
-          <span className="progress-bar-label" style={{ color: barColor }}>
-            {effectiveRate > 0 ? `${effectiveRate}%` : "—"}
-          </span>
-        </div>
         <button
           className="row-delete-btn"
           onClick={(e) => {
@@ -140,6 +131,7 @@ export default function StrategyList({
     aggregation: "SUM" | "AVERAGE";
   }>({ label: "", unit: "%", target: "", aggregation: "SUM" });
   const [showLinkPicker, setShowLinkPicker] = useState<string | null>(null); // goalKpiId
+  const [linkPickerSearch, setLinkPickerSearch] = useState("");
 
   if (!goal) {
     return (
@@ -258,6 +250,8 @@ export default function StrategyList({
   };
 
   const deleteKpi = (id: string) => {
+    const label = goalKpis.find((gk) => gk.id === id)?.label ?? "此指標";
+    if (!window.confirm(`確定要刪除 G 層級指標「${label}」嗎？`)) return;
     onUpdateGoal({ ...goal, goalKpis: goalKpis.filter((gk) => gk.id !== id) });
   };
 
@@ -444,14 +438,17 @@ export default function StrategyList({
                         </div>
                         <div className="g-kpi-card-right">
                           <span className="g-kpi-value">
-                            {actual !== null ? actual : "—"}
-                            {isRateMode ? "%" : ""}
-                            {target !== null && !isRateMode
-                              ? ` / ${target} ${gk.unit}`
-                              : ""}
-                            {target !== null && isRateMode && target !== 100
-                              ? ` / ${target}%`
-                              : ""}
+                            <span className="g-kpi-val-label">實際</span>
+                            {actual !== null ? actual.toLocaleString() : "—"}
+                            {isRateMode
+                              ? "%"
+                              : actual !== null
+                                ? ` ${gk.unit}`
+                                : ""}
+                            <span className="g-kpi-val-sep">/</span>
+                            <span className="g-kpi-val-label">目標</span>
+                            {target !== null ? target.toLocaleString() : "—"}
+                            {isRateMode ? "%" : ` ${gk.unit}`}
                           </span>
                           <span
                             className="g-kpi-rate"
@@ -463,9 +460,10 @@ export default function StrategyList({
                         <div className="g-kpi-card-actions">
                           <button
                             className="g-kpi-btn-link"
-                            onClick={() =>
-                              setShowLinkPicker(isLinking ? null : gk.id)
-                            }
+                            onClick={() => {
+                              setShowLinkPicker(isLinking ? null : gk.id);
+                              setLinkPickerSearch("");
+                            }}
                           >
                             🔗 連結
                           </button>
@@ -515,54 +513,77 @@ export default function StrategyList({
                         <div className="g-kpi-link-picker-title">
                           選擇要納入的 M KPI
                         </div>
-                        {strategies.map((s, si) =>
-                          s.measures.map((m) =>
-                            m.kpis.map((k) => {
-                              const link: GoalKpiLink = {
-                                strategyId: s.id,
-                                measureId: m.id,
-                                kpiId: k.id,
-                              };
-                              const linked = gk.linkedKpis.some(
-                                (l) =>
-                                  l.strategyId === s.id &&
-                                  l.measureId === m.id &&
-                                  l.kpiId === k.id,
-                              );
-                              return (
-                                <label
-                                  key={`${s.id}-${m.id}-${k.id}`}
-                                  className={`g-kpi-link-item${linked ? " linked" : ""}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={linked}
-                                    onChange={() => toggleLink(gk.id, link)}
-                                  />
-                                  <span className="g-kpi-link-s">
-                                    S{si + 1}
-                                  </span>
-                                  <span className="g-kpi-link-m">
-                                    {m.rawText.substring(0, 20) || "（無名稱）"}
-                                  </span>
-                                  <span className="g-kpi-link-k">
-                                    {k.label}
-                                  </span>
-                                  <span className="g-kpi-link-val">
-                                    {k.actual ?? "—"}/{k.target ?? "—"} {k.unit}
-                                  </span>
-                                </label>
-                              );
-                            }),
-                          ),
-                        )}
-                        {strategies.flatMap((s) =>
-                          s.measures.flatMap((m) => m.kpis),
-                        ).length === 0 && (
-                          <div className="g-kpi-link-empty">
-                            此目標下尚無 M 的 KPI 可連結
-                          </div>
-                        )}
+                        <input
+                          className="g-kpi-link-search"
+                          placeholder="搜尋策略、行動計畫或 KPI 名稱…"
+                          value={linkPickerSearch}
+                          onChange={(e) => setLinkPickerSearch(e.target.value)}
+                          autoFocus
+                        />
+                        {(() => {
+                          const q = linkPickerSearch.trim().toLowerCase();
+                          const rows = strategies
+                            .flatMap((s, si) =>
+                              s.measures.flatMap((m) =>
+                                m.kpis.map((k) => ({ s, si, m, k })),
+                              ),
+                            )
+                            .filter(
+                              ({ s, m, k }) =>
+                                !q ||
+                                s.title.toLowerCase().includes(q) ||
+                                m.rawText.toLowerCase().includes(q) ||
+                                k.label.toLowerCase().includes(q),
+                            );
+                          if (rows.length === 0)
+                            return (
+                              <div className="g-kpi-link-empty">
+                                {q
+                                  ? "無符合結果"
+                                  : "此目標下尚無 M 的 KPI 可連結"}
+                              </div>
+                            );
+                          return rows.map(({ s, si, m, k }) => {
+                            const link: GoalKpiLink = {
+                              strategyId: s.id,
+                              measureId: m.id,
+                              kpiId: k.id,
+                            };
+                            const linked = gk.linkedKpis.some(
+                              (l) =>
+                                l.strategyId === s.id &&
+                                l.measureId === m.id &&
+                                l.kpiId === k.id,
+                            );
+                            return (
+                              <label
+                                key={`${s.id}-${m.id}-${k.id}`}
+                                className={`g-kpi-link-item${linked ? " linked" : ""}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={linked}
+                                  onChange={() => toggleLink(gk.id, link)}
+                                />
+                                <span className="g-kpi-link-s">S{si + 1}</span>
+                                <span className="g-kpi-link-m">
+                                  {m.rawText.substring(0, 20) || "（無名稱）"}
+                                </span>
+                                <span className="g-kpi-link-k">{k.label}</span>
+                                <span className="g-kpi-link-val">
+                                  實
+                                  {k.actual !== null && k.actual !== undefined
+                                    ? k.actual.toLocaleString()
+                                    : "—"}
+                                  {" / 標"}
+                                  {k.target !== null && k.target !== undefined
+                                    ? k.target.toLocaleString()
+                                    : "—"}
+                                </span>
+                              </label>
+                            );
+                          });
+                        })()}
                       </div>
                     )}
                   </div>

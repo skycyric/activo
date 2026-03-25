@@ -228,6 +228,7 @@ export function parseOGSM(csvText: string): OGSMData {
       q2Text: eText,
       actionPlans: parseActionPlans(dText, eText),
       owner: fText,
+      owners: fText ? [fText] : [],
       notes: gText,
       completionRate: rate,
       manualRate: null,
@@ -270,7 +271,12 @@ export function parseOGSM(csvText: string): OGSMData {
         kpis,
       });
       ref.currentStrategy.actionPlans.push(...parseActionPlans(dT, eT));
-      if (fT) ref.currentStrategy.owner = fT;
+      if (fT) {
+        ref.currentStrategy.owner = fT;
+        ref.currentStrategy.owners = fT
+          ? [fT, ...(ref.currentStrategy.owners ?? []).filter((o) => o !== fT)]
+          : ref.currentStrategy.owners;
+      }
       if (gT) ref.currentStrategy.notes += "\n" + gT;
     }
   }

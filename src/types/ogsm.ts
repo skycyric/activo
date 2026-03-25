@@ -24,6 +24,7 @@ export interface PlanItem {
   completed: boolean;
   linkedMeasureId?: string | null;
   owner?: string;
+  notes?: string; // 備註／卡住原因
 }
 
 export interface ActionPlan {
@@ -53,11 +54,13 @@ export interface Strategy {
   q1Text: string;
   q2Text: string;
   actionPlans: ActionPlan[];
-  owner: string;
+  owner: string; // legacy single-owner (kept for backward compat)
+  owners?: string[]; // multi-owner (preferred)
   notes: string;
   completionRate: number; // 0-200, computed from KPIs
   manualRate: number | null; // user override
   status: Status;
+  updatedAt?: string; // ISO timestamp, for merge conflict resolution
 }
 
 export interface GoalKpiLink {
@@ -83,6 +86,7 @@ export interface Goal {
   strategies: Strategy[];
   completionRate: number; // average of strategies
   goalKpis?: GoalKPI[];
+  updatedAt?: string; // ISO timestamp, for merge conflict resolution
 }
 
 export interface OGSMData {
@@ -118,11 +122,14 @@ export interface Team {
   id: string;
   name: string;
   members: TeamMember[];
+  updatedAt?: string; // ISO timestamp, for merge conflict resolution
 }
 
 export interface WorkspaceData {
   departments: Department[];
   version: number;
+  savedAt?: string; // ISO timestamp written to file on each disk save
+  deletedIds?: string[]; // tombstone list: ids of deleted goals / strategies / teams
   teams?: Team[];
   _migratedClearOwners?: boolean;
 }

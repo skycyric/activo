@@ -41,9 +41,22 @@ function goalKpiRate(gk: GoalKPI, goal: Goal): number | null {
   if (gk.aggregation === "AVERAGE") {
     const rates = values
       .map((v) => v.achievementRate)
-      .filter((r): r is number => r !== null);
-    if (rates.length === 0) return null;
-    return Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
+      .filter((r): r is number => r !== null && r !== undefined);
+    if (rates.length === 0) {
+      // fallback: compute from actual/target (matches StrategyList computeGoalKpi behaviour)
+      const avgActual =
+        values.reduce((a, v) => a + v.actual, 0) / values.length;
+      const avgTarget =
+        values.reduce((a, v) => a + v.target, 0) / values.length;
+      const denom =
+        gk.target !== null && gk.target !== undefined ? gk.target : avgTarget;
+      if (denom <= 0) return null;
+      return Math.round((avgActual / denom) * 100);
+    }
+    const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+    const target =
+      gk.target !== null && gk.target !== undefined ? gk.target : 100;
+    return Math.round((avgRate / target) * 100);
   } else {
     const sumActual = values.reduce((a, v) => a + v.actual, 0);
     const denominator = gk.target ?? values.reduce((a, v) => a + v.target, 0);
@@ -102,27 +115,6 @@ function gStats(g: Goal): NodeStats {
   return { ...kpiAcc, ...planAcc };
 }
 
-type NodeColor = "green" | "yellow" | "red" | "gray";
-const COLOR_DOT: Record<NodeColor, string> = {
-  green: "#10b981",
-  yellow: "#f59e0b",
-  red: "#ef4444",
-  gray: "#4b5563",
-};
-const COLOR_LABEL: Record<NodeColor, string> = {
-  green: "KPI \u9054\u6a19",
-  yellow: "\u57f7\u884c\u4e2d\u30fb\u5f85\u89c0\u5bdf",
-  red: "\u57f7\u884c\u843d\u5f8c",
-  gray: "\u5c1a\u7121\u8cc7\u6599",
-};
-
-function nodeColor(s: NodeStats): NodeColor {
-  if (s.kpiTotal === 0 && s.planTotal === 0) return "gray";
-  if (s.kpiTotal > 0 && s.kpiDone === s.kpiTotal) return "green";
-  if (s.planTotal > 0 && s.planDone / s.planTotal >= 0.5) return "yellow";
-  return "red";
-}
-
 // G tooltip: 目標KPI (GoalKPI or M-level) + 行動計畫(Measures) + 策略數
 function gTooltip(g: Goal, gs: NodeStats): string {
   const parts: string[] = [];
@@ -161,17 +153,12 @@ export default function OverviewPage({
   const [editingO, setEditingO] = useState(false);
   const [oText, setOText] = useState("");
 
-  // O-level KPI 統計：將所有 G 的 GoalKPI 加總
-  // 若 G 沒有目標KPI看板，則匹配 M 層 KPI
-  const oKpiItems = data.goals.flatMap((g) => {
-    const gks = g.goalKpis ?? [];
-    if (gks.length > 0) {
-      return gks.map((gk) => ({ done: (goalKpiRate(gk, g) ?? 0) >= 100 }));
-    }
-    return g.strategies
-      .flatMap((s) => s.measures.flatMap((m) => m.kpis))
-      .map((k) => ({ done: (k.achievementRate ?? 0) >= 100 }));
-  });
+  // O-level KPI 統計：只統計每個 G 的 GoalKPI 看板
+  const oKpiItems = data.goals.flatMap((g) =>
+    (g.goalKpis ?? []).map((gk) => ({
+      done: (goalKpiRate(gk, g) ?? 0) >= 100,
+    })),
+  );
   const oKpiTotal = oKpiItems.length;
   const oKpiDone = oKpiItems.filter((k) => k.done).length;
 
@@ -180,10 +167,7 @@ export default function OverviewPage({
     g.strategies.flatMap((s) => s.measures),
   );
   const oPlanTotal = allMeasures.length;
-  const oPlanDone = allMeasures.filter(
-    (m) =>
-      m.kpis.length > 0 && m.kpis.every((k) => (k.achievementRate ?? 0) >= 100),
-  ).length;
+  const oPlanDone = allMeasures.filter((m) => m.status === "completed").length;
 
   const sTotal = data.goals.flatMap((g) => g.strategies).length;
 
@@ -234,14 +218,6 @@ export default function OverviewPage({
           </div>
         </div>
         <div className="ov-stat-items">
-          <div className="ov-stat-item">
-            <span className="ov-stat-num">{data.goals.length}</span>
-            <span className="ov-stat-desc">{"\u76ee\u6a19\uff08G\uff09"}</span>
-          </div>
-          <div className="ov-stat-item">
-            <span className="ov-stat-num">{sTotal}</span>
-            <span className="ov-stat-desc">{"\u7b56\u7565\uff08S\uff09"}</span>
-          </div>
           <div className="ov-stat-item">
             <span
               className="ov-stat-num"
@@ -309,7 +285,6 @@ export default function OverviewPage({
               <ul className="org-children">
                 {data.goals.map((g: Goal, gi: number) => {
                   const gs = gStats(g);
-                  const gc = nodeColor(gs);
                   return (
                     <li key={g.id}>
                       {/* G node */}
@@ -324,11 +299,6 @@ export default function OverviewPage({
                         }
                       >
                         <span className="org-badge org-badge-g">{`G${gi + 1}`}</span>
-                        <span
-                          className="org-dot"
-                          style={{ background: COLOR_DOT[gc] }}
-                          title={COLOR_LABEL[gc]}
-                        />
                         <span className="org-title">
                           {g.title || <em>(\u672a\u547d\u540d)</em>}
                         </span>
@@ -338,7 +308,6 @@ export default function OverviewPage({
                         <ul className="org-children">
                           {g.strategies.map((s: Strategy, si: number) => {
                             const ss = sStats(s);
-                            const sc = nodeColor(ss);
                             return (
                               <li key={s.id}>
                                 {/* S node */}
@@ -354,11 +323,6 @@ export default function OverviewPage({
                                   }
                                 >
                                   <span className="org-badge org-badge-s">{`S${si + 1}`}</span>
-                                  <span
-                                    className="org-dot"
-                                    style={{ background: COLOR_DOT[sc] }}
-                                    title={COLOR_LABEL[sc]}
-                                  />
                                   <span className="org-title">
                                     {s.title || <em>(\u672a\u547d\u540d)</em>}
                                   </span>
@@ -374,19 +338,6 @@ export default function OverviewPage({
               </ul>
             </li>
           </ul>
-
-          {/* Legend */}
-          <div className="ov-legend" style={{ marginTop: 24 }}>
-            {(["green", "yellow", "red", "gray"] as NodeColor[]).map((c) => (
-              <span key={c} className="ov-legend-item">
-                <span
-                  className="org-dot"
-                  style={{ background: COLOR_DOT[c] }}
-                />
-                {COLOR_LABEL[c]}
-              </span>
-            ))}
-          </div>
         </div>
       )}
     </div>

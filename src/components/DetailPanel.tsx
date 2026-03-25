@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type {
   Strategy,
   ActionPlan,
@@ -66,6 +66,7 @@ function InlineEdit({
         autoFocus
         rows={4}
         onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
         onBlur={commit}
       />
     );
@@ -76,6 +77,7 @@ function InlineEdit({
       value={draft}
       autoFocus
       onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.target.select()}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
@@ -524,6 +526,21 @@ export default function DetailPanel({
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
+  const [ownerDropOpen, setOwnerDropOpen] = useState(false);
+  const ownerDropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ownerDropOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        ownerDropRef.current &&
+        !ownerDropRef.current.contains(e.target as Node)
+      )
+        setOwnerDropOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [ownerDropOpen]);
 
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = localStorage.getItem("ogsm_panel_width");
@@ -584,6 +601,11 @@ export default function DetailPanel({
     });
   };
   const deleteKPI = (msrId: string, kpiId: string) => {
+    const kpiLabel =
+      strategy.measures
+        .find((m) => m.id === msrId)
+        ?.kpis.find((k) => k.id === kpiId)?.label ?? "此 KPI";
+    if (!window.confirm(`確定要刪除「${kpiLabel}」嗎？`)) return;
     onUpdate({
       ...strategy,
       measures: strategy.measures.map((m) =>
@@ -605,6 +627,7 @@ export default function DetailPanel({
   );
 
   // Drag & drop for measures (move or copy)
+  const dragMsrId = useRef<string | null>(null);
   const onMeasureDragStart = (e: React.DragEvent, msrId: string) => {
     const copy = e.ctrlKey || e.metaKey; // Ctrl/Cmd to copy
     e.dataTransfer.setData(
@@ -612,6 +635,10 @@ export default function DetailPanel({
       `${msrId}|${copy ? "copy" : "move"}`,
     );
     e.dataTransfer.effectAllowed = copy ? "copy" : "move";
+    dragMsrId.current = msrId;
+  };
+  const onMeasureDragEnd = () => {
+    dragMsrId.current = null;
   };
   const onMeasureDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -685,12 +712,21 @@ export default function DetailPanel({
   };
 
   // Measure helpers (活動/項目)
+  // Owner helpers
+  const ownersList =
+    strategy.owners ?? (strategy.owner ? [strategy.owner] : []);
+  const setOwners = (names: string[]) =>
+    onUpdate({ ...strategy, owners: names, owner: names[0] ?? "" });
+  const removeOwner = (name: string) =>
+    setOwners(ownersList.filter((n) => n !== name));
+
   const addMeasure = (quarter?: string) => {
     const nm: Measure = {
       id: genId("msr"),
       rawText: "新活動",
       kpis: [],
       quarter: quarter ?? selectedQuarter,
+      status: "not-started",
     };
     onUpdate({ ...strategy, measures: [...strategy.measures, nm] });
   };
@@ -873,22 +909,57 @@ export default function DetailPanel({
 
         <div className="detail-meta">
           {teams.length > 0 ? (
-            <select
-              className="owner-select"
-              value={strategy.owner}
-              onChange={(e) => onUpdate({ ...strategy, owner: e.target.value })}
-            >
-              <option value="">選擇負責單位</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name}
-                </option>
+            <div className="owners-editor" ref={ownerDropRef}>
+              {ownersList.map((name) => (
+                <span key={name} className="owner-chip">
+                  {name}
+                  <button
+                    className="owner-chip-remove"
+                    onClick={() => removeOwner(name)}
+                    title="移除"
+                  >
+                    ×
+                  </button>
+                </span>
               ))}
-            </select>
+              {teams.filter((t) => !ownersList.includes(t.name)).length > 0 && (
+                <div className="owner-add-wrap">
+                  <button
+                    className="owner-add-btn"
+                    onClick={() => setOwnerDropOpen((v) => !v)}
+                  >
+                    ＋ 負責單位
+                  </button>
+                  {ownerDropOpen && (
+                    <div className="owner-dropdown">
+                      {teams
+                        .filter((t) => !ownersList.includes(t.name))
+                        .map((t) => (
+                          <button
+                            key={t.id}
+                            className="owner-dropdown-item"
+                            onClick={() => {
+                              setOwners([...ownersList, t.name]);
+                              setOwnerDropOpen(false);
+                            }}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {ownersList.length === 0 && (
+                <span className="owner-placeholder">選擇負責單位…</span>
+              )}
+            </div>
           ) : (
             <InlineEdit
               value={strategy.owner}
-              onSave={(v) => onUpdate({ ...strategy, owner: v })}
+              onSave={(v) =>
+                onUpdate({ ...strategy, owner: v, owners: v ? [v] : [] })
+              }
               className="owner-chip owner-edit"
               placeholder="負責單位"
             />
@@ -1087,8 +1158,6 @@ export default function DetailPanel({
                     <div
                       key={m.id}
                       className="measure-block"
-                      draggable
-                      onDragStart={(e) => onMeasureDragStart(e, m.id)}
                       style={{ marginBottom: 12 }}
                     >
                       <div
@@ -1106,6 +1175,9 @@ export default function DetailPanel({
                           <span
                             className="measure-drag-handle"
                             title="拖曳移動到其他季度（按住 Ctrl 為複製）"
+                            draggable
+                            onDragStart={(e) => onMeasureDragStart(e, m.id)}
+                            onDragEnd={onMeasureDragEnd}
                           >
                             ⠿
                           </span>
@@ -1245,7 +1317,7 @@ export default function DetailPanel({
                         </div>
                       </div>
                       {!collapsed && (
-                        <div style={{ padding: "8px 6px" }}>
+                        <div className="kpi-list-wrap">
                           <div className="kpi-list">
                             {m.kpis.map((k) => {
                               const linkedItems = strategy.actionPlans
@@ -1274,6 +1346,11 @@ export default function DetailPanel({
                               );
                             })}
                           </div>
+                          {m.kpis.length === 0 && (
+                            <p className="kpi-list-empty">
+                              尚未新增 KPI，點擊「新增 KPI」開始記錄。
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1556,10 +1633,36 @@ export default function DetailPanel({
                                       });
                                     }}
                                   />
+                                  <input
+                                    className="plan-notes-input"
+                                    value={item.notes ?? ""}
+                                    placeholder="備註"
+                                    onChange={(e) => {
+                                      const newActionPlans =
+                                        strategy.actionPlans.map((p) => ({
+                                          ...p,
+                                          items: p.items.map((it) =>
+                                            it.id === item.id
+                                              ? { ...it, notes: e.target.value }
+                                              : it,
+                                          ),
+                                        }));
+                                      onUpdate({
+                                        ...strategy,
+                                        actionPlans: newActionPlans,
+                                      });
+                                    }}
+                                  />
 
                                   <button
                                     className="plan-item-del"
                                     onClick={() => {
+                                      if (
+                                        !window.confirm(
+                                          `\u78ba\u5b9a\u8981\u522a\u9664\u300c${item.description || "\u6b64\u9805\u76ee"}\u300d\u55ce\uff1f`,
+                                        )
+                                      )
+                                        return;
                                       const newActionPlans =
                                         strategy.actionPlans.map((p) => ({
                                           ...p,
@@ -1759,9 +1862,35 @@ export default function DetailPanel({
                                   });
                                 }}
                               />
+                              <input
+                                className="plan-notes-input"
+                                value={item.notes ?? ""}
+                                placeholder="備註"
+                                onChange={(e) => {
+                                  const newActionPlans =
+                                    strategy.actionPlans.map((p) => ({
+                                      ...p,
+                                      items: p.items.map((it) =>
+                                        it.id === item.id
+                                          ? { ...it, notes: e.target.value }
+                                          : it,
+                                      ),
+                                    }));
+                                  onUpdate({
+                                    ...strategy,
+                                    actionPlans: newActionPlans,
+                                  });
+                                }}
+                              />
                               <button
                                 className="plan-item-del"
                                 onClick={() => {
+                                  if (
+                                    !window.confirm(
+                                      `\u78ba\u5b9a\u8981\u522a\u9664\u300c${item.description || "\u6b64\u9805\u76ee"}\u300d\u55ce\uff1f`,
+                                    )
+                                  )
+                                    return;
                                   const newActionPlans =
                                     strategy.actionPlans.map((p) => ({
                                       ...p,
