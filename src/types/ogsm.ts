@@ -41,6 +41,8 @@ export interface Measure {
   owner?: string;
   updatedAt?: string;
   status?: string;
+  budget?: number;
+  personDays?: number;
 }
 
 export interface Strategy {
@@ -58,6 +60,21 @@ export interface Strategy {
   status: Status;
 }
 
+export interface GoalKpiLink {
+  strategyId: string;
+  measureId: string;
+  kpiId: string;
+}
+
+export interface GoalKPI {
+  id: string;
+  label: string; // 指標名稱，如「整體綁定率」
+  unit: string; // 單位，如「%」、「人」
+  target: number | null; // G 層級自訂目標值（選填）
+  aggregation: "SUM" | "AVERAGE";
+  linkedKpis: GoalKpiLink[];
+}
+
 export interface Goal {
   id: string;
   label: string; // G1, G2, G3
@@ -65,6 +82,7 @@ export interface Goal {
   fullText: string;
   strategies: Strategy[];
   completionRate: number; // average of strategies
+  goalKpis?: GoalKPI[];
 }
 
 export interface OGSMData {

@@ -8,7 +8,7 @@ import type {
   Team,
   TeamMember,
 } from "../types/ogsm";
-import { genId, computeStatus } from "../utils/csvParser";
+import { genId } from "../utils/csvParser";
 
 interface Props {
   strategy: Strategy;
@@ -102,7 +102,8 @@ function KpiCard({
   linkedTotal?: number;
   linkedDone?: number;
 }) {
-  const rawRate = displayRate ?? kpi.achievementRate;
+  const hasActual = kpi.actual !== null && kpi.actual !== undefined;
+  const rawRate = displayRate ?? (hasActual ? kpi.achievementRate : null);
   const rate = rawRate ?? 0;
   const rateIsNull = rawRate === null || rawRate === undefined;
   const size = 72;
@@ -178,7 +179,7 @@ function KpiCard({
                 cursor: "default",
               }}
             >
-              {kpi.achievementRate != null
+              {hasActual && kpi.achievementRate != null
                 ? Math.round(kpi.achievementRate)
                 : "—"}
             </span>
@@ -221,7 +222,6 @@ function KpiCard({
                 let rate: number | null = null;
                 if (actual !== null && kpi.target !== null && kpi.target > 0)
                   rate = (actual / kpi.target) * 100;
-                else if (actual !== null) rate = 0;
                 onUpdate({ ...kpi, actual, achievementRate: rate });
               }}
             />
@@ -895,7 +895,7 @@ export default function DetailPanel({
           )}
         </div>
 
-        {/* 進度 + 成效 雙指標 */}
+        {/* 進度指標 */}
         <div className="detail-dual-rate">
           <div className="dual-rate-item">
             <span className="dual-rate-num" style={{ color: progressColor }}>
@@ -906,70 +906,6 @@ export default function DetailPanel({
               <span className="dual-rate-sub">
                 {doneItems}/{totalItems} 項
               </span>
-            </div>
-          </div>
-          <div className="dual-rate-divider" />
-          <div className="dual-rate-item" style={{ flex: "1.5 1 0" }}>
-            <span className="dual-rate-num" style={{ color: effectColor }}>
-              {effectiveRate > 0 ? `${Math.round(effectiveRate)}%` : "—"}
-            </span>
-            <div className="dual-rate-meta">
-              <span className="dual-rate-badge effect-badge">🎯 成效</span>
-              <span className="dual-rate-sub">
-                {strategy.manualRate !== null ? "手動設定" : "KPI 均值"}
-              </span>
-            </div>
-            <div className="detail-rate-input-wrap">
-              <input
-                className="rate-input"
-                type="number"
-                min={0}
-                max={200}
-                placeholder="覆寫成效 %…"
-                defaultValue={strategy.manualRate ?? ""}
-                onBlur={(e) => {
-                  const v = parseFloat(e.target.value);
-                  onUpdate({
-                    ...strategy,
-                    manualRate: isNaN(v) ? null : v,
-                    status: isNaN(v) ? strategy.status : computeStatus(v),
-                  });
-                }}
-              />
-              {strategy.manualRate !== null && (
-                <button
-                  className="rate-reset"
-                  onClick={() => onUpdate({ ...strategy, manualRate: null })}
-                >
-                  重置
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="dual-rate-bars">
-          <div className="dual-bar-row">
-            <span className="dual-bar-label">進度</span>
-            <div className="detail-progress-bar-bg" style={{ flex: 1 }}>
-              <div
-                className="detail-progress-bar-fill"
-                style={{
-                  width: `${Math.min(progressRate, 100)}%`,
-                  background: progressColor,
-                }}
-              />
-            </div>
-          </div>
-          <div className="dual-bar-row">
-            <span className="dual-bar-label">成效</span>
-            <div className="detail-progress-bar-bg" style={{ flex: 1 }}>
-              <div
-                className="detail-progress-bar-fill"
-                style={{
-                  width: `${Math.min(effectiveRate, 100)}%`,
-                  background: effectColor,
-                }}
-              />
             </div>
           </div>
         </div>
@@ -1349,35 +1285,6 @@ export default function DetailPanel({
                 + 新增活動（於所選季度）
               </button>
             </div>
-
-            {/* 進度 */}
-            <div className="msec-header" style={{ marginTop: 20 }}>
-              <span className="msec-badge msec-progress">進度</span>
-              <span className="msec-desc">行動計畫勾選自動計算</span>
-              <span className="msec-rate" style={{ color: progressColor }}>
-                {totalItems > 0 ? `${progressRate}%` : "—"}
-              </span>
-            </div>
-            {totalItems > 0 ? (
-              <div className="msec-progress-body">
-                <div className="detail-progress-bar-bg">
-                  <div
-                    className="detail-progress-bar-fill"
-                    style={{
-                      width: `${Math.min(progressRate, 100)}%`,
-                      background: progressColor,
-                    }}
-                  />
-                </div>
-                <span className="msec-progress-stat">
-                  {doneItems} / {totalItems} 項已完成
-                </span>
-              </div>
-            ) : (
-              <div className="plan-empty" style={{ paddingLeft: 0 }}>
-                尚未建立行動計畫項目
-              </div>
-            )}
           </div>
         )}
 

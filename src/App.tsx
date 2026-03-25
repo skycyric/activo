@@ -7,7 +7,6 @@ import type {
   Department,
   PeriodData,
   Team,
-  TeamMember,
 } from "./types/ogsm";
 import { parseOGSM, avgRate, genId, computeStatus } from "./utils/csvParser";
 import {
@@ -15,15 +14,16 @@ import {
   loadWorkspace,
   loadLegacyData,
   wrapOGSMInWorkspace,
-  exportJSON,
   exportWorkspaceJSON,
   importJSON,
   readFileAsText,
 } from "./utils/storage";
+import { exportWorkspaceXlsx } from "./utils/exportXlsx";
 import Sidebar from "./components/Sidebar";
 import StrategyList from "./components/StrategyList";
 import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
+import DeptSettingsPage from "./components/DeptSettingsPage";
 import csvRaw from "../\u71df\u4f01\u672c\u90e8OGSM - \u90e8\u9580\u770b\u677f\u8868\u683c.xlsx - 2026\u5546\u767c H1.csv?raw";
 
 function recompute(data: OGSMData): OGSMData {
@@ -85,7 +85,8 @@ export default function App() {
   );
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
-  const [showTeamSettings, setShowTeamSettings] = useState(false);
+  const [exportingXlsx, setExportingXlsx] = useState(false);
+  const [showDeptSettings, setShowDeptSettings] = useState(false);
 
   const teams: Team[] = workspace.teams ?? [];
   const allMembers = teams.flatMap((t) => t.members);
@@ -532,6 +533,17 @@ export default function App() {
     [data, selectedGoalId, updateData],
   );
 
+  const handleExportXlsx = async () => {
+    setExportingXlsx(true);
+    try {
+      await exportWorkspaceXlsx(workspace);
+    } catch (err) {
+      alert("匯出失敗：" + String(err));
+    } finally {
+      setExportingXlsx(false);
+    }
+  };
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -627,43 +639,26 @@ export default function App() {
             {activeDept?.name ?? ""} &middot; {data.period}
           </span>
         </div>
-        <div className="header-overall">
-          <span className="header-overall-label">
-            {"\u6574\u9ad4\u5b8c\u6210\u7387"}
-          </span>
-          <span
-            className="header-overall-rate"
-            style={{
-              color:
-                data.overallRate >= 70
-                  ? "#10b981"
-                  : data.overallRate >= 40
-                    ? "#f59e0b"
-                    : "#ef4444",
-            }}
-          >
-            {data.overallRate > 0 ? `${data.overallRate}%` : "\u2014"}
-          </span>
-          <div className="header-overall-bar">
-            <div
-              style={{
-                height: "100%",
-                width: `${Math.min(data.overallRate, 100)}%`,
-                background: "linear-gradient(90deg,#6366f1,#8b5cf6)",
-                borderRadius: 4,
-                transition: "width 0.6s ease",
-              }}
-            />
-          </div>
-        </div>
         <div className="header-actions">
+          <button
+            className="btn-secondary"
+            onClick={handleExportXlsx}
+            disabled={exportingXlsx}
+            style={{ cursor: exportingXlsx ? "wait" : "pointer" }}
+          >
+            {exportingXlsx ? "匯出中…" : "📊 匯出報告"}
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => exportWorkspaceJSON(workspace)}
+          >
+            💾 備份
+          </button>
           <label
             className="btn-secondary"
             style={{ cursor: importing ? "wait" : "pointer" }}
           >
-            {importing
-              ? "\u532f\u5165\u4e2d\u2026"
-              : "\uD83D\uDCE5 \u532f\u5165 CSV/JSON"}
+            {importing ? "匯入中…" : "📂 還原/匯入"}
             <input
               type="file"
               accept=".csv,.json"
@@ -671,20 +666,15 @@ export default function App() {
               onChange={handleImport}
             />
           </label>
-          <button className="btn-secondary" onClick={() => exportJSON(data)}>
-            {"\uD83D\uDCE4 \u532f\u51fa\u6b64\u671f\u9593"}
-          </button>
           <button
-            className="btn-secondary"
-            onClick={() => exportWorkspaceJSON(workspace)}
+            className={`btn-secondary${showDeptSettings ? " active" : ""}`}
+            onClick={() => {
+              setShowDeptSettings((v) => !v);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
           >
-            {"\uD83D\uDCE6 \u532f\u51fa\u5168\u90e8"}
-          </button>
-          <button
-            className="btn-secondary"
-            onClick={() => setShowTeamSettings(true)}
-          >
-            ⚙ 團隊設定
+            ⚙️ 部門設定
           </button>
         </div>
       </header>
@@ -707,21 +697,35 @@ export default function App() {
           onSelectGoal={(id) => {
             setSelectedGoalId(id);
             setSelectedStrategyId(null);
+            setShowDeptSettings(false);
           }}
           onSelectStrategy={setSelectedStrategyId}
           onSelectOverview={() => {
             setSelectedGoalId(null);
             setSelectedStrategyId(null);
+            setShowDeptSettings(false);
           }}
           onAddGoal={handleAddGoal}
           onDeleteGoal={handleDeleteGoal}
         />
-        {selectedGoalId === null ? (
+        {showDeptSettings ? (
+          <DeptSettingsPage
+            key={activePeriod?.id}
+            data={data}
+            teams={teams}
+            onUpdateTeams={handleUpdateTeams}
+            onUpdateData={updateData}
+          />
+        ) : selectedGoalId === null ? (
           <OverviewPage
             data={data}
             onSelectGoal={(id) => {
               setSelectedGoalId(id);
               setSelectedStrategyId(null);
+            }}
+            onSelectStrategy={(goalId, strategyId) => {
+              setSelectedGoalId(goalId);
+              setSelectedStrategyId(strategyId);
             }}
             onEditObjective={handleEditObjective}
           />
@@ -753,179 +757,6 @@ export default function App() {
             )}
           </>
         )}
-      </div>
-
-      {/* Team Settings Modal */}
-      {showTeamSettings && (
-        <TeamSettingsModal
-          teams={teams}
-          onSave={handleUpdateTeams}
-          onClose={() => setShowTeamSettings(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// ─── Team Settings Modal ────────────────────────────────────────────────
-function TeamSettingsModal({
-  teams,
-  onSave,
-  onClose,
-}: {
-  teams: Team[];
-  onSave: (teams: Team[]) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<Team[]>(() =>
-    JSON.parse(JSON.stringify(teams)),
-  );
-
-  const addTeam = () => {
-    setDraft([...draft, { id: genId("team"), name: "", members: [] }]);
-  };
-
-  const updateTeamName = (teamId: string, name: string) => {
-    setDraft(draft.map((t) => (t.id === teamId ? { ...t, name } : t)));
-  };
-
-  const deleteTeam = (teamId: string) => {
-    setDraft(draft.filter((t) => t.id !== teamId));
-  };
-
-  const addMember = (teamId: string) => {
-    setDraft(
-      draft.map((t) =>
-        t.id !== teamId
-          ? t
-          : {
-              ...t,
-              members: [
-                ...t.members,
-                { id: genId("mbr"), name: "" } as TeamMember,
-              ],
-            },
-      ),
-    );
-  };
-
-  const updateMemberName = (teamId: string, memberId: string, name: string) => {
-    setDraft(
-      draft.map((t) =>
-        t.id !== teamId
-          ? t
-          : {
-              ...t,
-              members: t.members.map((m) =>
-                m.id === memberId ? { ...m, name } : m,
-              ),
-            },
-      ),
-    );
-  };
-
-  const deleteMember = (teamId: string, memberId: string) => {
-    setDraft(
-      draft.map((t) =>
-        t.id !== teamId
-          ? t
-          : { ...t, members: t.members.filter((m) => m.id !== memberId) },
-      ),
-    );
-  };
-
-  const handleSave = () => {
-    // trim empty names
-    const cleaned = draft
-      .map((t) => ({
-        ...t,
-        name: t.name.trim(),
-        members: t.members.filter((m) => m.name.trim()),
-      }))
-      .filter((t) => t.name);
-    onSave(cleaned);
-    onClose();
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content team-settings-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2>⚙ 團隊設定</h2>
-          <button className="detail-close" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 12 }}>
-          設定團隊（負責單位）與成員，用於策略負責單位與 M
-          項目主責者的下拉選單。
-        </p>
-        <div className="team-list">
-          {draft.map((team) => (
-            <div key={team.id} className="team-card">
-              <div className="team-card-header">
-                <input
-                  className="team-name-input"
-                  value={team.name}
-                  onChange={(e) => updateTeamName(team.id, e.target.value)}
-                  placeholder="團隊名稱（如：George team）"
-                />
-                <button
-                  className="plan-del-btn"
-                  onClick={() => deleteTeam(team.id)}
-                  title="刪除團隊"
-                  style={{ color: "var(--text3)" }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="team-members">
-                {team.members.map((m) => (
-                  <div key={m.id} className="team-member-row">
-                    <span style={{ fontSize: 13, color: "var(--text3)" }}>
-                      👤
-                    </span>
-                    <input
-                      className="team-member-input"
-                      value={m.name}
-                      onChange={(e) =>
-                        updateMemberName(team.id, m.id, e.target.value)
-                      }
-                      placeholder="成員名稱"
-                    />
-                    <button
-                      className="plan-item-del"
-                      onClick={() => deleteMember(team.id, m.id)}
-                      style={{ color: "var(--text3)" }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                <button
-                  className="plan-add-item"
-                  onClick={() => addMember(team.id)}
-                >
-                  + 新增成員
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <button className="detail-add-btn" onClick={addTeam}>
-          + 新增團隊
-        </button>
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn-add" onClick={handleSave}>
-            儲存
-          </button>
-        </div>
       </div>
     </div>
   );
