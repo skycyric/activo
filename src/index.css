@@ -244,6 +244,11 @@ html, body, #root { height: 100%; font-family: 'Inter', 'Noto Sans TC', sans-ser
 
 /* ?????? Strategy List ?????????????????????????????????????????????????????????????????????? */
 .strategy-list { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+/* draggable splitter between G header area and S cards */
+.list-vsplitter { height: 10px; flex-shrink: 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; background: #f1f5f9; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); transition: background .15s; }
+.list-vsplitter:hover { background: #ede9fe; }
+.list-vsplitter::after { content: ''; display: block; width: 40px; height: 3px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--text3) 0 2px, transparent 2px 6px); transition: background-image .15s; }
+.list-vsplitter:hover::after { background: repeating-linear-gradient(90deg, var(--accent) 0 2px, transparent 2px 6px); }
 
 .goal-header { padding: 20px 24px 0; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .goal-header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
@@ -1052,37 +1057,61 @@ html, body, #root { height: 100%; font-family: 'Inter', 'Noto Sans TC', sans-ser
 .app-header { border-bottom: 2px solid var(--border); z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
 
 /* ?????? Monthly Calendar Grid ???????????????????????????????????????????????????????????????????????????????????????????????????? */
+.plan-legend { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 4px 4px; }
+.plan-legend-chip { display: flex; align-items: center; gap: 5px; padding: 3px 10px 3px 6px; border-radius: 100px; border: 1.5px solid #e5e7eb; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text3); background: #f9fafb; user-select: none; transition: border-color .15s, background .15s; }
+.plan-legend-chip.on { border-color: #a5b4fc; background: #f5f3ff; color: var(--text2); }
+.plan-legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; transition: background .15s; }
+.plan-legend-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-cal-grid-wrap { display: flex; flex-direction: column; gap: 16px; }
 .cal-month-block { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .cal-month-title { font-size: 15px; font-weight: 800; color: var(--accent); margin-bottom: 8px; }
-.cal-week-header { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
-.cal-weekday { font-size: 12px; font-weight: 700; color: var(--text3); text-align: center; padding: 3px 0; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-.cal-cell { min-height: 48px; border-radius: 5px; padding: 3px 4px; font-size: 12px; border: 1px solid transparent; }
-.cal-cell-empty { background: none; border-color: transparent; }
-.cal-cell:not(.cal-cell-empty) { background: #f8f9fc; border-color: var(--border); }
-.cal-cell-active { background: #eff6ff !important; border-color: #bfdbfe !important; }
-.cal-day-num { display: block; font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 2px; line-height: 1.2; }
-.cal-event { display: flex; align-items: flex-start; gap: 3px; padding: 1px 0; }
-.cal-event.done .cal-event-text { text-decoration: line-through; color: var(--text3); }
-.cal-event-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 3px; }
-.cal-event.done .cal-event-dot { background: var(--green); }
-.cal-event-text { font-size: 11px; color: var(--text2); line-height: 1.3; word-break: break-all; }
+.cal-week-header { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 0; }
+.cal-weekday { font-size: 12px; font-weight: 700; color: var(--text3); text-align: center; padding: 4px 0; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; }
+/* cells: no padding — event bars span full cell width for seamless continuity */
+.cal-cell { min-height: 58px; font-size: 12px; border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
+.cal-cell:nth-child(7n) { border-right: none; }
+.cal-cell-empty { background: #fafafa; }
+.cal-cell:not(.cal-cell-empty) { background: #f8f9fc; }
+.cal-cell-active { background: #eff6ff !important; }
+.cal-day-num { display: block; font-size: 13px; font-weight: 700; color: var(--text2); line-height: 1.2; padding: 3px 4px 2px; }
+/* ── event bar: continuous colored bar, text only on first day ── */
+.cal-event-bar { height: 16px; margin: 1px 0; display: flex; align-items: center; overflow: hidden; cursor: default; }
+/* single-date items (not range): small rounded pill with label */
+.cal-event-bar:not(.range) { background: #e0e7ff; border-radius: 8px; margin: 1px 3px; }
+.cal-event-bar:not(.range).done { background: #d1fae5; }
+/* range items — color set via inline style */
+.cal-event-bar.range { }
+.cal-event-bar.range.bar-start { margin-left: 3px; border-radius: 8px 0 0 8px; }
+.cal-event-bar.range.bar-mid { border-radius: 0; }
+.cal-event-bar.range.bar-end { margin-right: 3px; border-radius: 0 8px 8px 0; }
+.cal-event-bar.range.bar-single { margin: 1px 3px; border-radius: 8px; }
+.cal-event-label { font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 5px; flex: 1; line-height: 16px; }
 
 /* ?????? Weekly Gantt Chart ???????????????????????????????????????????????????????????????????????????????????????????????????????????? */
-.plan-gantt-weekly { }
-.gantt-weekly-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: #f8f9fc; }
+.plan-gantt-weekly { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.gantt-weekly-scroll { overflow: auto; max-height: 500px; background: #f8f9fc; }
+.gantt-scroll-inner { }
 .gantt-weekly-table { border-collapse: collapse; white-space: nowrap; font-size: 13px; }
-.gantt-head-label { padding: 8px 10px; font-size: 13px; font-weight: 700; color: var(--text2); background: #f1f5f9; border-bottom: 2px solid var(--border); border-right: 1px solid var(--border); position: sticky; left: 0; z-index: 2; min-width: 160px; max-width: 160px; }
+/* sticky header rows: month row at top:0, week row just below it */
+.gantt-weekly-table thead tr:first-child th { position: sticky; top: 0; z-index: 3; }
+.gantt-weekly-table thead tr:last-child th { position: sticky; top: 26px; z-index: 3; }
+/* corner cell spans both header rows — must stick both left and top */
+.gantt-head-label { padding: 8px 10px; font-size: 13px; font-weight: 700; color: var(--text2); background: #f1f5f9; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); position: sticky; left: 0; top: 0; z-index: 4; min-width: 200px; max-width: 200px; vertical-align: middle; }
+.gantt-head-month { padding: 5px 4px; font-size: 12px; font-weight: 700; color: var(--accent); background: #eef2ff; border-bottom: 1px solid #c7d2fe; border-left: 1px solid #c7d2fe; text-align: center; }
 .gantt-head-week { padding: 6px 4px; font-size: 12px; font-weight: 700; color: var(--text3); background: #f1f5f9; border-bottom: 2px solid var(--border); border-left: 1px solid #e5e7eb; text-align: center; width: 52px; min-width: 52px; }
-.gantt-item-label { padding: 5px 10px; background: var(--surface); border-bottom: 1px solid #f0f0f0; border-right: 1px solid var(--border); position: sticky; left: 0; z-index: 1; min-width: 160px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--text2); }
+.gantt-group-row td { padding: 4px 10px; font-size: 12px; font-weight: 700; color: var(--accent); background: #f0f4ff; border-bottom: 1px solid #c7d2fe; border-top: 1px solid #c7d2fe; letter-spacing: .03em; }
+.gantt-item-label { padding: 5px 10px; background: var(--surface); border-bottom: 1px solid #f0f0f0; border-right: 1px solid var(--border); position: sticky; left: 0; z-index: 1; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+.gantt-plan-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.gantt-plan-progress { margin-left: auto; font-size: 11px; color: var(--text3); flex-shrink: 0; }
 .gantt-item-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); flex-shrink: 0; display: inline-block; margin-right: 5px; vertical-align: middle; }
 .gantt-item-dot.done { background: var(--green); }
-.gantt-week-cell { width: 52px; min-width: 52px; height: 30px; border-bottom: 1px solid #f0f0f0; border-left: 1px solid #eee; text-align: center; vertical-align: middle; }
-.gantt-week-cell.active { background: #dbeafe; }
-.gantt-week-cell.done { background: #d1fae5; }
-.gantt-week-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
-.gantt-week-cell.done .gantt-week-dot { background: var(--green); }
+.gantt-week-cell { width: 52px; min-width: 52px; height: 30px; border-bottom: 1px solid #f0f0f0; border-left: 1px solid #eee; text-align: center; vertical-align: middle; position: relative; }
+/* continuous bar drawn via ::before; color from --bar-color CSS variable */
+.gantt-week-cell.active::before { content: ''; position: absolute; top: 50%; transform: translateY(-50%); left: 0; right: 0; height: 18px; background: var(--bar-color, #bfdbfe); z-index: 0; }
+.gantt-week-cell.bar-start::before { left: 6px; border-radius: 9px 0 0 9px; }
+.gantt-week-cell.bar-end::before { right: 6px; border-radius: 0 9px 9px 0; }
+.gantt-week-cell.bar-single::before { left: 6px; right: 6px; border-radius: 9px; }
 
 /* ?????? Detail Panel Dual Rate Header ?????????????????????????????????????????????????????????????????????????????????????? */
 .detail-dual-rate { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0 6px; }

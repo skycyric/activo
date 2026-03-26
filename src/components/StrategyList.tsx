@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Goal, GoalKPI, GoalKpiLink, Strategy, Team } from "../types/ogsm";
 import { genId } from "../utils/csvParser";
 
@@ -132,6 +132,24 @@ export default function StrategyList({
   }>({ label: "", unit: "%", target: "", aggregation: "SUM" });
   const [showLinkPicker, setShowLinkPicker] = useState<string | null>(null); // goalKpiId
   const [linkPickerSearch, setLinkPickerSearch] = useState("");
+  const [topH, setTopH] = useState(260);
+  const dragState = useRef<{ startY: number; startH: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragState.current) return;
+      const delta = e.clientY - dragState.current.startY;
+      setTopH(Math.max(80, Math.min(700, dragState.current.startH + delta)));
+    };
+    const onUp = () => {
+      dragState.current = null;
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   if (!goal) {
     return (
@@ -283,7 +301,10 @@ export default function StrategyList({
   };
   return (
     <div className="strategy-list">
-      <div className="goal-header">
+      <div
+        className="goal-header"
+        style={{ height: topH, overflowY: "auto", flexShrink: 0 }}
+      >
         <div className="goal-header-top">
           <span className="goal-label-badge">{goal.label}</span>
           {editingGoalTitle ? (
@@ -680,6 +701,14 @@ export default function StrategyList({
           </button>
         </div>
       </div>
+
+      <div
+        className="list-vsplitter"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          dragState.current = { startY: e.clientY, startH: topH };
+        }}
+      />
 
       <div className="strategy-rows">
         {strategies.length === 0 && (

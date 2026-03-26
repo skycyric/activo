@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import type {
   Strategy,
   ActionPlan,
@@ -93,19 +93,17 @@ function KpiCard({
   kpi,
   onUpdate,
   onDelete,
-  displayRate,
   linkedTotal,
   linkedDone,
 }: {
   kpi: KPI;
   onUpdate: (k: KPI) => void;
   onDelete: () => void;
-  displayRate?: number | null;
   linkedTotal?: number;
   linkedDone?: number;
 }) {
   const hasActual = kpi.actual !== null && kpi.actual !== undefined;
-  const rawRate = displayRate ?? (hasActual ? kpi.achievementRate : null);
+  const rawRate = hasActual ? kpi.achievementRate : null;
   const rate = rawRate ?? 0;
   const rateIsNull = rawRate === null || rawRate === undefined;
   const size = 72;
@@ -287,6 +285,51 @@ function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
   return s.month <= qEnd && endMonth >= qStart;
 }
 
+// ─── Shared plan color palette ────────────────────────────────────────────────
+const PLAN_COLORS = [
+  { bg: "#bfdbfe", done: "#bbf7d0", text: "#1d4ed8", label: "#1d4ed8" }, // blue
+  { bg: "#fde68a", done: "#bbf7d0", text: "#92400e", label: "#92400e" }, // amber
+  { bg: "#c4b5fd", done: "#bbf7d0", text: "#5b21b6", label: "#5b21b6" }, // violet
+  { bg: "#fca5a5", done: "#bbf7d0", text: "#991b1b", label: "#991b1b" }, // red
+  { bg: "#6ee7b7", done: "#bbf7d0", text: "#065f46", label: "#065f46" }, // emerald
+  { bg: "#fdba74", done: "#bbf7d0", text: "#9a3412", label: "#9a3412" }, // orange
+];
+
+// ─── Shared plan-filter legend ────────────────────────────────────────────────
+function PlanLegend({
+  plans,
+  visible,
+  onToggle,
+}: {
+  plans: ActionPlan[];
+  visible: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="plan-legend">
+      {plans.map((p, idx) => {
+        const color = PLAN_COLORS[idx % PLAN_COLORS.length];
+        const on = visible.has(p.id);
+        return (
+          <label key={p.id} className={`plan-legend-chip${on ? " on" : ""}`}>
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={() => onToggle(p.id)}
+              style={{ display: "none" }}
+            />
+            <span
+              className="plan-legend-swatch"
+              style={{ background: on ? color.bg : "#e5e7eb" }}
+            />
+            <span className="plan-legend-name">{p.title}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Plan Calendar View (Monthly Grid) ────────────────────────────────────────
 function PlanCalendarView({
   plans,
@@ -295,53 +338,77 @@ function PlanCalendarView({
   plans: ActionPlan[];
   year: number;
 }) {
-  // expand items, handling ranges (startDate/endDate) by producing one entry per day
-  const items = plans
-    .flatMap((p) =>
-      p.items.flatMap((i) => {
-        const entries: any[] = [];
-        if (i.startDate && i.endDate) {
-          const s = parseMonthDay(i.startDate);
-          const e = parseMonthDay(i.endDate);
-          if (s && e) {
-            // assume same year
-            const yearNum = year;
-            let cur = new Date(yearNum, s.month - 1, s.day);
-            const end = new Date(yearNum, e.month - 1, e.day);
-            while (cur <= end) {
-              entries.push({
-                ...i,
-                planTitle: p.title,
-                month: cur.getMonth() + 1,
-                day: cur.getDate(),
-              });
-              cur.setDate(cur.getDate() + 1);
-            }
-          }
-        } else if (i.date || i.startDate) {
-          const d = parseMonthDay(i.date ?? i.startDate ?? "");
-          if (d)
-            entries.push({
-              ...i,
-              planTitle: p.title,
-              month: d.month,
-              day: d.day,
-            });
-        }
-        return entries;
-      }),
-    )
-    .filter((i) => i.month > 0 && i.day > 0);
-
-  if (items.length === 0)
-    return <div className="plan-empty">沒有包含日期的計畫項目可顯示於月曆</div>;
-
-  const months = Array.from(new Set(items.map((i) => i.month))).sort(
-    (a, b) => a - b,
+  const [visible, setVisible] = useState<Set<string>>(
+    () => new Set(plans.map((p) => p.id)),
   );
+  const togglePlan = (id: string) =>
+    setVisible((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  // For each plan, compute one CalPlan entry: span from plan's earliest to latest dated item
+  type CalPlan = {
+    planId: string;
+    planTitle: string;
+    colorIdx: number;
+    jsStart: Date;
+    jsEnd: Date;
+    allDone: boolean;
+  };
+
+  const calPlans: CalPlan[] = plans
+    .map((p, idx): CalPlan | null => {
+      if (!visible.has(p.id)) return null;
+      const dates: Date[] = [];
+      for (const i of p.items) {
+        const s = parseMonthDay(i.startDate ?? i.date ?? "");
+        if (s) {
+          dates.push(new Date(year, s.month - 1, s.day));
+          const e = i.endDate ? parseMonthDay(i.endDate) : null;
+          if (e) {
+            const endYear = e.month < s.month ? year + 1 : year;
+            dates.push(new Date(endYear, e.month - 1, e.day));
+          }
+        }
+      }
+      if (dates.length === 0) return null;
+      const jsStart = new Date(Math.min(...dates.map((d) => d.getTime())));
+      const jsEnd = new Date(Math.max(...dates.map((d) => d.getTime())));
+      const allDone = p.items.length > 0 && p.items.every((i) => i.completed);
+      return {
+        planId: p.id,
+        planTitle: p.title,
+        colorIdx: idx,
+        jsStart,
+        jsEnd,
+        allDone,
+      };
+    })
+    .filter((x): x is CalPlan => x !== null);
+
+  if (plans.length === 0)
+    return <div className="plan-empty">沒有活動計劃可顯示於月曆</div>;
+
+  // collect all months that any visible plan touches
+  const monthSet = new Set<number>();
+  for (const cp of calPlans) {
+    const cur = new Date(cp.jsStart);
+    while (cur <= cp.jsEnd) {
+      if (cur.getFullYear() === year) monthSet.add(cur.getMonth() + 1);
+      cur.setMonth(cur.getMonth() + 1);
+      cur.setDate(1);
+    }
+  }
+  const months = Array.from(monthSet).sort((a, b) => a - b);
+
+  if (months.length === 0)
+    return <div className="plan-empty">沒有包含日期的活動可顯示於月曆</div>;
 
   return (
     <div className="plan-cal-grid-wrap">
+      <PlanLegend plans={plans} visible={visible} onToggle={togglePlan} />
       {months.map((m) => {
         const firstDay = new Date(year, m - 1, 1).getDay();
         const daysInMonth = new Date(year, m, 0).getDate();
@@ -350,7 +417,14 @@ function PlanCalendarView({
         for (let i = 0; i < startOffset; i++) cells.push(null);
         for (let d = 1; d <= daysInMonth; d++) cells.push(d);
         while (cells.length % 7 !== 0) cells.push(null);
-        const monthItems = items.filter((i) => i.month === m);
+
+        // which calPlans are active in this month?
+        const monthPlans = calPlans.filter((cp) => {
+          const mStart = new Date(year, m - 1, 1);
+          const mEnd = new Date(year, m, 0);
+          return cp.jsStart <= mEnd && cp.jsEnd >= mStart;
+        });
+
         return (
           <div key={m} className="cal-month-block">
             <div className="cal-month-title">
@@ -367,25 +441,55 @@ function PlanCalendarView({
               {cells.map((day, idx) => {
                 if (!day)
                   return <div key={idx} className="cal-cell cal-cell-empty" />;
-                const dayItems = monthItems.filter((i) => i.day === day);
+                const thisDay = new Date(year, m - 1, day);
+                const activePlans = monthPlans.filter(
+                  (cp) => cp.jsStart <= thisDay && cp.jsEnd >= thisDay,
+                );
                 return (
                   <div
                     key={idx}
-                    className={`cal-cell${dayItems.length > 0 ? " cal-cell-active" : ""}`}
+                    className={`cal-cell${activePlans.length > 0 ? " cal-cell-active" : ""}`}
                   >
                     <span className="cal-day-num">{day}</span>
-                    {dayItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`cal-event${item.completed ? " done" : ""}`}
-                        title={`${item.planTitle}: ${item.description}`}
-                      >
-                        <span className="cal-event-dot" />
-                        <span className="cal-event-text">
-                          {item.description}
-                        </span>
-                      </div>
-                    ))}
+                    {activePlans.map((cp) => {
+                      const color =
+                        PLAN_COLORS[cp.colorIdx % PLAN_COLORS.length];
+                      const isStart =
+                        cp.jsStart.getFullYear() === year &&
+                        cp.jsStart.getMonth() + 1 === m &&
+                        cp.jsStart.getDate() === day;
+                      const isEnd =
+                        cp.jsEnd.getFullYear() === year &&
+                        cp.jsEnd.getMonth() + 1 === m &&
+                        cp.jsEnd.getDate() === day;
+                      const barPos =
+                        isStart && isEnd
+                          ? "bar-single"
+                          : isStart
+                            ? "bar-start"
+                            : isEnd
+                              ? "bar-end"
+                              : "bar-mid";
+                      const bg = cp.allDone ? color.done : color.bg;
+                      return (
+                        <div
+                          key={cp.planId}
+                          className={`cal-event-bar range ${barPos}`}
+                          style={{ background: bg }}
+                          title={cp.planTitle}
+                        >
+                          {(barPos === "bar-start" ||
+                            barPos === "bar-single") && (
+                            <span
+                              className="cal-event-label"
+                              style={{ color: color.text }}
+                            >
+                              {cp.planTitle}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -399,32 +503,71 @@ function PlanCalendarView({
 
 // ─── Plan Gantt View (Weekly) ──────────────────────────────────────────────────
 function PlanGanttView({ plans, year }: { plans: ActionPlan[]; year: number }) {
-  const rawItems = plans.flatMap((p) =>
-    p.items.map((i) => ({ ...i, planId: p.id, planTitle: p.title })),
+  const [visible, setVisible] = useState<Set<string>>(
+    () => new Set(plans.map((p) => p.id)),
   );
+  const togglePlan = (id: string) =>
+    setVisible((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
-  // normalize to jsStart/jsEnd for both single-date and ranges
-  const normItems = rawItems
-    .map((i) => {
-      if (i.startDate && i.endDate) {
-        const s = parseMonthDay(i.startDate);
-        const e = parseMonthDay(i.endDate);
-        if (!s || !e) return null;
-        return {
-          ...i,
-          jsStart: new Date(year, s.month - 1, s.day),
-          jsEnd: new Date(year, e.month - 1, e.day),
-        };
+  // For each plan, derive one date range from its items
+  type PlanRow = {
+    plan: ActionPlan;
+    colorIdx: number;
+    jsStart: Date;
+    jsEnd: Date;
+    allDone: boolean;
+    doneCount: number;
+    totalCount: number;
+  };
+
+  const planRows: PlanRow[] = plans
+    .map((p, idx): PlanRow | null => {
+      const dates: Date[] = [];
+      for (const i of p.items) {
+        const s = parseMonthDay(i.startDate ?? i.date ?? "");
+        if (s) {
+          dates.push(new Date(year, s.month - 1, s.day));
+          const e = i.endDate ? parseMonthDay(i.endDate) : null;
+          if (e) {
+            const endYear = e.month < s.month ? year + 1 : year;
+            dates.push(new Date(endYear, e.month - 1, e.day));
+          }
+        }
       }
-      const d = parseMonthDay(i.date ?? i.startDate ?? "");
-      if (!d) return null;
-      const js = new Date(year, d.month - 1, d.day);
-      return { ...i, jsStart: js, jsEnd: js };
+      if (dates.length === 0) return null;
+      const jsStart = new Date(Math.min(...dates.map((d) => d.getTime())));
+      const jsEnd = new Date(Math.max(...dates.map((d) => d.getTime())));
+      const doneCount = p.items.filter((i) => i.completed).length;
+      const totalCount = p.items.length;
+      const allDone = totalCount > 0 && doneCount === totalCount;
+      return {
+        plan: p,
+        colorIdx: idx,
+        jsStart,
+        jsEnd,
+        allDone,
+        doneCount,
+        totalCount,
+      };
     })
-    .filter((x): x is any => !!x);
+    .filter((x): x is PlanRow => x !== null);
 
-  if (normItems.length === 0)
-    return <div className="plan-empty">沒有包含日期的計畫項目可顯示甘特圖</div>;
+  const visibleRows = planRows.filter((r) => visible.has(r.plan.id));
+
+  if (plans.length === 0)
+    return <div className="plan-empty">沒有活動計劃可顯示甘特圖</div>;
+
+  if (visibleRows.length === 0)
+    return (
+      <>
+        <PlanLegend plans={plans} visible={visible} onToggle={togglePlan} />
+        <div className="plan-empty">請勾選至少一個活動以顯示甘特圖</div>
+      </>
+    );
 
   const getMonday = (d: Date): Date => {
     const copy = new Date(d);
@@ -434,8 +577,8 @@ function PlanGanttView({ plans, year }: { plans: ActionPlan[]; year: number }) {
     return copy;
   };
 
-  const minTs = Math.min(...normItems.map((i) => i.jsStart.getTime()));
-  const maxTs = Math.max(...normItems.map((i) => i.jsEnd.getTime()));
+  const minTs = Math.min(...visibleRows.map((r) => r.jsStart.getTime()));
+  const maxTs = Math.max(...visibleRows.map((r) => r.jsEnd.getTime()));
   const startWeek = getMonday(new Date(minTs));
   const endWeek = getMonday(new Date(maxTs));
 
@@ -446,56 +589,103 @@ function PlanGanttView({ plans, year }: { plans: ActionPlan[]; year: number }) {
     cur.setDate(cur.getDate() + 7);
   }
 
-  const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+  const fmtW = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+
+  // month-span header
+  const monthSpans: { label: string; count: number }[] = [];
+  for (const w of weeks) {
+    const label = `${w.getFullYear()}/${w.getMonth() + 1}月`;
+    const last = monthSpans[monthSpans.length - 1];
+    if (last && last.label === label) last.count++;
+    else monthSpans.push({ label, count: 1 });
+  }
 
   return (
     <div className="plan-gantt-weekly">
+      <PlanLegend plans={plans} visible={visible} onToggle={togglePlan} />
       <div className="gantt-weekly-scroll">
         <table className="gantt-weekly-table">
           <thead>
             <tr>
-              <th className="gantt-head-label">計畫項目</th>
+              <th className="gantt-head-label" rowSpan={2}>
+                活動名稱
+              </th>
+              {monthSpans.map((ms, i) => (
+                <th key={i} colSpan={ms.count} className="gantt-head-month">
+                  {ms.label}
+                </th>
+              ))}
+            </tr>
+            <tr>
               {weeks.map((w, i) => (
                 <th key={i} className="gantt-head-week">
-                  {fmt(w)}
+                  {fmtW(w)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {normItems.map((item) => (
-              <tr key={item.id}>
-                <td
-                  className="gantt-item-label"
-                  title={`${item.planTitle}: ${item.description}`}
-                >
-                  <span
-                    className={`gantt-item-dot${item.completed ? " done" : ""}`}
-                  />
-                  {item.description.length > 18
-                    ? item.description.substring(0, 18) + "\u2026"
-                    : item.description}
-                </td>
-                {weeks.map((w, wi) => {
-                  const weekEnd = new Date(w);
-                  weekEnd.setDate(weekEnd.getDate() + 6);
-                  const overlap = item.jsStart <= weekEnd && item.jsEnd >= w;
-                  return (
-                    <td
-                      key={wi}
-                      className={`gantt-week-cell${overlap ? (item.completed ? " done" : " active") : ""}`}
-                      title={
-                        overlap
-                          ? `${item.startDate ?? item.date}${item.endDate ? " - " + item.endDate : ""} ${item.description}`
-                          : undefined
-                      }
-                    >
-                      {overlap && <span className="gantt-week-dot" />}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {visibleRows.map((row) => {
+              const color = PLAN_COLORS[row.colorIdx % PLAN_COLORS.length];
+              const barBg = row.allDone ? color.done : color.bg;
+              return (
+                <tr key={row.plan.id}>
+                  <td
+                    className="gantt-item-label"
+                    title={`${row.plan.title} (${row.doneCount}/${row.totalCount} 完成)`}
+                  >
+                    <span
+                      className="gantt-plan-swatch"
+                      style={{ background: color.bg }}
+                    />
+                    {row.plan.title}
+                    <span className="gantt-plan-progress">
+                      {row.doneCount}/{row.totalCount}
+                    </span>
+                  </td>
+                  {weeks.map((w, wi) => {
+                    const weekEnd = new Date(w.getTime() + 6 * 86400000);
+                    const overlap = row.jsStart <= weekEnd && row.jsEnd >= w;
+                    let barPos = "";
+                    if (overlap) {
+                      const prevW = wi > 0 ? weeks[wi - 1] : null;
+                      const prevOverlap = prevW
+                        ? row.jsStart <=
+                            new Date(prevW.getTime() + 6 * 86400000) &&
+                          row.jsEnd >= prevW
+                        : false;
+                      const nextW =
+                        wi < weeks.length - 1 ? weeks[wi + 1] : null;
+                      const nextOverlap = nextW
+                        ? row.jsStart <=
+                            new Date(nextW.getTime() + 6 * 86400000) &&
+                          row.jsEnd >= nextW
+                        : false;
+                      if (!prevOverlap && !nextOverlap) barPos = " bar-single";
+                      else if (!prevOverlap) barPos = " bar-start";
+                      else if (!nextOverlap) barPos = " bar-end";
+                      else barPos = " bar-mid";
+                    }
+                    return (
+                      <td
+                        key={wi}
+                        className={`gantt-week-cell${overlap ? " active" : ""}${barPos}`}
+                        style={
+                          overlap
+                            ? ({ "--bar-color": barBg } as React.CSSProperties)
+                            : undefined
+                        }
+                        title={
+                          overlap
+                            ? `${row.plan.title}: ${fmtW(row.jsStart)} → ${fmtW(row.jsEnd)}`
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -573,18 +763,6 @@ export default function DetailPanel({
     },
     [panelWidth],
   );
-
-  const effectiveRate = strategy.manualRate ?? strategy.completionRate;
-  const effectColor =
-    effectiveRate >= 100
-      ? "#10b981"
-      : effectiveRate >= 70
-        ? "#6366f1"
-        : effectiveRate >= 40
-          ? "#f59e0b"
-          : effectiveRate > 0
-            ? "#ef4444"
-            : "#4b5563";
 
   // KPI helpers
   const updateKPI = (msrId: string, kpiId: string, updated: KPI) => {
@@ -1086,11 +1264,6 @@ export default function DetailPanel({
                 活動/專案（可新增/刪除/摺疊），每個活動可含多個
                 KPI。活動以季度為單位管理。
               </span>
-              {strategy.measures.length > 0 && (
-                <span className="msec-rate" style={{ color: effectColor }}>
-                  {Math.round(effectiveRate)}%
-                </span>
-              )}
             </div>
             <div
               style={{
@@ -1270,6 +1443,26 @@ export default function DetailPanel({
                         <select
                           className="measure-status-select"
                           value={m.status ?? "not-started"}
+                          style={{
+                            color:
+                              (m.status ?? "not-started") === "completed"
+                                ? "#059669"
+                                : (m.status ?? "not-started") === "in-progress"
+                                  ? "#2563eb"
+                                  : "#6b7280",
+                            borderColor:
+                              (m.status ?? "not-started") === "completed"
+                                ? "#a7f3d0"
+                                : (m.status ?? "not-started") === "in-progress"
+                                  ? "#bfdbfe"
+                                  : "#d1d5db",
+                            background:
+                              (m.status ?? "not-started") === "completed"
+                                ? "#ecfdf5"
+                                : (m.status ?? "not-started") === "in-progress"
+                                  ? "#eff6ff"
+                                  : "#f9fafb",
+                          }}
                           onChange={(e) =>
                             onUpdate({
                               ...strategy,
@@ -1327,15 +1520,10 @@ export default function DetailPanel({
                               const linkedDone = linkedItems.filter(
                                 (i) => i.completed,
                               ).length;
-                              const displayRate =
-                                k.achievementRate === null && linkedTotal > 0
-                                  ? Math.round((linkedDone / linkedTotal) * 100)
-                                  : null;
                               return (
                                 <KpiCard
                                   key={k.id}
                                   kpi={k}
-                                  displayRate={displayRate}
                                   linkedTotal={linkedTotal}
                                   linkedDone={linkedDone}
                                   onUpdate={(updated) =>

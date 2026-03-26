@@ -93,7 +93,12 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
   ];
   for (const [f, label] of fields) {
     if (String(ls[f] ?? "") !== String(rs[f] ?? "")) {
-      diffs.push({ field: f, label, localVal: fmt(ls[f]), remoteVal: fmt(rs[f]) });
+      diffs.push({
+        field: f,
+        label,
+        localVal: fmt(ls[f]),
+        remoteVal: fmt(rs[f]),
+      });
     }
   }
   if (ls.manualRate !== rs.manualRate) {
@@ -132,10 +137,20 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
 function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
   const diffs: FieldDiff[] = [];
   if (lg.title !== rg.title) {
-    diffs.push({ field: "title", label: "目標名稱", localVal: fmt(lg.title), remoteVal: fmt(rg.title) });
+    diffs.push({
+      field: "title",
+      label: "目標名稱",
+      localVal: fmt(lg.title),
+      remoteVal: fmt(rg.title),
+    });
   }
   if (lg.fullText !== rg.fullText) {
-    diffs.push({ field: "fullText", label: "目標說明", localVal: fmt(lg.fullText), remoteVal: fmt(rg.fullText) });
+    diffs.push({
+      field: "fullText",
+      label: "目標說明",
+      localVal: fmt(lg.fullText),
+      remoteVal: fmt(rg.fullText),
+    });
   }
   return diffs;
 }
@@ -143,7 +158,12 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
 function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
   const diffs: FieldDiff[] = [];
   if (lt.name !== rt.name) {
-    diffs.push({ field: "name", label: "團隊名稱", localVal: fmt(lt.name), remoteVal: fmt(rt.name) });
+    diffs.push({
+      field: "name",
+      label: "團隊名稱",
+      localVal: fmt(lt.name),
+      remoteVal: fmt(rt.name),
+    });
   }
   if (JSON.stringify(lt.members) !== JSON.stringify(rt.members)) {
     diffs.push({
@@ -262,10 +282,9 @@ function mergeStrategies(
   deleted: Set<string>,
   resolutions?: ConflictResolutions,
 ): { strategies: Strategy[]; count: number } {
-  const map = new Map<string, Strategy>(
-    local.filter((s) => !deleted.has(s.id)).map((s) => [s.id, s]),
-  );
-  let count = 0;
+  const filtered = local.filter((s) => !deleted.has(s.id));
+  const map = new Map<string, Strategy>(filtered.map((s) => [s.id, s]));
+  let count = local.length - filtered.length; // 計入本地端因 tombstone 被刪除的項目
 
   for (const rs of remote) {
     if (deleted.has(rs.id)) {
@@ -302,10 +321,9 @@ function mergeGoals(
   deleted: Set<string>,
   resolutions?: ConflictResolutions,
 ): { goals: Goal[]; count: number } {
-  const map = new Map<string, Goal>(
-    local.filter((g) => !deleted.has(g.id)).map((g) => [g.id, g]),
-  );
-  let count = 0;
+  const filtered = local.filter((g) => !deleted.has(g.id));
+  const map = new Map<string, Goal>(filtered.map((g) => [g.id, g]));
+  let count = local.length - filtered.length; // 計入本地端因 tombstone 被刪除的項目
 
   for (const rg of remote) {
     if (deleted.has(rg.id)) {
@@ -351,10 +369,10 @@ function mergeTeams(
   deleted: Set<string>,
   resolutions?: ConflictResolutions,
 ): { teams: Team[]; count: number } {
-  const map = new Map<string, Team>(
-    (local ?? []).filter((t) => !deleted.has(t.id)).map((t) => [t.id, t]),
-  );
-  let count = 0;
+  const safeLocal = local ?? [];
+  const filtered = safeLocal.filter((t) => !deleted.has(t.id));
+  const map = new Map<string, Team>(filtered.map((t) => [t.id, t]));
+  let count = safeLocal.length - filtered.length; // 計入本地端因 tombstone 被刪除的項目
 
   for (const rt of remote ?? []) {
     if (deleted.has(rt.id)) {
