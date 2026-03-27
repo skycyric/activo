@@ -9,11 +9,11 @@ export interface KPI {
 
 export interface PlanItem {
   id: string;
-  // single date in MM/DD or range via startDate/endDate
-  date?: string;
-  startDate?: string;
-  endDate?: string;
   description: string;
+  plannedStartDate?: string; // 預計開始日 (ISO YYYY-MM-DD)
+  actualStartDate?: string; // 實際開始日
+  plannedEndDate?: string; // 預計完成日
+  actualEndDate?: string; // 實際完成日
   completed: boolean;
   linkedMeasureId?: string | null;
   owner?: string;
@@ -37,6 +37,8 @@ export interface Measure {
   status?: string;
   budget?: number;
   personDays?: number;
+  startDate?: string; // 活動起始日 (ISO)
+  endDate?: string; // 活動結束日 (ISO)
 }
 
 export interface Strategy {

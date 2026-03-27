@@ -18,8 +18,6 @@ interface Props {
   onSelectGoal: (id: string) => void;
   onSelectStrategy: (id: string) => void;
   onSelectOverview: () => void;
-  onAddGoal: () => void;
-  onDeleteGoal: (id: string) => void;
 }
 
 export default function Sidebar({
@@ -39,8 +37,6 @@ export default function Sidebar({
   onSelectGoal,
   onSelectStrategy,
   onSelectOverview,
-  onAddGoal,
-  onDeleteGoal,
 }: Props) {
   const isOverview = selectedGoalId === null;
   const activeDept = workspace.departments.find((d) => d.id === activeDeptId);
@@ -260,16 +256,6 @@ export default function Sidebar({
                   <span className="goal-badge">{goal.label}</span>
                   <span className="sidebar-goal-title">{goal.title}</span>
                 </div>
-                <button
-                  className="sidebar-icon-btn"
-                  title={"刪除目標"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteGoal(goal.id);
-                  }}
-                >
-                  {"\u{1f5d1}"}
-                </button>
               </div>
 
               {isActive && (
@@ -289,10 +275,6 @@ export default function Sidebar({
             </div>
           );
         })}
-
-        <button className="sidebar-add-goal" onClick={onAddGoal}>
-          {"＋ 新增目標（G）"}
-        </button>
       </nav>
       <div className="sidebar-resizer" onMouseDown={handleMouseDown} />
     </aside>

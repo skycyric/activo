@@ -276,11 +276,11 @@ function toIsoDate(s: string | undefined, year: number): string {
  * Check if a plan item's date range overlaps with a given quarter
  */
 function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
-  const start = item.startDate ?? item.date;
+  const start = item.plannedStartDate;
   if (!start) return false;
   const s = parseMonthDay(start);
   if (!s) return false;
-  const e = item.endDate ? parseMonthDay(item.endDate) : null;
+  const e = item.plannedEndDate ? parseMonthDay(item.plannedEndDate) : null;
   const endMonth = e ? e.month : s.month;
   const qMonths: Record<string, [number, number]> = {
     Q1: [1, 3],
@@ -292,10 +292,38 @@ function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
   return s.month <= qEnd && endMonth >= qStart;
 }
 
+function doesMeasureOverlapQuarter(
+  measure: Measure,
+  linkedItems: PlanItem[],
+  quarter: string,
+): boolean {
+  const qMonths: Record<string, [number, number]> = {
+    Q1: [1, 3],
+    Q2: [4, 6],
+    Q3: [7, 9],
+    Q4: [10, 12],
+  };
+  const [qStart, qEnd] = qMonths[quarter] ?? [1, 3];
+
+  const s = measure.startDate ? parseMonthDay(measure.startDate) : null;
+  const e = measure.endDate ? parseMonthDay(measure.endDate) : null;
+  if (s) {
+    const endMonth = e ? e.month : s.month;
+    return s.month <= qEnd && endMonth >= qStart;
+  }
+
+  // Backward-compatible fallback for old JSON where measure dates are missing.
+  return linkedItems.some((item) => doesItemOverlapQuarter(item, quarter));
+}
+
 /**
  * Parse ActionPlan from q1Text/q2Text
  */
-function parseActionPlans(q1Text: string, q2Text: string): ActionPlan[] {
+function parseActionPlans(
+  q1Text: string,
+  q2Text: string,
+  year: number,
+): ActionPlan[] {
   const plans: ActionPlan[] = [];
 
   function parseQ(text: string, quarter: "Q1" | "Q2") {
@@ -348,8 +376,8 @@ function parseActionPlans(q1Text: string, q2Text: string): ActionPlan[] {
           const completed = /完成|結案|啟動/.test(description);
           return {
             id: genId("item"),
-            startDate: rangeMatch[1],
-            endDate: rangeMatch[2],
+            plannedStartDate: toIsoDate(rangeMatch[1], year),
+            plannedEndDate: toIsoDate(rangeMatch[2], year),
             description,
             completed,
           };
@@ -361,7 +389,12 @@ function parseActionPlans(q1Text: string, q2Text: string): ActionPlan[] {
           : line;
         const completed =
           /完成|結案|啟動/.test(description) && /^\d+\/\d+/.test(line);
-        return { id: genId("item"), date, description, completed };
+        return {
+          id: genId("item"),
+          plannedStartDate: date ? toIsoDate(date, year) : undefined,
+          description,
+          completed,
+        };
       });
   }
 
@@ -428,7 +461,11 @@ export default function DetailPanel({
       strategy.actionPlans.length === 0 &&
       (strategy.q1Text || strategy.q2Text)
     ) {
-      const generated = parseActionPlans(strategy.q1Text, strategy.q2Text);
+      const generated = parseActionPlans(
+        strategy.q1Text,
+        strategy.q2Text,
+        year,
+      );
       if (generated.length > 0) {
         onUpdate({ ...strategy, actionPlans: generated });
       }
@@ -494,7 +531,6 @@ export default function DetailPanel({
   const addChecklistItemToMeasure = (msrId: string) => {
     const newItem: PlanItem = {
       id: genId("item"),
-      date: "",
       description: "",
       owner: "",
       completed: false,
@@ -522,6 +558,146 @@ export default function DetailPanel({
       });
     }
   };
+
+  const updatePlanItem = (id: string, patch: Partial<PlanItem>) => {
+    onUpdate({
+      ...strategy,
+      actionPlans: strategy.actionPlans.map((p) => ({
+        ...p,
+        items: p.items.map((it) => (it.id === id ? { ...it, ...patch } : it)),
+      })),
+    });
+  };
+
+  const deletePlanItem = (id: string, desc: string) => {
+    if (!window.confirm(`確定要刪除「${desc || "此項目"}」嗎？`)) return;
+    onUpdate({
+      ...strategy,
+      actionPlans: strategy.actionPlans.map((p) => ({
+        ...p,
+        items: p.items.filter((it) => it.id !== id),
+      })),
+    });
+  };
+
+  const updateMeasureDateRange = (
+    measureId: string,
+    patch: Partial<Pick<Measure, "startDate" | "endDate">>,
+  ) => {
+    onUpdate({
+      ...strategy,
+      measures: strategy.measures.map((ms) =>
+        ms.id === measureId ? { ...ms, ...patch } : ms,
+      ),
+    });
+  };
+
+  const renderPlanItemRow = (
+    item: PlanItem,
+    extra?: React.ReactNode,
+    readOnly: boolean = false,
+  ) => (
+    <tr
+      key={item.id}
+      className={`${item.completed ? "plan-row-done" : ""}${readOnly ? " plan-row-readonly" : ""}`}
+    >
+      <td className="plan-tbl-check">
+        <input
+          type="checkbox"
+          disabled={readOnly}
+          checked={item.completed}
+          onChange={() =>
+            !readOnly && updatePlanItem(item.id, { completed: !item.completed })
+          }
+        />
+      </td>
+      <td className="plan-tbl-name">
+        {extra}
+        <input
+          className="plan-tbl-desc"
+          disabled={readOnly}
+          value={item.description}
+          placeholder="新項目"
+          onChange={(e) =>
+            !readOnly &&
+            updatePlanItem(item.id, { description: e.target.value })
+          }
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          className="plan-tbl-date"
+          disabled={readOnly}
+          value={item.plannedStartDate ?? ""}
+          title="預計開始"
+          onChange={(e) =>
+            !readOnly &&
+            updatePlanItem(item.id, { plannedStartDate: e.target.value })
+          }
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          className="plan-tbl-date plan-tbl-actual"
+          disabled={readOnly}
+          value={item.actualStartDate ?? ""}
+          title="實際開始"
+          onChange={(e) =>
+            !readOnly &&
+            updatePlanItem(item.id, { actualStartDate: e.target.value })
+          }
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          className="plan-tbl-date"
+          disabled={readOnly}
+          value={item.plannedEndDate ?? ""}
+          title="預計完成"
+          onChange={(e) =>
+            !readOnly &&
+            updatePlanItem(item.id, { plannedEndDate: e.target.value })
+          }
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          className="plan-tbl-date plan-tbl-actual"
+          disabled={readOnly}
+          value={item.actualEndDate ?? ""}
+          title="實際完成"
+          onChange={(e) =>
+            !readOnly &&
+            updatePlanItem(item.id, { actualEndDate: e.target.value })
+          }
+        />
+      </td>
+      <td>
+        <input
+          className="plan-tbl-notes"
+          disabled={readOnly}
+          value={item.notes ?? ""}
+          placeholder="備註"
+          onChange={(e) =>
+            !readOnly && updatePlanItem(item.id, { notes: e.target.value })
+          }
+        />
+      </td>
+      <td className="plan-tbl-del">
+        <button
+          className="plan-item-del"
+          disabled={readOnly}
+          onClick={() => !readOnly && deletePlanItem(item.id, item.description)}
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  );
 
   function planItemMatchesFilter(item: PlanItem): boolean {
     const q = searchQuery.trim().toLowerCase();
@@ -1086,21 +1262,30 @@ export default function DetailPanel({
                             color:
                               (m.status ?? "not-started") === "completed"
                                 ? "#059669"
-                                : (m.status ?? "not-started") === "in-progress"
-                                  ? "#2563eb"
-                                  : "#6b7280",
+                                : (m.status ?? "not-started") === "attention"
+                                  ? "#b45309"
+                                  : (m.status ?? "not-started") ===
+                                      "in-progress"
+                                    ? "#2563eb"
+                                    : "#6b7280",
                             borderColor:
                               (m.status ?? "not-started") === "completed"
                                 ? "#a7f3d0"
-                                : (m.status ?? "not-started") === "in-progress"
-                                  ? "#bfdbfe"
-                                  : "#d1d5db",
+                                : (m.status ?? "not-started") === "attention"
+                                  ? "#fcd34d"
+                                  : (m.status ?? "not-started") ===
+                                      "in-progress"
+                                    ? "#bfdbfe"
+                                    : "#d1d5db",
                             background:
                               (m.status ?? "not-started") === "completed"
                                 ? "#ecfdf5"
-                                : (m.status ?? "not-started") === "in-progress"
-                                  ? "#eff6ff"
-                                  : "#f9fafb",
+                                : (m.status ?? "not-started") === "attention"
+                                  ? "#fffbeb"
+                                  : (m.status ?? "not-started") ===
+                                      "in-progress"
+                                    ? "#eff6ff"
+                                    : "#f9fafb",
                           }}
                           onChange={(e) =>
                             onUpdate({
@@ -1114,6 +1299,7 @@ export default function DetailPanel({
                           }
                         >
                           <option value="not-started">未開始</option>
+                          <option value="attention">需注意</option>
                           <option value="in-progress">進行中</option>
                           <option value="completed">已完成</option>
                         </select>
@@ -1221,30 +1407,32 @@ export default function DetailPanel({
                 // Show measure if it belongs to this quarter
                 if ((m.quarter ?? selectedQuarter) === selectedQuarter)
                   return true;
-                // Also show measure if it has linked items whose dates overlap this quarter
-                const hasOverlap = strategy.actionPlans
+                // Otherwise, use activity (Measure) date range to decide cross-quarter visibility.
+                const linkedItems = strategy.actionPlans
                   .flatMap((p) => p.items)
-                  .some(
-                    (i) =>
-                      i.linkedMeasureId === m.id &&
-                      doesItemOverlapQuarter(i, selectedQuarter),
-                  );
+                  .filter((i) => i.linkedMeasureId === m.id);
+                const hasOverlap = doesMeasureOverlapQuarter(
+                  m,
+                  linkedItems,
+                  selectedQuarter,
+                );
                 return hasOverlap;
               })
               .map((m) => {
-                const itemsForMeasure = strategy.actionPlans
+                const linkedItems = strategy.actionPlans
                   .flatMap((p) => p.items)
-                  .filter((i) => i.linkedMeasureId === m.id)
+                  .filter((i) => i.linkedMeasureId === m.id);
+                const measureOverlapsSelectedQuarter =
+                  doesMeasureOverlapQuarter(m, linkedItems, selectedQuarter);
+                const itemsForMeasure = linkedItems
                   .filter((i) => {
-                    // Item belongs to this quarter's ActionPlan, or its dates overlap
+                    // Item belongs to this quarter's ActionPlan,
+                    // or this activity spans into the selected quarter.
                     const inQuarterPlan = strategy.actionPlans
                       .filter((p) => p.quarter === selectedQuarter)
                       .flatMap((p) => p.items)
                       .some((pi) => pi.id === i.id);
-                    return (
-                      inQuarterPlan ||
-                      doesItemOverlapQuarter(i, selectedQuarter)
-                    );
+                    return inQuarterPlan || measureOverlapsSelectedQuarter;
                   })
                   .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
                 // Deduplicate
@@ -1292,6 +1480,35 @@ export default function DetailPanel({
                       <span className="plan-section-card-title">
                         {m.rawText || "活動"}
                       </span>
+                      <span
+                        className="plan-section-date-range"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="date"
+                          className="plan-section-date-input"
+                          value={m.startDate ?? ""}
+                          title="活動開始日"
+                          onChange={(e) =>
+                            updateMeasureDateRange(m.id, {
+                              startDate: e.target.value || undefined,
+                            })
+                          }
+                        />
+                        <span className="plan-section-date-sep">~</span>
+                        <input
+                          type="date"
+                          className="plan-section-date-input"
+                          value={m.endDate ?? ""}
+                          title="活動結束日"
+                          onChange={(e) =>
+                            updateMeasureDateRange(m.id, {
+                              endDate: e.target.value || undefined,
+                            })
+                          }
+                        />
+                      </span>
                       {m.owner && (
                         <span className="plan-section-card-owner">
                           {m.owner}
@@ -1317,170 +1534,42 @@ export default function DetailPanel({
                     </div>
                     {!sectionCollapsed && (
                       <div className="plan-section-card-body">
-                        {dedupItems.map((item) => {
-                          // Find which quarter's ActionPlan this item lives in
-                          const itemSourceQuarter = strategy.actionPlans.find(
-                            (p) => p.items.some((pi) => pi.id === item.id),
-                          )?.quarter;
-                          const isFromOtherQ =
-                            itemSourceQuarter !== selectedQuarter;
-                          return (
-                            <div
-                              key={item.id}
-                              className={`plan-item ${item.completed ? "done" : ""}`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={item.completed}
-                                onChange={() => {
-                                  const newActionPlans =
-                                    strategy.actionPlans.map((p) => ({
-                                      ...p,
-                                      items: p.items.map((it) =>
-                                        it.id === item.id
-                                          ? {
-                                              ...it,
-                                              completed: !it.completed,
-                                            }
-                                          : it,
-                                      ),
-                                    }));
-                                  onUpdate({
-                                    ...strategy,
-                                    actionPlans: newActionPlans,
-                                  });
-                                }}
-                              />
-                              {isFromOtherQ && itemSourceQuarter && (
-                                <span
-                                  className="synced-badge synced-badge-sm"
-                                  title={`來源: ${itemSourceQuarter}`}
-                                >
-                                  ↩ {itemSourceQuarter}
-                                </span>
-                              )}
-                              <input
-                                type="date"
-                                className="plan-date-input"
-                                value={toIsoDate(
-                                  item.startDate ?? item.date,
-                                  year,
-                                )}
-                                title="起始日期"
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  const newActionPlans =
-                                    strategy.actionPlans.map((p) => ({
-                                      ...p,
-                                      items: p.items.map((it) =>
-                                        it.id === item.id
-                                          ? {
-                                              ...it,
-                                              startDate: v,
-                                              date: v,
-                                            }
-                                          : it,
-                                      ),
-                                    }));
-                                  onUpdate({
-                                    ...strategy,
-                                    actionPlans: newActionPlans,
-                                  });
-                                }}
-                              />
-                              <input
-                                type="date"
-                                className="plan-date-input"
-                                value={toIsoDate(item.endDate, year)}
-                                title="結束日期"
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  const newActionPlans =
-                                    strategy.actionPlans.map((p) => ({
-                                      ...p,
-                                      items: p.items.map((it) =>
-                                        it.id === item.id
-                                          ? { ...it, endDate: v }
-                                          : it,
-                                      ),
-                                    }));
-                                  onUpdate({
-                                    ...strategy,
-                                    actionPlans: newActionPlans,
-                                  });
-                                }}
-                              />
-                              <input
-                                className="plan-desc-input"
-                                value={item.description}
-                                placeholder="新項目"
-                                onChange={(e) => {
-                                  const newActionPlans =
-                                    strategy.actionPlans.map((p) => ({
-                                      ...p,
-                                      items: p.items.map((it) =>
-                                        it.id === item.id
-                                          ? {
-                                              ...it,
-                                              description: e.target.value,
-                                            }
-                                          : it,
-                                      ),
-                                    }));
-                                  onUpdate({
-                                    ...strategy,
-                                    actionPlans: newActionPlans,
-                                  });
-                                }}
-                              />
-                              <input
-                                className="plan-notes-input"
-                                value={item.notes ?? ""}
-                                placeholder="備註"
-                                onChange={(e) => {
-                                  const newActionPlans =
-                                    strategy.actionPlans.map((p) => ({
-                                      ...p,
-                                      items: p.items.map((it) =>
-                                        it.id === item.id
-                                          ? { ...it, notes: e.target.value }
-                                          : it,
-                                      ),
-                                    }));
-                                  onUpdate({
-                                    ...strategy,
-                                    actionPlans: newActionPlans,
-                                  });
-                                }}
-                              />
-
-                              <button
-                                className="plan-item-del"
-                                onClick={() => {
-                                  if (
-                                    !window.confirm(
-                                      `確定要刪除「${item.description || "此項目"}」嗎？`,
-                                    )
-                                  )
-                                    return;
-                                  const newActionPlans =
-                                    strategy.actionPlans.map((p) => ({
-                                      ...p,
-                                      items: p.items.filter(
-                                        (it) => it.id !== item.id,
-                                      ),
-                                    }));
-                                  onUpdate({
-                                    ...strategy,
-                                    actionPlans: newActionPlans,
-                                  });
-                                }}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          );
-                        })}
+                        <table className="plan-table">
+                          <thead>
+                            <tr>
+                              <th>✓</th>
+                              <th>項目名稱</th>
+                              <th>預計開始</th>
+                              <th>實際開始</th>
+                              <th>預計完成</th>
+                              <th>實際完成</th>
+                              <th>備註</th>
+                              <th />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dedupItems.map((item) => {
+                              const itemSourceQuarter =
+                                strategy.actionPlans.find((p) =>
+                                  p.items.some((pi) => pi.id === item.id),
+                                )?.quarter;
+                              const isFromOtherQ =
+                                itemSourceQuarter !== selectedQuarter;
+                              return renderPlanItemRow(
+                                item,
+                                isFromOtherQ && itemSourceQuarter ? (
+                                  <span
+                                    className="synced-badge synced-badge-sm"
+                                    title={`來源: ${itemSourceQuarter}（唯讀）`}
+                                  >
+                                    ↩ {itemSourceQuarter}
+                                  </span>
+                                ) : null,
+                                isFromOtherQ,
+                              );
+                            })}
+                          </tbody>
+                        </table>
                         <button
                           className="plan-add-item"
                           onClick={() => addChecklistItemToMeasure(m.id)}
@@ -1560,149 +1649,25 @@ export default function DetailPanel({
                   </div>
                   {!sectionCollapsed && (
                     <div className="plan-section-card-body">
-                      {dedupUnlinked.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`plan-item ${item.completed ? "done" : ""}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={item.completed}
-                            onChange={() => {
-                              const newActionPlans = strategy.actionPlans.map(
-                                (p) => ({
-                                  ...p,
-                                  items: p.items.map((it) =>
-                                    it.id === item.id
-                                      ? { ...it, completed: !it.completed }
-                                      : it,
-                                  ),
-                                }),
-                              );
-                              onUpdate({
-                                ...strategy,
-                                actionPlans: newActionPlans,
-                              });
-                            }}
-                          />
-                          <input
-                            type="date"
-                            className="plan-date-input"
-                            value={toIsoDate(item.startDate ?? item.date, year)}
-                            title="起始日期"
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              const newActionPlans = strategy.actionPlans.map(
-                                (p) => ({
-                                  ...p,
-                                  items: p.items.map((it) =>
-                                    it.id === item.id
-                                      ? { ...it, startDate: v, date: v }
-                                      : it,
-                                  ),
-                                }),
-                              );
-                              onUpdate({
-                                ...strategy,
-                                actionPlans: newActionPlans,
-                              });
-                            }}
-                          />
-                          <input
-                            type="date"
-                            className="plan-date-input"
-                            value={toIsoDate(item.endDate, year)}
-                            title="結束日期"
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              const newActionPlans = strategy.actionPlans.map(
-                                (p) => ({
-                                  ...p,
-                                  items: p.items.map((it) =>
-                                    it.id === item.id
-                                      ? { ...it, endDate: v }
-                                      : it,
-                                  ),
-                                }),
-                              );
-                              onUpdate({
-                                ...strategy,
-                                actionPlans: newActionPlans,
-                              });
-                            }}
-                          />
-                          <input
-                            className="plan-desc-input"
-                            value={item.description}
-                            placeholder="項目描述"
-                            onChange={(e) => {
-                              const newActionPlans = strategy.actionPlans.map(
-                                (p) => ({
-                                  ...p,
-                                  items: p.items.map((it) =>
-                                    it.id === item.id
-                                      ? {
-                                          ...it,
-                                          description: e.target.value,
-                                        }
-                                      : it,
-                                  ),
-                                }),
-                              );
-                              onUpdate({
-                                ...strategy,
-                                actionPlans: newActionPlans,
-                              });
-                            }}
-                          />
-                          <input
-                            className="plan-notes-input"
-                            value={item.notes ?? ""}
-                            placeholder="備註"
-                            onChange={(e) => {
-                              const newActionPlans = strategy.actionPlans.map(
-                                (p) => ({
-                                  ...p,
-                                  items: p.items.map((it) =>
-                                    it.id === item.id
-                                      ? { ...it, notes: e.target.value }
-                                      : it,
-                                  ),
-                                }),
-                              );
-                              onUpdate({
-                                ...strategy,
-                                actionPlans: newActionPlans,
-                              });
-                            }}
-                          />
-                          <button
-                            className="plan-item-del"
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  `確定要刪除「${item.description || "此項目"}」嗎？`,
-                                )
-                              )
-                                return;
-                              const newActionPlans = strategy.actionPlans.map(
-                                (p) => ({
-                                  ...p,
-                                  items: p.items.filter(
-                                    (it) => it.id !== item.id,
-                                  ),
-                                }),
-                              );
-                              onUpdate({
-                                ...strategy,
-                                actionPlans: newActionPlans,
-                              });
-                            }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+                      <table className="plan-table">
+                        <thead>
+                          <tr>
+                            <th>✓</th>
+                            <th>項目名稱</th>
+                            <th>預計開始</th>
+                            <th>實際開始</th>
+                            <th>預計完成</th>
+                            <th>實際完成</th>
+                            <th>備註</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dedupUnlinked.map((item) =>
+                            renderPlanItemRow(item, undefined, false),
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>

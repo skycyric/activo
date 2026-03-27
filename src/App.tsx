@@ -1063,8 +1063,6 @@ export default function App() {
             setSelectedStrategyId(null);
             setShowDeptSettings(false);
           }}
-          onAddGoal={handleAddGoal}
-          onDeleteGoal={handleDeleteGoal}
         />
         {showDeptSettings ? (
           <DeptSettingsPage
@@ -1086,6 +1084,7 @@ export default function App() {
               setSelectedStrategyId(strategyId);
             }}
             onEditObjective={handleEditObjective}
+            onAddGoal={handleAddGoal}
           />
         ) : (
           <>
@@ -1096,7 +1095,7 @@ export default function App() {
               onSelectStrategy={setSelectedStrategyId}
               onAddStrategy={handleAddStrategy}
               onUpdateGoal={handleUpdateGoal}
-              onDeleteStrategy={handleDeleteStrategy}
+              onDeleteGoal={handleDeleteGoal}
               filterOwner={filterOwner}
               onFilterOwner={setFilterOwner}
               teams={teams}

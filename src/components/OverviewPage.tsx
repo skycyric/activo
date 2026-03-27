@@ -13,6 +13,7 @@ interface Props {
   onSelectGoal: (id: string) => void;
   onSelectStrategy: (goalId: string, strategyId: string) => void;
   onEditObjective: (text: string) => void;
+  onAddGoal: () => void;
 }
 
 //  stat types
@@ -145,6 +146,7 @@ export default function OverviewPage({
   onSelectGoal,
   onSelectStrategy,
   onEditObjective,
+  onAddGoal,
 }: Props) {
   const [editingO, setEditingO] = useState(false);
   const [oText, setOText] = useState("");
@@ -190,6 +192,9 @@ export default function OverviewPage({
   );
   const oPlanNotStarted = allMeasuresWithCtx.filter(
     (m) => (m.status ?? "not-started") === "not-started",
+  );
+  const oPlanAttention = allMeasuresWithCtx.filter(
+    (m) => m.status === "attention",
   );
   const oPlanInProgress = allMeasuresWithCtx.filter(
     (m) => m.status === "in-progress",
@@ -269,6 +274,12 @@ export default function OverviewPage({
                 color: "#6b7280",
               },
               {
+                key: "attention",
+                label: "需注意",
+                count: oPlanAttention.length,
+                color: "#d97706",
+              },
+              {
                 key: "in-progress",
                 label: "進行中",
                 count: oPlanInProgress.length,
@@ -302,15 +313,19 @@ export default function OverviewPage({
             const items =
               oExpandedStatus === "not-started"
                 ? oPlanNotStarted
-                : oExpandedStatus === "in-progress"
-                  ? oPlanInProgress
-                  : oPlanCompleted;
+                : oExpandedStatus === "attention"
+                  ? oPlanAttention
+                  : oExpandedStatus === "in-progress"
+                    ? oPlanInProgress
+                    : oPlanCompleted;
             const statusLabel =
               oExpandedStatus === "not-started"
                 ? "未開始"
-                : oExpandedStatus === "in-progress"
-                  ? "進行中"
-                  : "已完成";
+                : oExpandedStatus === "attention"
+                  ? "需注意"
+                  : oExpandedStatus === "in-progress"
+                    ? "進行中"
+                    : "已完成";
             return (
               <div className="ov-status-list">
                 <div className="ov-status-list-header">
@@ -350,12 +365,35 @@ export default function OverviewPage({
           })()}
       </div>
 
+      <div className="ov-legend">
+        {(
+          [
+            { color: "#10b981", label: "達標（≥100%）" },
+            { color: "#6366f1", label: "良好（≥70%）" },
+            { color: "#f59e0b", label: "注意（≥40%）" },
+            { color: "#ef4444", label: "落後（<40%）" },
+            { color: "#4b5563", label: "未開始" },
+          ] as const
+        ).map(({ color, label }) => (
+          <span key={label} className="ov-legend-item">
+            <span className="ov-legend-dot" style={{ background: color }} />
+            {label}
+          </span>
+        ))}
+      </div>
+
+      <div className="ov-actions">
+        <button className="ov-add-goal" onClick={onAddGoal}>
+          ＋ 新增目標（G）
+        </button>
+      </div>
+
       {/*  Org-chart Tree  */}
       {data.goals.length === 0 ? (
         <div className="empty-state" style={{ padding: 60 }}>
           <div className="empty-icon">🎯</div>
           <h2>尚未建立任何目標</h2>
-          <p>點選左側「+ 新增目標（G）」開始建立 OGSM</p>
+          <p>點選上方「＋ 新增目標（G）」開始建立 OGSM</p>
         </div>
       ) : (
         <div className="org-tree-wrap">
@@ -364,7 +402,7 @@ export default function OverviewPage({
               {/* O node (no click, tooltip = full stats) */}
               <div
                 className="org-node org-node-o"
-                data-tooltip={`活動統計：未開始 ${oPlanNotStarted.length}｜進行中 ${oPlanInProgress.length}｜已完成 ${oPlanCompleted.length}`}
+                data-tooltip={`活動統計：未開始 ${oPlanNotStarted.length}｜需注意 ${oPlanAttention.length}｜進行中 ${oPlanInProgress.length}｜已完成 ${oPlanCompleted.length}`}
               >
                 <span className="org-badge org-badge-o">O</span>
                 <span className="org-title">

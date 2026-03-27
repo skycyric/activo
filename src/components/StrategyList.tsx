@@ -9,7 +9,7 @@ interface Props {
   onSelectStrategy: (id: string) => void;
   onAddStrategy: () => void;
   onUpdateGoal: (g: Goal) => void;
-  onDeleteStrategy: (id: string) => void;
+  onDeleteGoal: (id: string) => void;
   filterOwner: string;
   onFilterOwner: (v: string) => void;
   teams: Team[];
@@ -20,13 +20,11 @@ function StrategyRow({
   index,
   selected,
   onClick,
-  onDelete,
 }: {
   s: Strategy;
   index: number;
   selected: boolean;
   onClick: () => void;
-  onDelete: () => void;
 }) {
   // Measures-based stats: count measures and count measures considered as "達標"
   const measuresTotal = s.measures.length;
@@ -91,18 +89,6 @@ function StrategyRow({
           </div>
         </div>
       </div>
-      <div className="strategy-row-right">
-        <button
-          className="row-delete-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          title="刪除策略"
-        >
-          🗑
-        </button>
-      </div>
     </div>
   );
 }
@@ -114,7 +100,7 @@ export default function StrategyList({
   onSelectStrategy,
   onAddStrategy,
   onUpdateGoal,
-  onDeleteStrategy,
+  onDeleteGoal,
   filterOwner,
   onFilterOwner,
   teams,
@@ -353,6 +339,14 @@ export default function StrategyList({
               )}
             </h1>
           )}
+          <button
+            className="detail-del-btn"
+            onClick={() => onDeleteGoal(goal.id)}
+            title="刪除目標"
+            style={{ marginLeft: "auto" }}
+          >
+            🗑 刪除
+          </button>
         </div>
 
         {/* G KPI 看板 */}
@@ -695,8 +689,8 @@ export default function StrategyList({
               ))}
             </select>
           </div>
-          <button className="btn-add" onClick={onAddStrategy}>
-            + 新增策略（S）
+          <button className="sl-add-strategy" onClick={onAddStrategy}>
+            ＋ 新增策略（S）
           </button>
         </div>
       </div>
@@ -722,7 +716,6 @@ export default function StrategyList({
             index={i}
             selected={s.id === selectedStrategyId}
             onClick={() => onSelectStrategy(s.id)}
-            onDelete={() => onDeleteStrategy(s.id)}
           />
         ))}
       </div>

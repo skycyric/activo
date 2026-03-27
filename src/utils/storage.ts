@@ -3,6 +3,7 @@ import type {
   WorkspaceData,
   Department,
   PeriodData,
+  Strategy,
 } from "../types/ogsm";
 
 const WORKSPACE_KEY = "ogsm_workspace_v1";
@@ -14,6 +15,7 @@ function genId(prefix = "id"): string {
 
 export function saveWorkspace(ws: WorkspaceData): void {
   try {
+    normalizeWorkspaceData(ws);
     localStorage.setItem(WORKSPACE_KEY, JSON.stringify(ws));
   } catch (e) {
     console.error("Failed to save workspace", e);
@@ -25,7 +27,7 @@ export function loadWorkspace(): WorkspaceData | null {
     const raw = localStorage.getItem(WORKSPACE_KEY);
     if (!raw) return null;
     const ws: WorkspaceData = JSON.parse(raw);
-    if (migrateSyncDuplicates(ws)) {
+    if (normalizeWorkspaceData(ws)) {
       saveWorkspace(ws);
     }
     // One-time: clear strategy owners when no teams configured
@@ -48,6 +50,48 @@ export function loadWorkspace(): WorkspaceData | null {
   } catch {
     return null;
   }
+}
+
+function toIsoDateLoose(v: unknown): string | undefined {
+  if (typeof v !== "string" || !v.trim()) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return undefined;
+  const nowYear = new Date().getFullYear();
+  return `${nowYear}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+}
+
+function migrateMeasureDateRangeFromPlanItems(strategy: Strategy): boolean {
+  let changed = false;
+  for (const measure of strategy.measures) {
+    const linked = strategy.actionPlans
+      .flatMap((ap) => ap.items)
+      .filter((it) => it.linkedMeasureId === measure.id);
+    if (linked.length === 0) continue;
+
+    const starts = linked
+      .map((it) => toIsoDateLoose(it.plannedStartDate))
+      .filter((d): d is string => !!d)
+      .sort();
+    const ends = linked
+      .map(
+        (it) =>
+          toIsoDateLoose(it.plannedEndDate) ??
+          toIsoDateLoose(it.plannedStartDate),
+      )
+      .filter((d): d is string => !!d)
+      .sort();
+
+    if (!measure.startDate && starts.length > 0) {
+      measure.startDate = starts[0];
+      changed = true;
+    }
+    if (!measure.endDate && ends.length > 0) {
+      measure.endDate = ends[ends.length - 1];
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -85,10 +129,100 @@ function migrateSyncDuplicates(ws: WorkspaceData): boolean {
   return changed;
 }
 
+/**
+ * Migrate old PlanItem date fields (date / startDate / endDate) to the new
+ * plannedStartDate / plannedEndDate fields introduced 2026-03.
+ */
+function migratePlanItemDateFields(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          for (const ap of strategy.actionPlans) {
+            for (const item of ap.items) {
+              const raw = item as unknown as Record<string, unknown>;
+              if ("date" in raw || "startDate" in raw || "endDate" in raw) {
+                if (!item.plannedStartDate) {
+                  item.plannedStartDate = toIsoDateLoose(
+                    (raw.startDate as string | undefined) ??
+                      (raw.date as string | undefined),
+                  );
+                }
+                if (!item.plannedEndDate) {
+                  item.plannedEndDate = toIsoDateLoose(
+                    raw.endDate as string | undefined,
+                  );
+                }
+                delete raw.date;
+                delete raw.startDate;
+                delete raw.endDate;
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+  let changed = false;
+  if (migrateSyncDuplicates(ws)) changed = true;
+  if (migratePlanItemDateFields(ws)) changed = true;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+function normalizeOGSMData(ogsm: OGSMData): boolean {
+  let changed = false;
+  for (const goal of ogsm.goals) {
+    for (const strategy of goal.strategies) {
+      for (const ap of strategy.actionPlans) {
+        for (const item of ap.items) {
+          const raw = item as unknown as Record<string, unknown>;
+          if ("date" in raw || "startDate" in raw || "endDate" in raw) {
+            if (!item.plannedStartDate) {
+              item.plannedStartDate = toIsoDateLoose(
+                (raw.startDate as string | undefined) ??
+                  (raw.date as string | undefined),
+              );
+            }
+            if (!item.plannedEndDate) {
+              item.plannedEndDate = toIsoDateLoose(
+                raw.endDate as string | undefined,
+              );
+            }
+            delete raw.date;
+            delete raw.startDate;
+            delete raw.endDate;
+            changed = true;
+          }
+        }
+      }
+      if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+    }
+  }
+  return changed;
+}
+
 export function loadLegacyData(): OGSMData | null {
   try {
     const raw = localStorage.getItem(LEGACY_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const ogsm: OGSMData = JSON.parse(raw);
+    normalizeOGSMData(ogsm);
+    return ogsm;
   } catch {
     return null;
   }
@@ -116,7 +250,9 @@ export function wrapOGSMInWorkspace(
 }
 
 export function exportJSON(ogsm: OGSMData): void {
-  const blob = new Blob([JSON.stringify(ogsm, null, 2)], {
+  const toExport: OGSMData = JSON.parse(JSON.stringify(ogsm));
+  normalizeOGSMData(toExport);
+  const blob = new Blob([JSON.stringify(toExport, null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
@@ -130,7 +266,9 @@ export function exportJSON(ogsm: OGSMData): void {
 }
 
 export function exportWorkspaceJSON(ws: WorkspaceData): void {
-  const blob = new Blob([JSON.stringify(ws, null, 2)], {
+  const toExport: WorkspaceData = JSON.parse(JSON.stringify(ws));
+  normalizeWorkspaceData(toExport);
+  const blob = new Blob([JSON.stringify(toExport, null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
@@ -153,7 +291,26 @@ export function importJSON(file: File): Promise<OGSMData | WorkspaceData> {
           reject(new Error("Failed to read file"));
           return;
         }
-        resolve(JSON.parse(result as string));
+        const parsed = JSON.parse(result as string);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray((parsed as { departments?: unknown[] }).departments)
+        ) {
+          normalizeWorkspaceData(parsed as WorkspaceData);
+          resolve(parsed as WorkspaceData);
+          return;
+        }
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray((parsed as { goals?: unknown[] }).goals)
+        ) {
+          normalizeOGSMData(parsed as OGSMData);
+          resolve(parsed as OGSMData);
+          return;
+        }
+        resolve(parsed as OGSMData | WorkspaceData);
       } catch {
         reject(new Error("Invalid JSON file"));
       }
