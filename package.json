@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "check:data-links": "node scripts/validate-data-links.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

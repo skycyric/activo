@@ -1,10 +1,3 @@
-export type Status =
-  | "completed"
-  | "on-track"
-  | "at-risk"
-  | "behind"
-  | "not-started";
-
 export interface KPI {
   id: string;
   label: string;
@@ -59,7 +52,6 @@ export interface Strategy {
   notes: string;
   completionRate: number; // 0-200, computed from KPIs
   manualRate: number | null; // user override
-  status: Status;
   updatedAt?: string; // ISO timestamp, for merge conflict resolution
 }
 

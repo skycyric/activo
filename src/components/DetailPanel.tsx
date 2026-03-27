@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import type {
   Strategy,
-  ActionPlan,
-  PlanItem,
   KPI,
   Measure,
   Team,
   TeamMember,
+  ActionPlan,
+  PlanItem,
 } from "../types/ogsm";
 import { genId } from "../utils/csvParser";
 
@@ -246,9 +246,11 @@ function KpiCard({
   );
 }
 
-// PlanSection removed — plans are now derived from Measures per selected quarter
+// ─── Helper Functions ─────────────────────────────────────────────────────────
 
-// ─── Date helpers ──────────────────────────────────────────────────────────────
+/**
+ * Parse date string and return {month, day}
+ */
 function parseMonthDay(s: string) {
   // YYYY-MM-DD
   const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -259,6 +261,9 @@ function parseMonthDay(s: string) {
   return null;
 }
 
+/**
+ * Convert date string to ISO format YYYY-MM-DD
+ */
 function toIsoDate(s: string | undefined, year: number): string {
   if (!s) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
@@ -267,7 +272,9 @@ function toIsoDate(s: string | undefined, year: number): string {
   return "";
 }
 
-// Check if a plan item's date range overlaps with a given quarter
+/**
+ * Check if a plan item's date range overlaps with a given quarter
+ */
 function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
   const start = item.startDate ?? item.date;
   if (!start) return false;
@@ -285,439 +292,113 @@ function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
   return s.month <= qEnd && endMonth >= qStart;
 }
 
-// ─── Shared plan color palette ────────────────────────────────────────────────
-const PLAN_COLORS = [
-  { bg: "#bfdbfe", done: "#bbf7d0", text: "#1d4ed8", label: "#1d4ed8" }, // blue
-  { bg: "#fde68a", done: "#bbf7d0", text: "#92400e", label: "#92400e" }, // amber
-  { bg: "#c4b5fd", done: "#bbf7d0", text: "#5b21b6", label: "#5b21b6" }, // violet
-  { bg: "#fca5a5", done: "#bbf7d0", text: "#991b1b", label: "#991b1b" }, // red
-  { bg: "#6ee7b7", done: "#bbf7d0", text: "#065f46", label: "#065f46" }, // emerald
-  { bg: "#fdba74", done: "#bbf7d0", text: "#9a3412", label: "#9a3412" }, // orange
-];
+/**
+ * Parse ActionPlan from q1Text/q2Text
+ */
+function parseActionPlans(q1Text: string, q2Text: string): ActionPlan[] {
+  const plans: ActionPlan[] = [];
 
-// ─── Shared plan-filter legend ────────────────────────────────────────────────
-function PlanLegend({
-  plans,
-  visible,
-  onToggle,
-}: {
-  plans: ActionPlan[];
-  visible: Set<string>;
-  onToggle: (id: string) => void;
-}) {
-  return (
-    <div className="plan-legend">
-      {plans.map((p, idx) => {
-        const color = PLAN_COLORS[idx % PLAN_COLORS.length];
-        const on = visible.has(p.id);
-        return (
-          <label key={p.id} className={`plan-legend-chip${on ? " on" : ""}`}>
-            <input
-              type="checkbox"
-              checked={on}
-              onChange={() => onToggle(p.id)}
-              style={{ display: "none" }}
-            />
-            <span
-              className="plan-legend-swatch"
-              style={{ background: on ? color.bg : "#e5e7eb" }}
-            />
-            <span className="plan-legend-name">{p.title}</span>
-          </label>
-        );
-      })}
-    </div>
-  );
-}
+  function parseQ(text: string, quarter: "Q1" | "Q2") {
+    if (!text.trim()) return;
+    const sectionRe = /【([^】]+)】/g;
+    const sections: Array<{ title: string; start: number }> = [];
+    let m;
+    while ((m = sectionRe.exec(text)) !== null) {
+      sections.push({ title: m[1], start: m.index + m[0].length });
+    }
 
-// ─── Plan Calendar View (Monthly Grid) ────────────────────────────────────────
-function PlanCalendarView({
-  plans,
-  year,
-}: {
-  plans: ActionPlan[];
-  year: number;
-}) {
-  const [visible, setVisible] = useState<Set<string>>(
-    () => new Set(plans.map((p) => p.id)),
-  );
-  const togglePlan = (id: string) =>
-    setVisible((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    if (sections.length === 0) {
+      plans.push({
+        id: genId("plan"),
+        quarter,
+        title: `${quarter} 行動計畫`,
+        items: parseItems(text),
+      });
+      return;
+    }
 
-  // For each plan, compute one CalPlan entry: span from plan's earliest to latest dated item
-  type CalPlan = {
-    planId: string;
-    planTitle: string;
-    colorIdx: number;
-    jsStart: Date;
-    jsEnd: Date;
-    allDone: boolean;
-  };
-
-  const calPlans: CalPlan[] = plans
-    .map((p, idx): CalPlan | null => {
-      if (!visible.has(p.id)) return null;
-      const dates: Date[] = [];
-      for (const i of p.items) {
-        const s = parseMonthDay(i.startDate ?? i.date ?? "");
-        if (s) {
-          dates.push(new Date(year, s.month - 1, s.day));
-          const e = i.endDate ? parseMonthDay(i.endDate) : null;
-          if (e) {
-            const endYear = e.month < s.month ? year + 1 : year;
-            dates.push(new Date(endYear, e.month - 1, e.day));
-          }
-        }
-      }
-      if (dates.length === 0) return null;
-      const jsStart = new Date(Math.min(...dates.map((d) => d.getTime())));
-      const jsEnd = new Date(Math.max(...dates.map((d) => d.getTime())));
-      const allDone = p.items.length > 0 && p.items.every((i) => i.completed);
-      return {
-        planId: p.id,
-        planTitle: p.title,
-        colorIdx: idx,
-        jsStart,
-        jsEnd,
-        allDone,
-      };
-    })
-    .filter((x): x is CalPlan => x !== null);
-
-  if (plans.length === 0)
-    return <div className="plan-empty">沒有活動計劃可顯示於月曆</div>;
-
-  // collect all months that any visible plan touches
-  const monthSet = new Set<number>();
-  for (const cp of calPlans) {
-    const cur = new Date(cp.jsStart);
-    while (cur <= cp.jsEnd) {
-      if (cur.getFullYear() === year) monthSet.add(cur.getMonth() + 1);
-      cur.setMonth(cur.getMonth() + 1);
-      cur.setDate(1);
+    for (let i = 0; i < sections.length; i++) {
+      const content = text.substring(
+        sections[i].start,
+        i + 1 < sections.length
+          ? sections[i + 1].start - sections[i + 1].title.length - 2
+          : text.length,
+      );
+      plans.push({
+        id: genId("plan"),
+        quarter,
+        title: sections[i].title,
+        items: parseItems(content),
+      });
     }
   }
-  const months = Array.from(monthSet).sort((a, b) => a - b);
 
-  if (months.length === 0)
-    return <div className="plan-empty">沒有包含日期的活動可顯示於月曆</div>;
-
-  return (
-    <div className="plan-cal-grid-wrap">
-      <PlanLegend plans={plans} visible={visible} onToggle={togglePlan} />
-      {months.map((m) => {
-        const firstDay = new Date(year, m - 1, 1).getDay();
-        const daysInMonth = new Date(year, m, 0).getDate();
-        const startOffset = firstDay === 0 ? 6 : firstDay - 1;
-        const cells: (number | null)[] = [];
-        for (let i = 0; i < startOffset; i++) cells.push(null);
-        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-        while (cells.length % 7 !== 0) cells.push(null);
-
-        // which calPlans are active in this month?
-        const monthPlans = calPlans.filter((cp) => {
-          const mStart = new Date(year, m - 1, 1);
-          const mEnd = new Date(year, m, 0);
-          return cp.jsStart <= mEnd && cp.jsEnd >= mStart;
-        });
-
-        return (
-          <div key={m} className="cal-month-block">
-            <div className="cal-month-title">
-              {m} 月 {year}
-            </div>
-            <div className="cal-week-header">
-              {["一", "二", "三", "四", "五", "六", "日"].map((d) => (
-                <div key={d} className="cal-weekday">
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="cal-grid">
-              {cells.map((day, idx) => {
-                if (!day)
-                  return <div key={idx} className="cal-cell cal-cell-empty" />;
-                const thisDay = new Date(year, m - 1, day);
-                const activePlans = monthPlans.filter(
-                  (cp) => cp.jsStart <= thisDay && cp.jsEnd >= thisDay,
-                );
-                return (
-                  <div
-                    key={idx}
-                    className={`cal-cell${activePlans.length > 0 ? " cal-cell-active" : ""}`}
-                  >
-                    <span className="cal-day-num">{day}</span>
-                    {activePlans.map((cp) => {
-                      const color =
-                        PLAN_COLORS[cp.colorIdx % PLAN_COLORS.length];
-                      const isStart =
-                        cp.jsStart.getFullYear() === year &&
-                        cp.jsStart.getMonth() + 1 === m &&
-                        cp.jsStart.getDate() === day;
-                      const isEnd =
-                        cp.jsEnd.getFullYear() === year &&
-                        cp.jsEnd.getMonth() + 1 === m &&
-                        cp.jsEnd.getDate() === day;
-                      const barPos =
-                        isStart && isEnd
-                          ? "bar-single"
-                          : isStart
-                            ? "bar-start"
-                            : isEnd
-                              ? "bar-end"
-                              : "bar-mid";
-                      const bg = cp.allDone ? color.done : color.bg;
-                      return (
-                        <div
-                          key={cp.planId}
-                          className={`cal-event-bar range ${barPos}`}
-                          style={{ background: bg }}
-                          title={cp.planTitle}
-                        >
-                          {(barPos === "bar-start" ||
-                            barPos === "bar-single") && (
-                            <span
-                              className="cal-event-label"
-                              style={{ color: color.text }}
-                            >
-                              {cp.planTitle}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+  function parseItems(text: string): PlanItem[] {
+    return text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        // Try date range first: M/D-M/D or M/D~M/D
+        const rangeMatch = line.match(
+          /^(\d{1,2}\/\d{1,2})\s*[-~]\s*(\d{1,2}\/\d{1,2})/,
         );
-      })}
-    </div>
-  );
-}
-
-// ─── Plan Gantt View (Weekly) ──────────────────────────────────────────────────
-function PlanGanttView({ plans, year }: { plans: ActionPlan[]; year: number }) {
-  const [visible, setVisible] = useState<Set<string>>(
-    () => new Set(plans.map((p) => p.id)),
-  );
-  const togglePlan = (id: string) =>
-    setVisible((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
-  // For each plan, derive one date range from its items
-  type PlanRow = {
-    plan: ActionPlan;
-    colorIdx: number;
-    jsStart: Date;
-    jsEnd: Date;
-    allDone: boolean;
-    doneCount: number;
-    totalCount: number;
-  };
-
-  const planRows: PlanRow[] = plans
-    .map((p, idx): PlanRow | null => {
-      const dates: Date[] = [];
-      for (const i of p.items) {
-        const s = parseMonthDay(i.startDate ?? i.date ?? "");
-        if (s) {
-          dates.push(new Date(year, s.month - 1, s.day));
-          const e = i.endDate ? parseMonthDay(i.endDate) : null;
-          if (e) {
-            const endYear = e.month < s.month ? year + 1 : year;
-            dates.push(new Date(endYear, e.month - 1, e.day));
-          }
+        if (rangeMatch) {
+          const description = line.substring(rangeMatch[0].length).trim();
+          const completed = /完成|結案|啟動/.test(description);
+          return {
+            id: genId("item"),
+            startDate: rangeMatch[1],
+            endDate: rangeMatch[2],
+            description,
+            completed,
+          };
         }
-      }
-      if (dates.length === 0) return null;
-      const jsStart = new Date(Math.min(...dates.map((d) => d.getTime())));
-      const jsEnd = new Date(Math.max(...dates.map((d) => d.getTime())));
-      const doneCount = p.items.filter((i) => i.completed).length;
-      const totalCount = p.items.length;
-      const allDone = totalCount > 0 && doneCount === totalCount;
-      return {
-        plan: p,
-        colorIdx: idx,
-        jsStart,
-        jsEnd,
-        allDone,
-        doneCount,
-        totalCount,
-      };
-    })
-    .filter((x): x is PlanRow => x !== null);
-
-  const visibleRows = planRows.filter((r) => visible.has(r.plan.id));
-
-  if (plans.length === 0)
-    return <div className="plan-empty">沒有活動計劃可顯示甘特圖</div>;
-
-  if (visibleRows.length === 0)
-    return (
-      <>
-        <PlanLegend plans={plans} visible={visible} onToggle={togglePlan} />
-        <div className="plan-empty">請勾選至少一個活動以顯示甘特圖</div>
-      </>
-    );
-
-  const getMonday = (d: Date): Date => {
-    const copy = new Date(d);
-    const day = copy.getDay();
-    copy.setDate(copy.getDate() - (day === 0 ? 6 : day - 1));
-    copy.setHours(0, 0, 0, 0);
-    return copy;
-  };
-
-  const minTs = Math.min(...visibleRows.map((r) => r.jsStart.getTime()));
-  const maxTs = Math.max(...visibleRows.map((r) => r.jsEnd.getTime()));
-  const startWeek = getMonday(new Date(minTs));
-  const endWeek = getMonday(new Date(maxTs));
-
-  const weeks: Date[] = [];
-  const cur = new Date(startWeek);
-  while (cur <= endWeek) {
-    weeks.push(new Date(cur));
-    cur.setDate(cur.getDate() + 7);
+        const dateMatch = line.match(/^(\d+\/\d+(?:\/\d+)?)/);
+        const date = dateMatch ? dateMatch[1] : "";
+        const description = dateMatch
+          ? line.substring(dateMatch[0].length).trim()
+          : line;
+        const completed =
+          /完成|結案|啟動/.test(description) && /^\d+\/\d+/.test(line);
+        return { id: genId("item"), date, description, completed };
+      });
   }
 
-  const fmtW = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
-
-  // month-span header
-  const monthSpans: { label: string; count: number }[] = [];
-  for (const w of weeks) {
-    const label = `${w.getFullYear()}/${w.getMonth() + 1}月`;
-    const last = monthSpans[monthSpans.length - 1];
-    if (last && last.label === label) last.count++;
-    else monthSpans.push({ label, count: 1 });
-  }
-
-  return (
-    <div className="plan-gantt-weekly">
-      <PlanLegend plans={plans} visible={visible} onToggle={togglePlan} />
-      <div className="gantt-weekly-scroll">
-        <table className="gantt-weekly-table">
-          <thead>
-            <tr>
-              <th className="gantt-head-label" rowSpan={2}>
-                活動名稱
-              </th>
-              {monthSpans.map((ms, i) => (
-                <th key={i} colSpan={ms.count} className="gantt-head-month">
-                  {ms.label}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {weeks.map((w, i) => (
-                <th key={i} className="gantt-head-week">
-                  {fmtW(w)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => {
-              const color = PLAN_COLORS[row.colorIdx % PLAN_COLORS.length];
-              const barBg = row.allDone ? color.done : color.bg;
-              return (
-                <tr key={row.plan.id}>
-                  <td
-                    className="gantt-item-label"
-                    title={`${row.plan.title} (${row.doneCount}/${row.totalCount} 完成)`}
-                  >
-                    <span
-                      className="gantt-plan-swatch"
-                      style={{ background: color.bg }}
-                    />
-                    {row.plan.title}
-                    <span className="gantt-plan-progress">
-                      {row.doneCount}/{row.totalCount}
-                    </span>
-                  </td>
-                  {weeks.map((w, wi) => {
-                    const weekEnd = new Date(w.getTime() + 6 * 86400000);
-                    const overlap = row.jsStart <= weekEnd && row.jsEnd >= w;
-                    let barPos = "";
-                    if (overlap) {
-                      const prevW = wi > 0 ? weeks[wi - 1] : null;
-                      const prevOverlap = prevW
-                        ? row.jsStart <=
-                            new Date(prevW.getTime() + 6 * 86400000) &&
-                          row.jsEnd >= prevW
-                        : false;
-                      const nextW =
-                        wi < weeks.length - 1 ? weeks[wi + 1] : null;
-                      const nextOverlap = nextW
-                        ? row.jsStart <=
-                            new Date(nextW.getTime() + 6 * 86400000) &&
-                          row.jsEnd >= nextW
-                        : false;
-                      if (!prevOverlap && !nextOverlap) barPos = " bar-single";
-                      else if (!prevOverlap) barPos = " bar-start";
-                      else if (!nextOverlap) barPos = " bar-end";
-                      else barPos = " bar-mid";
-                    }
-                    return (
-                      <td
-                        key={wi}
-                        className={`gantt-week-cell${overlap ? " active" : ""}${barPos}`}
-                        style={
-                          overlap
-                            ? ({ "--bar-color": barBg } as React.CSSProperties)
-                            : undefined
-                        }
-                        title={
-                          overlap
-                            ? `${row.plan.title}: ${fmtW(row.jsStart)} → ${fmtW(row.jsEnd)}`
-                            : undefined
-                        }
-                      />
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  parseQ(q1Text, "Q1");
+  parseQ(q2Text, "Q2");
+  return plans;
 }
 
 // ─── Detail Panel ──────────────────────────────────────────────────────────────
 
 export default function DetailPanel({
   strategy,
-  period,
+  period: _period,
   onClose,
   onUpdate,
   onDelete,
   teams,
   allMembers,
 }: Props) {
-  const year = period
-    ? parseInt(period.match(/\d{4}/)?.[0] ?? "") || new Date().getFullYear()
+  const year = _period
+    ? parseInt(_period.match(/\d{4}/)?.[0] ?? "") || new Date().getFullYear()
     : new Date().getFullYear();
   const [tab, setTab] = useState<"measure" | "plans" | "notes">("measure");
-  const [planView, setPlanView] = useState<"list" | "calendar" | "gantt">(
-    "list",
-  );
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterOwner, setFilterOwner] = useState<string>("all");
-  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
-  const [filterDateTo, setFilterDateTo] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
   const [ownerDropOpen, setOwnerDropOpen] = useState(false);
   const ownerDropRef = useRef<HTMLDivElement>(null);
+  const [planSectionCollapsed, setPlanSectionCollapsed] = useState<
+    Record<string, boolean>
+  >(() => {
+    const map: Record<string, boolean> = {};
+    strategy.measures.forEach((m) => {
+      map[m.id] = true;
+    });
+    return map;
+  });
 
   useEffect(() => {
     if (!ownerDropOpen) return;
@@ -740,6 +421,19 @@ export default function DetailPanel({
   useEffect(() => {
     localStorage.setItem("ogsm_panel_width", panelWidth.toString());
   }, [panelWidth]);
+
+  // Initialize actionPlans from q1Text/q2Text if not already present
+  useEffect(() => {
+    if (
+      strategy.actionPlans.length === 0 &&
+      (strategy.q1Text || strategy.q2Text)
+    ) {
+      const generated = parseActionPlans(strategy.q1Text, strategy.q2Text);
+      if (generated.length > 0) {
+        onUpdate({ ...strategy, actionPlans: generated });
+      }
+    }
+  }, [strategy.q1Text, strategy.q2Text]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -795,11 +489,55 @@ export default function DetailPanel({
   };
   // addKPI removed — KPIs should be added under a specific Measure via UI
 
+  // ─── Action Plan helpers ──────────────────────────────────────────────────────
+
+  const addChecklistItemToMeasure = (msrId: string) => {
+    const newItem: PlanItem = {
+      id: genId("item"),
+      date: "",
+      description: "",
+      owner: "",
+      completed: false,
+      linkedMeasureId: msrId,
+    };
+    const existingAp = strategy.actionPlans.find(
+      (p) => p.quarter === selectedQuarter,
+    );
+    if (existingAp) {
+      // Add item to the existing plan, preserving all other plans
+      const newActionPlans = strategy.actionPlans.map((p) =>
+        p.id === existingAp.id ? { ...p, items: [...p.items, newItem] } : p,
+      );
+      onUpdate({ ...strategy, actionPlans: newActionPlans });
+    } else {
+      const ap: ActionPlan = {
+        id: genId("plan"),
+        quarter: selectedQuarter,
+        title: selectedQuarter + " 計畫",
+        items: [newItem],
+      };
+      onUpdate({
+        ...strategy,
+        actionPlans: [...strategy.actionPlans, ap],
+      });
+    }
+  };
+
+  function planItemMatchesFilter(item: PlanItem): boolean {
+    const q = searchQuery.trim().toLowerCase();
+    const ownerOk =
+      filterOwner === "all" || (item.owner ?? "").includes(filterOwner);
+    const textOk =
+      !q ||
+      item.description.toLowerCase().includes(q) ||
+      (item.owner ?? "").toLowerCase().includes(q);
+    return ownerOk && textOk;
+  }
+
   // Plan helpers (plans are managed via Measures and fixed quarters)
 
   const quarters = ["Q1", "Q2", "Q3", "Q4"];
-  const preferred =
-    strategy.actionPlans[0]?.quarter ?? strategy.measures[0]?.quarter;
+  const preferred = strategy.measures[0]?.quarter;
   const [selectedQuarter, setSelectedQuarter] = useState<string>(
     preferred && quarters.includes(preferred) ? preferred : "Q1",
   );
@@ -842,38 +580,6 @@ export default function DetailPanel({
         measures: strategy.measures.map((m) =>
           m.id === msrId ? { ...m, quarter: targetQuarter } : m,
         ),
-      });
-    }
-  };
-
-  const addChecklistItemToMeasure = (msrId: string) => {
-    const newItem: PlanItem = {
-      id: genId("item"),
-      date: "",
-      description: "",
-      owner: "",
-      completed: false,
-      linkedMeasureId: msrId,
-    };
-    const existingAp = strategy.actionPlans.find(
-      (p) => p.quarter === selectedQuarter,
-    );
-    if (existingAp) {
-      // Add item to the existing plan, preserving all other plans
-      const newActionPlans = strategy.actionPlans.map((p) =>
-        p.id === existingAp.id ? { ...p, items: [...p.items, newItem] } : p,
-      );
-      onUpdate({ ...strategy, actionPlans: newActionPlans });
-    } else {
-      const ap: ActionPlan = {
-        id: genId("plan"),
-        quarter: selectedQuarter,
-        title: selectedQuarter + " 計畫",
-        items: [newItem],
-      };
-      onUpdate({
-        ...strategy,
-        actionPlans: [...strategy.actionPlans, ap],
       });
     }
   };
@@ -958,13 +664,11 @@ export default function DetailPanel({
   };
   const [measureCollapsed, setMeasureCollapsed] =
     useState<Record<string, boolean>>(defaultCollapsed);
-  const [planSectionCollapsed, setPlanSectionCollapsed] =
-    useState<Record<string, boolean>>(defaultCollapsed);
 
   const allKpis = strategy.measures.flatMap((m) =>
     m.kpis.map((k) => ({ ...k, msrId: m.id })),
   );
-  // removed legacy helpers allMeasures/q1/q2 as quarters are dynamic and plans are measure-driven
+  // Plan items count
   const totalItems = strategy.actionPlans.flatMap((p) => p.items).length;
   const doneItems = strategy.actionPlans
     .flatMap((p) => p.items)
@@ -983,11 +687,7 @@ export default function DetailPanel({
             : "#4b5563";
 
   // ─── Filter helpers ──────────────────────────────────────────────────────────
-  const hasActiveFilter =
-    searchQuery.trim() !== "" ||
-    filterOwner !== "all" ||
-    filterDateFrom !== "" ||
-    filterDateTo !== "";
+  const hasActiveFilter = searchQuery.trim() !== "" || filterOwner !== "all";
 
   // Collect unique owners from measures + plan items
   const measureOwners = Array.from(
@@ -1003,16 +703,6 @@ export default function DetailPanel({
     ),
   ).sort();
 
-  function itemMatchesDateRange(item: PlanItem): boolean {
-    if (!filterDateFrom && !filterDateTo) return true;
-    const isoStart = toIsoDate(item.startDate ?? item.date, year);
-    const isoEnd = toIsoDate(item.endDate, year) || isoStart;
-    if (!isoStart) return true; // no date = show always
-    if (filterDateFrom && isoEnd < filterDateFrom) return false;
-    if (filterDateTo && isoStart > filterDateTo) return false;
-    return true;
-  }
-
   function measureMatchesFilter(m: Measure): boolean {
     const q = searchQuery.trim().toLowerCase();
     const ownerOk =
@@ -1021,34 +711,12 @@ export default function DetailPanel({
       !q ||
       (m.rawText ?? "").toLowerCase().includes(q) ||
       (m.owner ?? "").toLowerCase().includes(q);
-    if (!ownerOk || !textOk) return false;
-    // If date filter is active, measure passes if any linked item passes
-    if (filterDateFrom || filterDateTo) {
-      const linked = strategy.actionPlans
-        .flatMap((p) => p.items)
-        .filter((i) => i.linkedMeasureId === m.id);
-      if (linked.length > 0 && !linked.some(itemMatchesDateRange)) return false;
-    }
-    return true;
-  }
-
-  function planItemMatchesFilter(item: PlanItem): boolean {
-    const q = searchQuery.trim().toLowerCase();
-    const ownerOk =
-      filterOwner === "all" || (item.owner ?? "").includes(filterOwner);
-    const textOk =
-      !q ||
-      item.description.toLowerCase().includes(q) ||
-      (item.owner ?? "").toLowerCase().includes(q);
-    const dateOk = itemMatchesDateRange(item);
-    return ownerOk && textOk && dateOk;
+    return ownerOk && textOk;
   }
 
   const clearFilters = () => {
     setSearchQuery("");
     setFilterOwner("all");
-    setFilterDateFrom("");
-    setFilterDateTo("");
   };
 
   return (
@@ -1167,7 +835,7 @@ export default function DetailPanel({
             <span className="detail-filter-icon">🔍</span>
             <input
               className="detail-filter-search"
-              placeholder="搜尋活動、項目或負責人…"
+              placeholder="搜尋活動或負責人…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -1210,24 +878,6 @@ export default function DetailPanel({
                 ))}
               </select>
             </label>
-            <label className="detail-filter-label">
-              <span>日期起</span>
-              <input
-                type="date"
-                className="detail-filter-date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-              />
-            </label>
-            <label className="detail-filter-label">
-              <span>日期迄</span>
-              <input
-                type="date"
-                className="detail-filter-date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-              />
-            </label>
           </div>
         )}
       </div>
@@ -1244,7 +894,7 @@ export default function DetailPanel({
           className={`detail-tab ${tab === "plans" ? "active" : ""}`}
           onClick={() => setTab("plans")}
         >
-          📅 行動計畫 {totalItems > 0 ? `${doneItems}/${totalItems}` : ""}
+          📅 行動計劃 {totalItems > 0 ? `${doneItems}/${totalItems}` : ""}
         </button>
         <button
           className={`detail-tab ${tab === "notes" ? "active" : ""}`}
@@ -1261,8 +911,8 @@ export default function DetailPanel({
             <div className="msec-header">
               <span className="msec-badge msec-effect">衡量指標</span>
               <span className="msec-desc">
-                活動/專案（可新增/刪除/摺疊），每個活動可含多個
-                KPI。活動以季度為單位管理。
+                活動/專案可新增、刪除與摺疊，每個活動可包含多個 KPI，
+                目前以季度欄位管理。
               </span>
             </div>
             <div
@@ -1310,18 +960,7 @@ export default function DetailPanel({
                 .filter((m) => {
                   // Hide if doesn't match search/filter
                   if (hasActiveFilter && !measureMatchesFilter(m)) return false;
-                  // Show measure if it belongs to this quarter
-                  if ((m.quarter ?? selectedQuarter) === selectedQuarter)
-                    return true;
-                  // Also show if it has linked plan items whose dates overlap this quarter
-                  const hasOverlap = strategy.actionPlans
-                    .flatMap((p) => p.items)
-                    .some(
-                      (i) =>
-                        i.linkedMeasureId === m.id &&
-                        doesItemOverlapQuarter(i, selectedQuarter),
-                    );
-                  return hasOverlap;
+                  return (m.quarter ?? selectedQuarter) === selectedQuarter;
                 })
                 .map((m) => {
                   const collapsed = !!measureCollapsed[m.id];
@@ -1555,408 +1194,137 @@ export default function DetailPanel({
 
         {tab === "plans" && (
           <div className="plans-tab-content">
-            <div className="plan-view-toggle">
-              <button
-                className={`view-btn ${planView === "list" ? "active" : ""}`}
-                onClick={() => setPlanView("list")}
-              >
-                ☑ 清單
-              </button>
-              <button
-                className={`view-btn ${planView === "calendar" ? "active" : ""}`}
-                onClick={() => setPlanView("calendar")}
-              >
-                📅 月曆
-              </button>
-              <button
-                className={`view-btn ${planView === "gantt" ? "active" : ""}`}
-                onClick={() => setPlanView("gantt")}
-              >
-                📊 甘特圖
-              </button>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              {quarters.map((q) => (
+                <button
+                  key={q}
+                  className={`detail-tab ${selectedQuarter === q ? "active" : ""}`}
+                  onClick={() => setSelectedQuarter(q)}
+                >
+                  {q}
+                </button>
+              ))}
             </div>
 
-            {planView === "list" && (
-              <div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    marginBottom: 8,
-                  }}
-                >
-                  {quarters.map((q) => (
-                    <button
-                      key={q}
-                      className={`detail-tab ${selectedQuarter === q ? "active" : ""}`}
-                      onClick={() => setSelectedQuarter(q)}
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-
-                {/* For the selected quarter, show each Measure's checklist items */}
-                {strategy.measures
-                  .filter((m) => {
-                    // Hide if doesn't match search/filter
-                    if (hasActiveFilter && !measureMatchesFilter(m))
-                      return false;
-                    // Show measure if it belongs to this quarter
-                    if ((m.quarter ?? selectedQuarter) === selectedQuarter)
-                      return true;
-                    // Also show measure if it has linked items whose dates overlap this quarter
-                    const hasOverlap = strategy.actionPlans
+            {/* For the selected quarter, show each Measure's checklist items */}
+            {strategy.measures
+              .filter((m) => {
+                // Hide if doesn't match search filter
+                if (hasActiveFilter && !measureMatchesFilter(m)) return false;
+                // Show measure if it belongs to this quarter
+                if ((m.quarter ?? selectedQuarter) === selectedQuarter)
+                  return true;
+                // Also show measure if it has linked items whose dates overlap this quarter
+                const hasOverlap = strategy.actionPlans
+                  .flatMap((p) => p.items)
+                  .some(
+                    (i) =>
+                      i.linkedMeasureId === m.id &&
+                      doesItemOverlapQuarter(i, selectedQuarter),
+                  );
+                return hasOverlap;
+              })
+              .map((m) => {
+                const itemsForMeasure = strategy.actionPlans
+                  .flatMap((p) => p.items)
+                  .filter((i) => i.linkedMeasureId === m.id)
+                  .filter((i) => {
+                    // Item belongs to this quarter's ActionPlan, or its dates overlap
+                    const inQuarterPlan = strategy.actionPlans
+                      .filter((p) => p.quarter === selectedQuarter)
                       .flatMap((p) => p.items)
-                      .some(
-                        (i) =>
-                          i.linkedMeasureId === m.id &&
-                          doesItemOverlapQuarter(i, selectedQuarter),
-                      );
-                    return hasOverlap;
-                  })
-                  .map((m) => {
-                    const itemsForMeasure = strategy.actionPlans
-                      .flatMap((p) => p.items)
-                      .filter((i) => i.linkedMeasureId === m.id)
-                      .filter((i) => {
-                        // Item belongs to this quarter's ActionPlan, or its dates overlap
-                        const inQuarterPlan = strategy.actionPlans
-                          .filter((p) => p.quarter === selectedQuarter)
-                          .flatMap((p) => p.items)
-                          .some((pi) => pi.id === i.id);
-                        return (
-                          inQuarterPlan ||
-                          doesItemOverlapQuarter(i, selectedQuarter)
-                        );
-                      })
-                      .filter(
-                        (i) => !hasActiveFilter || planItemMatchesFilter(i),
-                      );
-                    // Deduplicate (item could match both conditions)
-                    const seen = new Set<string>();
-                    const dedupItems = itemsForMeasure.filter((i) => {
-                      if (seen.has(i.id)) return false;
-                      seen.add(i.id);
-                      return true;
-                    });
-                    const isFromOtherQuarter =
-                      (m.quarter ?? selectedQuarter) !== selectedQuarter;
-                    const doneCount = dedupItems.filter(
-                      (it) => it.completed,
-                    ).length;
-                    const totalCount = dedupItems.length;
-                    const sectionCollapsed = !!planSectionCollapsed[m.id];
-                    const sectionProgress =
-                      totalCount > 0
-                        ? Math.round((doneCount / totalCount) * 100)
-                        : 0;
+                      .some((pi) => pi.id === i.id);
                     return (
-                      <div key={m.id} className="plan-section-card">
-                        <div
-                          className="plan-section-card-header"
-                          onClick={() =>
-                            setPlanSectionCollapsed((s) => ({
-                              ...s,
-                              [m.id]: !s[m.id],
-                            }))
-                          }
-                        >
-                          <span
-                            className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
-                          >
-                            ▾
-                          </span>
-                          {isFromOtherQuarter && (
-                            <span
-                              className="synced-badge synced-badge-sm"
-                              title={`來源: ${m.quarter}`}
-                            >
-                              ↩ {m.quarter}
-                            </span>
-                          )}
-                          <span className="plan-section-card-title">
-                            {m.rawText || "活動"}
-                          </span>
-                          {m.owner && (
-                            <span className="plan-section-card-owner">
-                              {m.owner}
-                            </span>
-                          )}
-                          <span className="plan-section-card-count">
-                            {doneCount}/{totalCount}
-                          </span>
-                          <div className="plan-section-card-bar">
-                            <div
-                              className="plan-section-card-bar-fill"
-                              style={{
-                                width: `${sectionProgress}%`,
-                                background:
-                                  sectionProgress >= 100
-                                    ? "#10b981"
-                                    : sectionProgress > 0
-                                      ? "#6366f1"
-                                      : "#e5e7eb",
-                              }}
-                            />
-                          </div>
-                        </div>
-                        {!sectionCollapsed && (
-                          <div className="plan-section-card-body">
-                            {dedupItems.map((item) => {
-                              // Find which quarter's ActionPlan this item lives in
-                              const itemSourceQuarter =
-                                strategy.actionPlans.find((p) =>
-                                  p.items.some((pi) => pi.id === item.id),
-                                )?.quarter;
-                              const isFromOtherQ =
-                                itemSourceQuarter !== selectedQuarter;
-                              return (
-                                <div
-                                  key={item.id}
-                                  className={`plan-item ${item.completed ? "done" : ""}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={item.completed}
-                                    onChange={() => {
-                                      const newActionPlans =
-                                        strategy.actionPlans.map((p) => ({
-                                          ...p,
-                                          items: p.items.map((it) =>
-                                            it.id === item.id
-                                              ? {
-                                                  ...it,
-                                                  completed: !it.completed,
-                                                }
-                                              : it,
-                                          ),
-                                        }));
-                                      onUpdate({
-                                        ...strategy,
-                                        actionPlans: newActionPlans,
-                                      });
-                                    }}
-                                  />
-                                  {isFromOtherQ && itemSourceQuarter && (
-                                    <span
-                                      className="synced-badge synced-badge-sm"
-                                      title={`來源: ${itemSourceQuarter}`}
-                                    >
-                                      ↩ {itemSourceQuarter}
-                                    </span>
-                                  )}
-                                  <input
-                                    type="date"
-                                    className="plan-date-input"
-                                    value={toIsoDate(
-                                      item.startDate ?? item.date,
-                                      year,
-                                    )}
-                                    title="起始日期"
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      const newActionPlans =
-                                        strategy.actionPlans.map((p) => ({
-                                          ...p,
-                                          items: p.items.map((it) =>
-                                            it.id === item.id
-                                              ? {
-                                                  ...it,
-                                                  startDate: v,
-                                                  date: v,
-                                                }
-                                              : it,
-                                          ),
-                                        }));
-                                      onUpdate({
-                                        ...strategy,
-                                        actionPlans: newActionPlans,
-                                      });
-                                    }}
-                                  />
-                                  <input
-                                    type="date"
-                                    className="plan-date-input"
-                                    value={toIsoDate(item.endDate, year)}
-                                    title="結束日期"
-                                    onChange={(e) => {
-                                      const v = e.target.value;
-                                      const newActionPlans =
-                                        strategy.actionPlans.map((p) => ({
-                                          ...p,
-                                          items: p.items.map((it) =>
-                                            it.id === item.id
-                                              ? { ...it, endDate: v }
-                                              : it,
-                                          ),
-                                        }));
-                                      onUpdate({
-                                        ...strategy,
-                                        actionPlans: newActionPlans,
-                                      });
-                                    }}
-                                  />
-                                  <input
-                                    className="plan-desc-input"
-                                    value={item.description}
-                                    placeholder="新項目"
-                                    onChange={(e) => {
-                                      const newActionPlans =
-                                        strategy.actionPlans.map((p) => ({
-                                          ...p,
-                                          items: p.items.map((it) =>
-                                            it.id === item.id
-                                              ? {
-                                                  ...it,
-                                                  description: e.target.value,
-                                                }
-                                              : it,
-                                          ),
-                                        }));
-                                      onUpdate({
-                                        ...strategy,
-                                        actionPlans: newActionPlans,
-                                      });
-                                    }}
-                                  />
-                                  <input
-                                    className="plan-notes-input"
-                                    value={item.notes ?? ""}
-                                    placeholder="備註"
-                                    onChange={(e) => {
-                                      const newActionPlans =
-                                        strategy.actionPlans.map((p) => ({
-                                          ...p,
-                                          items: p.items.map((it) =>
-                                            it.id === item.id
-                                              ? { ...it, notes: e.target.value }
-                                              : it,
-                                          ),
-                                        }));
-                                      onUpdate({
-                                        ...strategy,
-                                        actionPlans: newActionPlans,
-                                      });
-                                    }}
-                                  />
-
-                                  <button
-                                    className="plan-item-del"
-                                    onClick={() => {
-                                      if (
-                                        !window.confirm(
-                                          `\u78ba\u5b9a\u8981\u522a\u9664\u300c${item.description || "\u6b64\u9805\u76ee"}\u300d\u55ce\uff1f`,
-                                        )
-                                      )
-                                        return;
-                                      const newActionPlans =
-                                        strategy.actionPlans.map((p) => ({
-                                          ...p,
-                                          items: p.items.filter(
-                                            (it) => it.id !== item.id,
-                                          ),
-                                        }));
-                                      onUpdate({
-                                        ...strategy,
-                                        actionPlans: newActionPlans,
-                                      });
-                                    }}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              );
-                            })}
-                            <button
-                              className="plan-add-item"
-                              onClick={() => addChecklistItemToMeasure(m.id)}
-                            >
-                              + 新增項目
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      inQuarterPlan ||
+                      doesItemOverlapQuarter(i, selectedQuarter)
                     );
-                  })}
-
-                {/* Unlinked items — items without linkedMeasureId */}
-                {(() => {
-                  const unlinkedItems = strategy.actionPlans
-                    .flatMap((p) => p.items)
-                    .filter((i) => !i.linkedMeasureId)
-                    .filter((i) => {
-                      const inQuarterPlan = strategy.actionPlans
-                        .filter((p) => p.quarter === selectedQuarter)
-                        .flatMap((p) => p.items)
-                        .some((pi) => pi.id === i.id);
-                      return (
-                        inQuarterPlan ||
-                        doesItemOverlapQuarter(i, selectedQuarter)
-                      );
-                    })
-                    .filter(
-                      (i) => !hasActiveFilter || planItemMatchesFilter(i),
-                    );
-                  // Deduplicate
-                  const seen = new Set<string>();
-                  const dedupUnlinked = unlinkedItems.filter((i) => {
-                    if (seen.has(i.id)) return false;
-                    seen.add(i.id);
-                    return true;
-                  });
-                  if (dedupUnlinked.length === 0) return null;
-                  const doneCount = dedupUnlinked.filter(
-                    (it) => it.completed,
-                  ).length;
-                  const totalCount = dedupUnlinked.length;
-                  const sectionCollapsed =
-                    !!planSectionCollapsed["__unlinked__"];
-                  const sectionProgress =
-                    totalCount > 0
-                      ? Math.round((doneCount / totalCount) * 100)
-                      : 0;
-                  return (
-                    <div className="plan-section-card">
-                      <div
-                        className="plan-section-card-header"
-                        onClick={() =>
-                          setPlanSectionCollapsed((s) => ({
-                            ...s,
-                            ["__unlinked__"]: !s["__unlinked__"],
-                          }))
-                        }
+                  })
+                  .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
+                // Deduplicate
+                const seen = new Set<string>();
+                const dedupItems = itemsForMeasure.filter((i) => {
+                  if (seen.has(i.id)) return false;
+                  seen.add(i.id);
+                  return true;
+                });
+                const isFromOtherQuarter =
+                  (m.quarter ?? selectedQuarter) !== selectedQuarter;
+                const doneCount = dedupItems.filter(
+                  (it) => it.completed,
+                ).length;
+                const totalCount = dedupItems.length;
+                const sectionCollapsed = !!planSectionCollapsed[m.id];
+                const sectionProgress =
+                  totalCount > 0
+                    ? Math.round((doneCount / totalCount) * 100)
+                    : 0;
+                return (
+                  <div key={m.id} className="plan-section-card">
+                    <div
+                      className="plan-section-card-header"
+                      onClick={() =>
+                        setPlanSectionCollapsed((s) => ({
+                          ...s,
+                          [m.id]: !s[m.id],
+                        }))
+                      }
+                    >
+                      <span
+                        className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
                       >
+                        ▾
+                      </span>
+                      {isFromOtherQuarter && (
                         <span
-                          className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
+                          className="synced-badge synced-badge-sm"
+                          title={`來源: ${m.quarter}`}
                         >
-                          ▾
+                          ↩ {m.quarter}
                         </span>
-                        <span className="plan-section-card-title">
-                          未分類項目
+                      )}
+                      <span className="plan-section-card-title">
+                        {m.rawText || "活動"}
+                      </span>
+                      {m.owner && (
+                        <span className="plan-section-card-owner">
+                          {m.owner}
                         </span>
-                        <span className="plan-section-card-count">
-                          {doneCount}/{totalCount}
-                        </span>
-                        <div className="plan-section-card-bar">
-                          <div
-                            className="plan-section-card-bar-fill"
-                            style={{
-                              width: `${sectionProgress}%`,
-                              background:
-                                sectionProgress >= 100
-                                  ? "#10b981"
-                                  : sectionProgress > 0
-                                    ? "#6366f1"
-                                    : "#e5e7eb",
-                            }}
-                          />
-                        </div>
+                      )}
+                      <span className="plan-section-card-count">
+                        {doneCount}/{totalCount}
+                      </span>
+                      <div className="plan-section-card-bar">
+                        <div
+                          className="plan-section-card-bar-fill"
+                          style={{
+                            width: `${sectionProgress}%`,
+                            background:
+                              sectionProgress >= 100
+                                ? "#10b981"
+                                : sectionProgress > 0
+                                  ? "#6366f1"
+                                  : "#e5e7eb",
+                          }}
+                        />
                       </div>
-                      {!sectionCollapsed && (
-                        <div className="plan-section-card-body">
-                          {dedupUnlinked.map((item) => (
+                    </div>
+                    {!sectionCollapsed && (
+                      <div className="plan-section-card-body">
+                        {dedupItems.map((item) => {
+                          // Find which quarter's ActionPlan this item lives in
+                          const itemSourceQuarter = strategy.actionPlans.find(
+                            (p) => p.items.some((pi) => pi.id === item.id),
+                          )?.quarter;
+                          const isFromOtherQ =
+                            itemSourceQuarter !== selectedQuarter;
+                          return (
                             <div
                               key={item.id}
                               className={`plan-item ${item.completed ? "done" : ""}`}
@@ -1970,7 +1338,10 @@ export default function DetailPanel({
                                       ...p,
                                       items: p.items.map((it) =>
                                         it.id === item.id
-                                          ? { ...it, completed: !it.completed }
+                                          ? {
+                                              ...it,
+                                              completed: !it.completed,
+                                            }
                                           : it,
                                       ),
                                     }));
@@ -1980,6 +1351,14 @@ export default function DetailPanel({
                                   });
                                 }}
                               />
+                              {isFromOtherQ && itemSourceQuarter && (
+                                <span
+                                  className="synced-badge synced-badge-sm"
+                                  title={`來源: ${itemSourceQuarter}`}
+                                >
+                                  ↩ {itemSourceQuarter}
+                                </span>
+                              )}
                               <input
                                 type="date"
                                 className="plan-date-input"
@@ -1995,7 +1374,11 @@ export default function DetailPanel({
                                       ...p,
                                       items: p.items.map((it) =>
                                         it.id === item.id
-                                          ? { ...it, startDate: v, date: v }
+                                          ? {
+                                              ...it,
+                                              startDate: v,
+                                              date: v,
+                                            }
                                           : it,
                                       ),
                                     }));
@@ -2030,7 +1413,7 @@ export default function DetailPanel({
                               <input
                                 className="plan-desc-input"
                                 value={item.description}
-                                placeholder="項目描述"
+                                placeholder="新項目"
                                 onChange={(e) => {
                                   const newActionPlans =
                                     strategy.actionPlans.map((p) => ({
@@ -2070,12 +1453,13 @@ export default function DetailPanel({
                                   });
                                 }}
                               />
+
                               <button
                                 className="plan-item-del"
                                 onClick={() => {
                                   if (
                                     !window.confirm(
-                                      `\u78ba\u5b9a\u8981\u522a\u9664\u300c${item.description || "\u6b64\u9805\u76ee"}\u300d\u55ce\uff1f`,
+                                      `確定要刪除「${item.description || "此項目"}」嗎？`,
                                     )
                                   )
                                     return;
@@ -2095,21 +1479,235 @@ export default function DetailPanel({
                                 ✕
                               </button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
+                          );
+                        })}
+                        <button
+                          className="plan-add-item"
+                          onClick={() => addChecklistItemToMeasure(m.id)}
+                        >
+                          + 新增項目
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
-            {planView === "calendar" && (
-              <PlanCalendarView plans={strategy.actionPlans} year={year} />
-            )}
-            {planView === "gantt" && (
-              <PlanGanttView plans={strategy.actionPlans} year={year} />
-            )}
+            {/* Unlinked items — items without linkedMeasureId */}
+            {(() => {
+              const unlinkedItems = strategy.actionPlans
+                .flatMap((p) => p.items)
+                .filter((i) => !i.linkedMeasureId)
+                .filter((i) => {
+                  const inQuarterPlan = strategy.actionPlans
+                    .filter((p) => p.quarter === selectedQuarter)
+                    .flatMap((p) => p.items)
+                    .some((pi) => pi.id === i.id);
+                  return (
+                    inQuarterPlan || doesItemOverlapQuarter(i, selectedQuarter)
+                  );
+                })
+                .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
+              // Deduplicate
+              const seen = new Set<string>();
+              const dedupUnlinked = unlinkedItems.filter((i) => {
+                if (seen.has(i.id)) return false;
+                seen.add(i.id);
+                return true;
+              });
+              if (dedupUnlinked.length === 0) return null;
+              const doneCount = dedupUnlinked.filter(
+                (it) => it.completed,
+              ).length;
+              const totalCount = dedupUnlinked.length;
+              const sectionCollapsed = !!planSectionCollapsed["__unlinked__"];
+              const sectionProgress =
+                totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+              return (
+                <div className="plan-section-card">
+                  <div
+                    className="plan-section-card-header"
+                    onClick={() =>
+                      setPlanSectionCollapsed((s) => ({
+                        ...s,
+                        ["__unlinked__"]: !s["__unlinked__"],
+                      }))
+                    }
+                  >
+                    <span
+                      className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
+                    >
+                      ▾
+                    </span>
+                    <span className="plan-section-card-title">未分類項目</span>
+                    <span className="plan-section-card-count">
+                      {doneCount}/{totalCount}
+                    </span>
+                    <div className="plan-section-card-bar">
+                      <div
+                        className="plan-section-card-bar-fill"
+                        style={{
+                          width: `${sectionProgress}%`,
+                          background:
+                            sectionProgress >= 100
+                              ? "#10b981"
+                              : sectionProgress > 0
+                                ? "#6366f1"
+                                : "#e5e7eb",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {!sectionCollapsed && (
+                    <div className="plan-section-card-body">
+                      {dedupUnlinked.map((item) => (
+                        <div
+                          key={item.id}
+                          className={`plan-item ${item.completed ? "done" : ""}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={() => {
+                              const newActionPlans = strategy.actionPlans.map(
+                                (p) => ({
+                                  ...p,
+                                  items: p.items.map((it) =>
+                                    it.id === item.id
+                                      ? { ...it, completed: !it.completed }
+                                      : it,
+                                  ),
+                                }),
+                              );
+                              onUpdate({
+                                ...strategy,
+                                actionPlans: newActionPlans,
+                              });
+                            }}
+                          />
+                          <input
+                            type="date"
+                            className="plan-date-input"
+                            value={toIsoDate(item.startDate ?? item.date, year)}
+                            title="起始日期"
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const newActionPlans = strategy.actionPlans.map(
+                                (p) => ({
+                                  ...p,
+                                  items: p.items.map((it) =>
+                                    it.id === item.id
+                                      ? { ...it, startDate: v, date: v }
+                                      : it,
+                                  ),
+                                }),
+                              );
+                              onUpdate({
+                                ...strategy,
+                                actionPlans: newActionPlans,
+                              });
+                            }}
+                          />
+                          <input
+                            type="date"
+                            className="plan-date-input"
+                            value={toIsoDate(item.endDate, year)}
+                            title="結束日期"
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const newActionPlans = strategy.actionPlans.map(
+                                (p) => ({
+                                  ...p,
+                                  items: p.items.map((it) =>
+                                    it.id === item.id
+                                      ? { ...it, endDate: v }
+                                      : it,
+                                  ),
+                                }),
+                              );
+                              onUpdate({
+                                ...strategy,
+                                actionPlans: newActionPlans,
+                              });
+                            }}
+                          />
+                          <input
+                            className="plan-desc-input"
+                            value={item.description}
+                            placeholder="項目描述"
+                            onChange={(e) => {
+                              const newActionPlans = strategy.actionPlans.map(
+                                (p) => ({
+                                  ...p,
+                                  items: p.items.map((it) =>
+                                    it.id === item.id
+                                      ? {
+                                          ...it,
+                                          description: e.target.value,
+                                        }
+                                      : it,
+                                  ),
+                                }),
+                              );
+                              onUpdate({
+                                ...strategy,
+                                actionPlans: newActionPlans,
+                              });
+                            }}
+                          />
+                          <input
+                            className="plan-notes-input"
+                            value={item.notes ?? ""}
+                            placeholder="備註"
+                            onChange={(e) => {
+                              const newActionPlans = strategy.actionPlans.map(
+                                (p) => ({
+                                  ...p,
+                                  items: p.items.map((it) =>
+                                    it.id === item.id
+                                      ? { ...it, notes: e.target.value }
+                                      : it,
+                                  ),
+                                }),
+                              );
+                              onUpdate({
+                                ...strategy,
+                                actionPlans: newActionPlans,
+                              });
+                            }}
+                          />
+                          <button
+                            className="plan-item-del"
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `確定要刪除「${item.description || "此項目"}」嗎？`,
+                                )
+                              )
+                                return;
+                              const newActionPlans = strategy.actionPlans.map(
+                                (p) => ({
+                                  ...p,
+                                  items: p.items.filter(
+                                    (it) => it.id !== item.id,
+                                  ),
+                                }),
+                              );
+                              onUpdate({
+                                ...strategy,
+                                actionPlans: newActionPlans,
+                              });
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 

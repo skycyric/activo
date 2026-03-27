@@ -3,6 +3,7 @@ import type {
   OGSMData,
   Goal,
   Strategy,
+  Measure,
   GoalKPI,
   GoalKpiLink,
 } from "../types/ogsm";
@@ -121,26 +122,21 @@ function gTooltip(g: Goal, gs: NodeStats): string {
   const hasGoalKpi = (g.goalKpis ?? []).length > 0;
   if (gs.kpiTotal > 0)
     parts.push(
-      `${hasGoalKpi ? "\u76ee\u6a19KPI" : "KPI"}\u00a0${gs.kpiDone}/${gs.kpiTotal}\u9054\u6a19`,
+      `${hasGoalKpi ? "目標KPI" : "KPI"} ${gs.kpiDone}/${gs.kpiTotal}達標`,
     );
   if (gs.planTotal > 0)
-    parts.push(
-      `\u884c\u52d5\u8a08\u756b\u00a0${gs.planDone}/${gs.planTotal}\u9054\u6a19`,
-    );
-  parts.push(`\u7b56\u7565\u00a0${g.strategies.length}\u9805`);
+    parts.push(`行動計畫 ${gs.planDone}/${gs.planTotal}達標`);
+  parts.push(`策略 ${g.strategies.length}項`);
   return parts.join("  |  ");
 }
 
 // S tooltip: KPI (all) + 行動計畫(= Measures)
 function sTooltip(_s: Strategy, ss: NodeStats): string {
   const parts: string[] = [];
-  if (ss.kpiTotal > 0)
-    parts.push(`KPI\u00a0${ss.kpiDone}/${ss.kpiTotal}\u9054\u6a19`);
+  if (ss.kpiTotal > 0) parts.push(`KPI ${ss.kpiDone}/${ss.kpiTotal}達標`);
   if (ss.planTotal > 0)
-    parts.push(
-      `\u884c\u52d5\u8a08\u756b\u00a0${ss.planDone}/${ss.planTotal}\u9054\u6a19`,
-    );
-  return parts.join("  |  ") || "\u5c1a\u7121\u8cc7\u6599";
+    parts.push(`行動計畫 ${ss.planDone}/${ss.planTotal}達標`);
+  return parts.join("  |  ") || "尚無資料";
 }
 
 //  component
@@ -152,6 +148,7 @@ export default function OverviewPage({
 }: Props) {
   const [editingO, setEditingO] = useState(false);
   const [oText, setOText] = useState("");
+  const [oExpandedStatus, setOExpandedStatus] = useState<string | null>(null);
 
   // O-level KPI 統計：只統計每個 G 的 GoalKPI 看板
   const oKpiItems = data.goals.flatMap((g) =>
@@ -162,15 +159,44 @@ export default function OverviewPage({
   const oKpiTotal = oKpiItems.length;
   const oKpiDone = oKpiItems.filter((k) => k.done).length;
 
-  // 活動完成：以 Measure（行動計畫）為單位，done = 所有 KPI 達成率 >= 100
-  const allMeasures = data.goals.flatMap((g) =>
-    g.strategies.flatMap((s) => s.measures),
+  // 活動統計：以 Measure 為單位，含 Goal/Strategy 來源資訊供展開清單使用
+  type MeasureWithCtx = Measure & {
+    goalTitle: string;
+    goalId: string;
+    stratTitle: string;
+    stratId: string;
+    displayName: string;
+    actionDone: number;
+    actionTotal: number;
+  };
+  const allMeasuresWithCtx: MeasureWithCtx[] = data.goals.flatMap((g) =>
+    g.strategies.flatMap((s) =>
+      s.measures.map((m) => {
+        const linkedItems = s.actionPlans
+          .flatMap((p) => p.items)
+          .filter((i) => i.linkedMeasureId === m.id);
+        return {
+          ...m,
+          goalTitle: g.title,
+          goalId: g.id,
+          stratTitle: s.title,
+          stratId: s.id,
+          displayName: m.rawText || "（未命名活動）",
+          actionDone: linkedItems.filter((i) => i.completed).length,
+          actionTotal: linkedItems.length,
+        };
+      }),
+    ),
   );
-  const oPlanTotal = allMeasures.length;
-  const oPlanDone = allMeasures.filter((m) => m.status === "completed").length;
-
-  const sTotal = data.goals.flatMap((g) => g.strategies).length;
-
+  const oPlanNotStarted = allMeasuresWithCtx.filter(
+    (m) => (m.status ?? "not-started") === "not-started",
+  );
+  const oPlanInProgress = allMeasuresWithCtx.filter(
+    (m) => m.status === "in-progress",
+  );
+  const oPlanCompleted = allMeasuresWithCtx.filter(
+    (m) => m.status === "completed",
+  );
   return (
     <div className="overview-page">
       {/*  O Stats Header  */}
@@ -178,9 +204,7 @@ export default function OverviewPage({
         <div className="ov-header-left">
           <div className="ov-header-badge">O</div>
           <div style={{ flex: 1 }}>
-            <div className="ov-header-label">
-              {"\u90e8\u9580\u76ee\u6a19"} &middot; {data.period}
-            </div>
+            <div className="ov-header-label">部門目標 · {data.period}</div>
             {editingO ? (
               <textarea
                 className="ov-objective-text"
@@ -206,11 +230,11 @@ export default function OverviewPage({
                   setOText(data.objectives?.deptO ?? "");
                   setEditingO(true);
                 }}
-                title={"\u96d9\u64ca\u7de8\u8f2f"}
+                title="雙擊編輯"
               >
                 {data.objectives?.deptO || (
                   <span style={{ color: "#6b7280", fontStyle: "italic" }}>
-                    {"\u96d9\u64ca\u8f38\u5165\u90e8\u9580\u76ee\u6a19\u2026"}
+                    雙擊輸入部門目標…
                   </span>
                 )}
               </div>
@@ -233,30 +257,105 @@ export default function OverviewPage({
                 /{oKpiTotal}
               </span>
             </span>
-            <span className="ov-stat-desc">{"KPI \u9054\u6210"}</span>
+            <span className="ov-stat-desc">KPI 達成</span>
           </div>
-          <div className="ov-stat-item">
-            <span className="ov-stat-num" style={{ color: "#6366f1" }}>
-              {oPlanDone}
-              <span style={{ fontSize: 13, color: "#6b7280" }}>
-                /{oPlanTotal}
+          <div className="ov-stat-divider" />
+          {(
+            [
+              {
+                key: "not-started",
+                label: "未開始",
+                count: oPlanNotStarted.length,
+                color: "#6b7280",
+              },
+              {
+                key: "in-progress",
+                label: "進行中",
+                count: oPlanInProgress.length,
+                color: "#2563eb",
+              },
+              {
+                key: "completed",
+                label: "已完成",
+                count: oPlanCompleted.length,
+                color: "#059669",
+              },
+            ] as const
+          ).map(({ key, label, count, color }) => (
+            <div
+              key={key}
+              className={`ov-stat-item ov-stat-clickable${oExpandedStatus === key ? " active" : ""}`}
+              onClick={() =>
+                setOExpandedStatus((v) => (v === key ? null : key))
+              }
+              title={`點擊查看${label}的活動`}
+            >
+              <span className="ov-stat-num" style={{ color }}>
+                {count}
               </span>
-            </span>
-            <span className="ov-stat-desc">{"\u6d3b\u52d5\u5b8c\u6210"}</span>
-          </div>
+              <span className="ov-stat-desc">{label}</span>
+            </div>
+          ))}
         </div>
+        {oExpandedStatus &&
+          (() => {
+            const items =
+              oExpandedStatus === "not-started"
+                ? oPlanNotStarted
+                : oExpandedStatus === "in-progress"
+                  ? oPlanInProgress
+                  : oPlanCompleted;
+            const statusLabel =
+              oExpandedStatus === "not-started"
+                ? "未開始"
+                : oExpandedStatus === "in-progress"
+                  ? "進行中"
+                  : "已完成";
+            return (
+              <div className="ov-status-list">
+                <div className="ov-status-list-header">
+                  <span>
+                    {statusLabel}活動（{items.length} 項）
+                  </span>
+                  <button
+                    className="ov-status-list-close"
+                    onClick={() => setOExpandedStatus(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {items.length === 0 ? (
+                  <div className="ov-status-list-empty">無項目</div>
+                ) : (
+                  <div className="ov-status-list-body">
+                    {items.map((m) => (
+                      <div
+                        key={m.id}
+                        className="ov-status-list-item"
+                        onClick={() => onSelectStrategy(m.goalId, m.stratId)}
+                        title="點擊開啟策略詳細頁"
+                      >
+                        <span className="ov-status-list-name">
+                          {m.displayName}
+                        </span>
+                        <span className="ov-status-list-path">
+                          執行狀況 {m.actionDone}/{m.actionTotal}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
       </div>
 
       {/*  Org-chart Tree  */}
       {data.goals.length === 0 ? (
         <div className="empty-state" style={{ padding: 60 }}>
-          <div className="empty-icon">{"\uD83C\uDFAF"}</div>
-          <h2>{"\u5c1a\u672a\u5efa\u7acb\u4efb\u4f55\u76ee\u6a19"}</h2>
-          <p>
-            {
-              "\u9ede\u9078\u5de6\u5074\u300c+ \u65b0\u589e\u76ee\u6a19\uff08G\uff09\u300d\u958b\u59cb\u5efa\u7acb OGSM"
-            }
-          </p>
+          <div className="empty-icon">🎯</div>
+          <h2>尚未建立任何目標</h2>
+          <p>點選左側「+ 新增目標（G）」開始建立 OGSM</p>
         </div>
       ) : (
         <div className="org-tree-wrap">
@@ -265,20 +364,11 @@ export default function OverviewPage({
               {/* O node (no click, tooltip = full stats) */}
               <div
                 className="org-node org-node-o"
-                data-tooltip={[
-                  `G KPI \u5168\u9054\u6a19\u00a0${oKpiDone}/${oKpiTotal}`,
-                  oPlanTotal > 0
-                    ? `\u884c\u52d5\u8a08\u756b\u00a0${oPlanDone}/${oPlanTotal}\u9054\u6a19`
-                    : "",
-                  `G\u00a0${data.goals.length}`,
-                  `S\u00a0${sTotal}`,
-                ]
-                  .filter(Boolean)
-                  .join("  |  ")}
+                data-tooltip={`活動統計：未開始 ${oPlanNotStarted.length}｜進行中 ${oPlanInProgress.length}｜已完成 ${oPlanCompleted.length}`}
               >
                 <span className="org-badge org-badge-o">O</span>
                 <span className="org-title">
-                  {data.objectives?.deptO || "\u90e8\u9580\u76ee\u6a19"}
+                  {data.objectives?.deptO || "部門目標"}
                 </span>
               </div>
 
@@ -300,7 +390,7 @@ export default function OverviewPage({
                       >
                         <span className="org-badge org-badge-g">{`G${gi + 1}`}</span>
                         <span className="org-title">
-                          {g.title || <em>(\u672a\u547d\u540d)</em>}
+                          {g.title || <em>(未命名)</em>}
                         </span>
                       </div>
 
@@ -324,7 +414,7 @@ export default function OverviewPage({
                                 >
                                   <span className="org-badge org-badge-s">{`S${si + 1}`}</span>
                                   <span className="org-title">
-                                    {s.title || <em>(\u672a\u547d\u540d)</em>}
+                                    {s.title || <em>(未命名)</em>}
                                   </span>
                                 </div>
                               </li>

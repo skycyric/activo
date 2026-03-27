@@ -143,24 +143,24 @@ export default function Sidebar({
           <div className="dept-actions">
             <button
               className="dept-action-btn"
-              title={"\u91cd\u547d\u540d\u90e8\u9580"}
+              title={"重命名部門"}
               onClick={() =>
                 activeDept && startRenameDept(activeDept.id, activeDept.name)
               }
             >
-              {"\u270f\ufe0f"}
+              {"✏️"}
             </button>
             <button
               className="dept-action-btn"
-              title={"\u65b0\u589e\u90e8\u9580"}
+              title={"新增部門"}
               onClick={onAddDept}
             >
-              {"\uff0b"}
+              {"＋"}
             </button>
             {workspace.departments.length > 1 && (
               <button
                 className="dept-action-btn dept-action-del"
-                title={"\u522a\u9664\u90e8\u9580"}
+                title={"刪除部門"}
                 onClick={() => onDeleteDept(activeDeptId)}
               >
                 {"\u{1f5d1}"}
@@ -184,23 +184,23 @@ export default function Sidebar({
               {activeDept.periods.length > 1 && (
                 <button
                   className="period-tab-del"
-                  title={"\u522a\u9664\u6b64\u671f\u9593"}
+                  title={"刪除此期間"}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeletePeriod(activeDeptId, p.id);
                   }}
                 >
-                  &times;
+                  ×
                 </button>
               )}
             </div>
           ))}
           <button
             className="period-tab-add"
-            title={"\u65b0\u589e\u671f\u9593"}
+            title={"新增期間"}
             onClick={() => setShowAddPeriod((v) => !v)}
           >
-            {"\uff0b"}
+            {"＋"}
           </button>
         </div>
 
@@ -222,13 +222,13 @@ export default function Sidebar({
               className="period-add-confirm"
               onClick={handleAddPeriodConfirm}
             >
-              {"\u65b0\u589e"}
+              {"新增"}
             </button>
             <button
               className="period-add-cancel"
               onClick={() => setShowAddPeriod(false)}
             >
-              &times;
+              ×
             </button>
           </div>
         )}
@@ -262,7 +262,7 @@ export default function Sidebar({
                 </div>
                 <button
                   className="sidebar-icon-btn"
-                  title={"\u522a\u9664\u76ee\u6a19"}
+                  title={"刪除目標"}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeleteGoal(goal.id);
@@ -291,7 +291,7 @@ export default function Sidebar({
         })}
 
         <button className="sidebar-add-goal" onClick={onAddGoal}>
-          {"\uff0b \u65b0\u589e\u76ee\u6a19\uff08G\uff09"}
+          {"＋ 新增目標（G）"}
         </button>
       </nav>
       <div className="sidebar-resizer" onMouseDown={handleMouseDown} />

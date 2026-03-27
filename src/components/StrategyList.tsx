@@ -33,11 +33,10 @@ function StrategyRow({
   const measuresAchieved = s.measures.filter(
     (m) => m.status === "completed",
   ).length;
-  const allItems = s.actionPlans.flatMap((p) => p.items);
-  const totalItems = allItems.length;
-  const doneItems = allItems.filter((i) => i.completed).length;
   const progressRate =
-    totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
+    measuresTotal > 0
+      ? Math.round((measuresAchieved / measuresTotal) * 100)
+      : 0;
   const effectiveRate = s.manualRate ?? progressRate;
   const barColor =
     effectiveRate >= 100

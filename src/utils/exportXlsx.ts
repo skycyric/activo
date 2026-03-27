@@ -2,11 +2,17 @@ import ExcelJS from "exceljs";
 import type { WorkspaceData, Strategy } from "../types/ogsm";
 
 function sActionProgress(s: Strategy): number {
-  const items = s.actionPlans.flatMap((ap) => ap.items);
-  if (items.length === 0) return 0;
+  const total = s.measures.length;
+  if (total === 0) return 0;
   return Math.round(
-    (items.filter((i) => i.completed).length / items.length) * 100,
+    (s.measures.filter((m) => m.status === "completed").length / total) * 100,
   );
+}
+
+function measureStatusLabel(status?: string): string {
+  if (status === "completed") return "已完成";
+  if (status === "in-progress") return "進行中";
+  return "未開始";
 }
 
 function styleHeaderRow(row: ExcelJS.Row): void {
@@ -203,20 +209,19 @@ export async function exportWorkspaceXlsx(
     }
   }
 
-  // ─── Sheet 3: 行動計畫 ───────────────────────────────────────────────
-  const sh3 = wb.addWorksheet("行動計畫");
+  // ─── Sheet 3: 活動狀態 ───────────────────────────────────────────────
+  const sh3 = wb.addWorksheet("活動狀態");
   sh3.columns = [
     { header: "部門", key: "dept", width: 14 },
     { header: "期間", key: "period", width: 10 },
     { header: "G", key: "goal", width: 8 },
     { header: "S", key: "strategy", width: 8 },
-    { header: "計畫名稱", key: "plan", width: 20 },
+    { header: "活動名稱", key: "measure", width: 28 },
     { header: "Q", key: "quarter", width: 6 },
-    { header: "項目說明", key: "desc", width: 40 },
-    { header: "開始日期", key: "start", width: 12 },
-    { header: "結束日期", key: "end", width: 12 },
-    { header: "負責人", key: "owner", width: 12 },
-    { header: "完成", key: "done", width: 6 },
+    { header: "主責者", key: "owner", width: 12 },
+    { header: "狀態", key: "status", width: 10 },
+    { header: "最後更新", key: "updatedAt", width: 14 },
+    { header: "KPI 數", key: "kpiCount", width: 8 },
   ];
   styleHeaderRow(sh3.getRow(1));
   sh3.views = [{ state: "frozen", ySplit: 1 }];
@@ -226,27 +231,30 @@ export async function exportWorkspaceXlsx(
       for (const goal of pd.ogsm.goals) {
         for (let si = 0; si < goal.strategies.length; si++) {
           const s = goal.strategies[si];
-          for (const ap of s.actionPlans) {
-            for (const item of ap.items) {
-              const row = sh3.addRow({
-                dept: dept.name,
-                period: pd.ogsm.period,
-                goal: goal.label,
-                strategy: `S${si + 1}`,
-                plan: ap.title || ap.quarter,
-                quarter: ap.quarter,
-                desc: item.description,
-                start: item.startDate ?? item.date ?? "",
-                end: item.endDate ?? "",
-                owner: item.owner ?? "",
-                done: item.completed ? "✓" : "",
-              });
-              if (item.completed) {
-                row.getCell("done").font = {
-                  bold: true,
-                  color: { argb: "FF059669" },
-                };
-              }
+          for (const m of s.measures) {
+            const status = measureStatusLabel(m.status);
+            const row = sh3.addRow({
+              dept: dept.name,
+              period: pd.ogsm.period,
+              goal: goal.label,
+              strategy: `S${si + 1}`,
+              measure: m.rawText,
+              quarter: m.quarter ?? "",
+              owner: m.owner ?? "",
+              status,
+              updatedAt: m.updatedAt ?? "",
+              kpiCount: m.kpis.length,
+            });
+            if (m.status === "completed") {
+              row.getCell("status").font = {
+                bold: true,
+                color: { argb: "FF059669" },
+              };
+            } else if (m.status === "in-progress") {
+              row.getCell("status").font = {
+                bold: true,
+                color: { argb: "FF2563EB" },
+              };
             }
           }
         }

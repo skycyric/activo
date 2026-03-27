@@ -164,13 +164,13 @@ export default function DeptSettingsPage({
             className={`dsettings-tab${activeTab === "team" ? " active" : ""}`}
             onClick={() => setActiveTab("team")}
           >
-            &#128101; 團隊設定
+            👥 團隊設定
           </button>
           <button
             className={`dsettings-tab${activeTab === "resource" ? " active" : ""}`}
             onClick={() => setActiveTab("resource")}
           >
-            &#128202; 資源規劃
+            📊 資源規劃
           </button>
         </div>
         {/* ── 團隊設定 ── */}

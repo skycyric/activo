@@ -68,7 +68,7 @@ function fmt(val: unknown, field?: string): string {
         (a, p) => a + (p.items?.length ?? 0),
         0,
       );
-      return `${val.length} 個季度 / ${total} 項計畫`;
+      return `${val.length} 組 legacy 時間軸 / ${total} 筆舊項目`;
     }
     if (field === "members") {
       return (
@@ -126,7 +126,7 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
   if (JSON.stringify(ls.actionPlans) !== JSON.stringify(rs.actionPlans)) {
     diffs.push({
       field: "actionPlans",
-      label: "行動計畫",
+      label: "legacy 時間軸資料",
       localVal: fmt(ls.actionPlans, "actionPlans"),
       remoteVal: fmt(rs.actionPlans, "actionPlans"),
     });

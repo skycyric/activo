@@ -8,7 +8,7 @@ import type {
   PeriodData,
   Team,
 } from "./types/ogsm";
-import { parseOGSM, avgRate, genId, computeStatus } from "./utils/csvParser";
+import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
   saveWorkspace,
   loadWorkspace,
@@ -41,7 +41,7 @@ import StrategyList from "./components/StrategyList";
 import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
-import csvRaw from "../\u71df\u4f01\u672c\u90e8OGSM - \u90e8\u9580\u770b\u677f\u8868\u683c.xlsx - 2026\u5546\u767c H1.csv?raw";
+import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 function recompute(data: OGSMData): OGSMData {
   const goals = data.goals.map((g) => {
@@ -51,7 +51,7 @@ function recompute(data: OGSMData): OGSMData {
         avgRate(
           s.measures.flatMap((m) => m.kpis).map((k) => k.achievementRate ?? 0),
         );
-      return { ...s, completionRate: rate, status: computeStatus(rate) };
+      return { ...s, completionRate: rate };
     });
     return {
       ...g,
@@ -70,9 +70,9 @@ function getInitialWorkspace(): WorkspaceData {
   const ws = loadWorkspace();
   if (ws) return ws;
   const legacy = loadLegacyData();
-  if (legacy) return wrapOGSMInWorkspace(legacy, "\u71df\u4f01\u672c\u90e8");
+  if (legacy) return wrapOGSMInWorkspace(legacy, "營企本部");
   try {
-    return wrapOGSMInWorkspace(parseOGSM(csvRaw), "\u71df\u4f01\u672c\u90e8");
+    return wrapOGSMInWorkspace(parseOGSM(csvRaw), "營企本部");
   } catch {
     return wrapOGSMInWorkspace(
       {
@@ -82,7 +82,7 @@ function getInitialWorkspace(): WorkspaceData {
         importedAt: new Date().toISOString(),
         overallRate: 0,
       },
-      "\u90e8\u9580\u4e00",
+      "部門一",
     );
   }
 }
@@ -488,7 +488,7 @@ export default function App() {
     };
     const dept: Department = {
       id: genId("dept"),
-      name: "\u65b0\u90e8\u9580",
+      name: "新部門",
       periods: [period],
     };
     const next = {
@@ -519,15 +519,10 @@ export default function App() {
   const handleDeleteDept = useCallback(
     (deptId: string) => {
       if (workspace.departments.length <= 1) {
-        alert("\u81f3\u5c11\u9700\u8981\u4fdd\u7559\u4e00\u500b\u90e8\u9580");
+        alert("至少需要保留一個部門");
         return;
       }
-      if (
-        !confirm(
-          "\u78ba\u5b9a\u8981\u522a\u9664\u6b64\u90e8\u9580\u53ca\u6240\u6709\u8cc7\u6599\u55ce\uff1f\u6b64\u64cd\u4f5c\u7121\u6cd5\u5fa9\u539f\u3002",
-        )
-      )
-        return;
+      if (!confirm("確定要刪除此部門及所有資料嗎？此操作無法復原。")) return;
       const next = {
         ...workspace,
         departments: workspace.departments.filter((d) => d.id !== deptId),
@@ -564,7 +559,7 @@ export default function App() {
       if (
         dept.periods.some((p) => p.halfYear === halfYear && p.year === year)
       ) {
-        alert(`${year} ${halfYear} \u5df2\u5b58\u5728`);
+        alert(`${year} ${halfYear} 已存在`);
         return;
       }
       const baseOgsm = dept.periods[0]?.ogsm;
@@ -610,15 +605,10 @@ export default function App() {
     (deptId: string, periodId: string) => {
       const dept = workspace.departments.find((d) => d.id === deptId);
       if (!dept || dept.periods.length <= 1) {
-        alert("\u81f3\u5c11\u9700\u8981\u4fdd\u7559\u4e00\u500b\u671f\u9593");
+        alert("至少需要保留一個期間");
         return;
       }
-      if (
-        !confirm(
-          "\u78ba\u5b9a\u8981\u522a\u9664\u6b64\u671f\u9593\u7684\u6240\u6709 OGSM \u8cc7\u6599\u55ce\uff1f",
-        )
-      )
-        return;
+      if (!confirm("確定要刪除此期間的所有 OGSM 資料嗎？")) return;
       const next = {
         ...workspace,
         departments: workspace.departments.map((d) =>
@@ -691,8 +681,7 @@ export default function App() {
     if (!selectedGoalId) return;
     const s: Strategy = {
       id: genId("str"),
-      title:
-        "\u65b0\u7b56\u7565\uff08\u9ede\u64ca\u7de8\u8f2f\u540d\u7a31\uff09",
+      title: "新策略（點擊編輯名稱）",
       rawText: "",
       measures: [{ id: genId("msr"), rawText: "", kpis: [] }],
       q1Text: "",
@@ -702,7 +691,6 @@ export default function App() {
       notes: "",
       completionRate: 0,
       manualRate: null,
-      status: "not-started",
       updatedAt: new Date().toISOString(),
     };
     const next = {
@@ -719,12 +707,7 @@ export default function App() {
 
   const handleDeleteStrategy = useCallback(
     (strategyId: string) => {
-      if (
-        !confirm(
-          "\u78ba\u5b9a\u8981\u522a\u9664\u9019\u500b\u7b56\u7565\u55ce\uff1f",
-        )
-      )
-        return;
+      if (!confirm("確定要刪除這個策略嗎？")) return;
       const next = {
         ...data,
         goals: data.goals.map((g) =>
@@ -771,8 +754,8 @@ export default function App() {
     const g: Goal = {
       id: genId("goal"),
       label: `G${data.goals.length + 1}`,
-      title: "\u65b0\u76ee\u6a19",
-      fullText: "\u9ede\u64ca\u53f3\u5074\u7de8\u8f2f\u76ee\u6a19\u63cf\u8ff0",
+      title: "新目標",
+      fullText: "點擊右側編輯目標描述",
       strategies: [],
       completionRate: 0,
       updatedAt: new Date().toISOString(),
@@ -806,12 +789,7 @@ export default function App() {
 
   const handleDeleteGoal = useCallback(
     (goalId: string) => {
-      if (
-        !confirm(
-          "\u78ba\u5b9a\u8981\u522a\u9664\u9019\u500b\u76ee\u6a19\uff08G\uff09\u53ca\u5176\u6240\u6709\u7b56\u7565\u55ce\uff1f",
-        )
-      )
-        return;
+      if (!confirm("確定要刪除這個目標（G）及其所有策略嗎？")) return;
       const goal = data.goals.find((g) => g.id === goalId);
       const strategyIds = goal?.strategies.map((s) => s.id) ?? [];
       const next = {
@@ -873,7 +851,7 @@ export default function App() {
         if ("departments" in parsed) {
           if (
             !confirm(
-              "\u6b64 JSON \u5305\u542b\u5b8c\u6574\u5de5\u4f5c\u5340\u8cc7\u6599\uff0c\u78ba\u5b9a\u8981\u53d6\u4ee3\u76ee\u524d\u7684\u6240\u6709\u90e8\u9580\u8cc7\u6599\u55ce\uff1f",
+              "此 JSON 包含完整工作區資料，確定要取代目前的所有部門資料嗎？",
             )
           )
             return;
@@ -941,7 +919,7 @@ export default function App() {
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
     } catch (err) {
-      alert("\u532f\u5165\u5931\u6557\uff1a" + String(err));
+      alert("匯入失敗：" + String(err));
     } finally {
       setImporting(false);
       e.target.value = "";
@@ -952,10 +930,10 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-brand">
-          <span className="header-logo">&#9675;</span>
+          <span className="header-logo">○</span>
           <span className="header-title">OGSM Power Tool</span>
           <span className="header-period">
-            {activeDept?.name ?? ""} &middot; {data.period}
+            {activeDept?.name ?? ""} · {data.period}
           </span>
         </div>
         {fsSupported && (

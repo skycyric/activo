@@ -50,7 +50,11 @@ export function loadWorkspace(): WorkspaceData | null {
   }
 }
 
-/** Remove duplicate PlanItems left by old cross-quarter sync mechanism. */
+/**
+ * Legacy migration only: dedupe old ActionPlan items left by the historic
+ * cross-quarter sync mechanism. This keeps backward compatibility for older
+ * saved JSON, but ActionPlan items are no longer the primary UI data source.
+ */
 function migrateSyncDuplicates(ws: WorkspaceData): boolean {
   let changed = false;
   for (const dept of ws.departments) {
