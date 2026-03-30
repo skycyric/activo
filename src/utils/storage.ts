@@ -5,9 +5,33 @@ import type {
   PeriodData,
   Strategy,
 } from "../types/ogsm";
+import { WorkspaceDataSchema, OGSMDataSchema } from "../schemas/ogsm";
 
 const WORKSPACE_KEY = "ogsm_workspace_v1";
 const LEGACY_KEY = "ogsm_power_tool_data";
+
+/**
+ * 在開發期間驗證資料是否符合 schema，不符合時印出 console.warn。
+ * 不阻斷執行，避免破壞已有存檔資料。
+ */
+function validateOrWarn<T>(
+  schema: {
+    safeParse: (v: unknown) => {
+      success: boolean;
+      error?: { message: string };
+    };
+  },
+  data: T,
+  context: string,
+): void {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    console.warn(
+      `[schema] ${context} — 資料不符合 schema:`,
+      result.error?.message,
+    );
+  }
+}
 
 function genId(prefix = "id"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -30,6 +54,7 @@ export function loadWorkspace(): WorkspaceData | null {
     if (normalizeWorkspaceData(ws)) {
       saveWorkspace(ws);
     }
+    validateOrWarn(WorkspaceDataSchema, ws, "loadWorkspace");
     // One-time: clear strategy owners when no teams configured
     if (!ws._migratedClearOwners) {
       if (!ws.teams || ws.teams.length === 0) {
@@ -298,6 +323,7 @@ export function importJSON(file: File): Promise<OGSMData | WorkspaceData> {
           Array.isArray((parsed as { departments?: unknown[] }).departments)
         ) {
           normalizeWorkspaceData(parsed as WorkspaceData);
+          validateOrWarn(WorkspaceDataSchema, parsed, "importJSON:workspace");
           resolve(parsed as WorkspaceData);
           return;
         }
@@ -307,6 +333,7 @@ export function importJSON(file: File): Promise<OGSMData | WorkspaceData> {
           Array.isArray((parsed as { goals?: unknown[] }).goals)
         ) {
           normalizeOGSMData(parsed as OGSMData);
+          validateOrWarn(OGSMDataSchema, parsed, "importJSON:ogsm");
           resolve(parsed as OGSMData);
           return;
         }

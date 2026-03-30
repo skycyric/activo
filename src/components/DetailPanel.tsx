@@ -3,6 +3,7 @@ import type {
   Strategy,
   KPI,
   Measure,
+  MeasureStatus,
   Team,
   TeamMember,
   ActionPlan,
@@ -1292,7 +1293,10 @@ export default function DetailPanel({
                               ...strategy,
                               measures: strategy.measures.map((ms) =>
                                 ms.id === m.id
-                                  ? { ...ms, status: e.target.value }
+                                  ? {
+                                      ...ms,
+                                      status: e.target.value as MeasureStatus,
+                                    }
                                   : ms,
                               ),
                             })

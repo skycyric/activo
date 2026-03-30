@@ -16,7 +16,8 @@
     "exceljs": "^4.4.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "vite-plugin-singlefile": "^2.3.2"
+    "vite-plugin-singlefile": "^2.3.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
