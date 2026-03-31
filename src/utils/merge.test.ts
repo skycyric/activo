@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { detectConflicts, mergeWorkspaces } from "./merge";
-import type { WorkspaceData, Strategy, Goal } from "../types/ogsm";
+import type { WorkspaceData, Strategy, Goal } from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { OGSMData, Team, TeamMember } from "../types/ogsm";
+import type { OGSMData, Team, TeamMember } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 
 interface Props {

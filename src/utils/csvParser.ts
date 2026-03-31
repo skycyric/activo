@@ -1,4 +1,4 @@
-import type { OGSMData, Goal, Strategy, Measure, KPI } from "../types/ogsm";
+import type { OGSMData, Goal, Strategy, Measure, KPI } from "../schemas/ogsm";
 
 export function genId(prefix = "id"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;

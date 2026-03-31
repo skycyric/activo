@@ -6,10 +6,15 @@ import type {
   Measure,
   GoalKPI,
   GoalKpiLink,
-} from "../types/ogsm";
+} from "../schemas/ogsm";
+import {
+  countStrategyWarnings,
+  getPlanItemWarning,
+} from "../utils/planWarnings";
 
 interface Props {
   data: OGSMData;
+  warnDaysBefore: number;
   onSelectGoal: (id: string) => void;
   onSelectStrategy: (goalId: string, strategyId: string) => void;
   onEditObjective: (text: string) => void;
@@ -26,6 +31,56 @@ interface NodeStats {
 
 //  GoalKPI helpers
 function goalKpiRate(gk: GoalKPI, goal: Goal): number | null {
+  const gkType = gk.type ?? "value";
+
+  // ── pct_activity：依 thresholdGoalKpiIds 計算活動達標率 ─────────────────
+  if (gkType === "pct_activity") {
+    const activityMap = new Map<string, boolean>();
+    for (const threshId of gk.thresholdGoalKpiIds ?? []) {
+      const threshGk = (goal.goalKpis ?? []).find((g) => g.id === threshId);
+      if (
+        !threshGk ||
+        threshGk.target === null ||
+        threshGk.target === undefined
+      )
+        continue;
+      for (const link of threshGk.linkedKpis) {
+        const s = goal.strategies.find((s) => s.id === link.strategyId);
+        const m = s?.measures.find((m) => m.id === link.measureId);
+        const k = m?.kpis.find((k) => k.id === link.kpiId);
+        if (!k) continue;
+        const met = (k.actual ?? 0) >= threshGk.target;
+        const existing = activityMap.get(link.measureId);
+        if (existing === undefined || (!existing && met))
+          activityMap.set(link.measureId, met);
+      }
+    }
+    const totalCount = activityMap.size;
+    if (totalCount === 0) return null;
+    const metCount = Array.from(activityMap.values()).filter(Boolean).length;
+    const actualPct = (metCount / totalCount) * 100;
+    const target = gk.target ?? 60;
+    if (target <= 0) return null;
+    return Math.round((actualPct / target) * 100);
+  }
+
+  // ── progress：linked 進度型 KPI 的 actual 平均 ────────────────────────────
+  if (gkType === "progress") {
+    const vals = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
+      const s = goal.strategies.find((s) => s.id === link.strategyId);
+      const m = s?.measures.find((m) => m.id === link.measureId);
+      const k = m?.kpis.find((k) => k.id === link.kpiId);
+      if (!k) return [];
+      return [k.actual ?? 0];
+    });
+    if (vals.length === 0) return null;
+    const avg = vals.reduce((a, v) => a + v, 0) / vals.length;
+    const target = gk.target ?? 100;
+    if (target <= 0) return null;
+    return Math.round((avg / target) * 100);
+  }
+
+  // ── value（原有邏輯）────────────────────────────────────────────────────────
   const values = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
     const s = goal.strategies.find((s) => s.id === link.strategyId);
     const m = s?.measures.find((m) => m.id === link.measureId);
@@ -143,6 +198,7 @@ function sTooltip(_s: Strategy, ss: NodeStats): string {
 //  component
 export default function OverviewPage({
   data,
+  warnDaysBefore,
   onSelectGoal,
   onSelectStrategy,
   onEditObjective,
@@ -201,6 +257,35 @@ export default function OverviewPage({
   );
   const oPlanCompleted = allMeasuresWithCtx.filter(
     (m) => m.status === "completed",
+  );
+
+  // PlanItem 警示統計（跨所有 G/S）
+  type PlanItemWarnCtx = {
+    id: string;
+    description: string;
+    stratTitle: string;
+    goalId: string;
+    stratId: string;
+  };
+  const oWarnOverdue: PlanItemWarnCtx[] = [];
+  const oWarnNear: PlanItemWarnCtx[] = [];
+  data.goals.forEach((g) =>
+    g.strategies.forEach((s) =>
+      s.actionPlans
+        .flatMap((p) => p.items)
+        .forEach((item) => {
+          const w = getPlanItemWarning(item, warnDaysBefore);
+          const ctx = {
+            id: item.id,
+            description: item.description || "（未命名）",
+            stratTitle: s.title || "（未命名策略）",
+            goalId: g.id,
+            stratId: s.id,
+          };
+          if (w === "overdue") oWarnOverdue.push(ctx);
+          else if (w === "warning") oWarnNear.push(ctx);
+        }),
+    ),
   );
   return (
     <div className="overview-page">
@@ -310,6 +395,52 @@ export default function OverviewPage({
         </div>
         {oExpandedStatus &&
           (() => {
+            const isWarnKey =
+              oExpandedStatus === "overdue" || oExpandedStatus === "warning";
+            if (isWarnKey) {
+              const items =
+                oExpandedStatus === "overdue" ? oWarnOverdue : oWarnNear;
+              const label =
+                oExpandedStatus === "overdue" ? "🔴 逾期" : "⚠️ 即將到期";
+              return (
+                <div className="ov-status-list">
+                  <div className="ov-status-list-header">
+                    <span>
+                      {label}（{items.length} 項）
+                    </span>
+                    <button
+                      className="ov-status-list-close"
+                      onClick={() => setOExpandedStatus(null)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {items.length === 0 ? (
+                    <div className="ov-status-list-empty">無項目</div>
+                  ) : (
+                    <div className="ov-status-list-body">
+                      {items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="ov-status-list-item"
+                          onClick={() =>
+                            onSelectStrategy(item.goalId, item.stratId)
+                          }
+                          title="點擊開啟策略詳細頁"
+                        >
+                          <span className="ov-status-list-name">
+                            {item.description}
+                          </span>
+                          <span className="ov-status-list-path">
+                            {item.stratTitle}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             const items =
               oExpandedStatus === "not-started"
                 ? oPlanNotStarted
@@ -413,6 +544,16 @@ export default function OverviewPage({
               <ul className="org-children">
                 {data.goals.map((g: Goal, gi: number) => {
                   const gs = gStats(g);
+                  const gOverdue = g.strategies.reduce(
+                    (a, s) =>
+                      a + countStrategyWarnings(s, warnDaysBefore).overdue,
+                    0,
+                  );
+                  const gNear = g.strategies.reduce(
+                    (a, s) =>
+                      a + countStrategyWarnings(s, warnDaysBefore).warning,
+                    0,
+                  );
                   return (
                     <li key={g.id}>
                       {/* G node */}
@@ -430,12 +571,26 @@ export default function OverviewPage({
                         <span className="org-title">
                           {g.title || <em>(未命名)</em>}
                         </span>
+                        {gOverdue > 0 && (
+                          <span className="org-warn-badge org-warn-overdue">
+                            🔴{gOverdue}
+                          </span>
+                        )}
+                        {gNear > 0 && (
+                          <span className="org-warn-badge org-warn-near">
+                            ⚠️{gNear}
+                          </span>
+                        )}
                       </div>
 
                       {g.strategies.length > 0 && (
                         <ul className="org-children">
                           {g.strategies.map((s: Strategy, si: number) => {
                             const ss = sStats(s);
+                            const sWarn = countStrategyWarnings(
+                              s,
+                              warnDaysBefore,
+                            );
                             return (
                               <li key={s.id}>
                                 {/* S node */}
@@ -454,6 +609,16 @@ export default function OverviewPage({
                                   <span className="org-title">
                                     {s.title || <em>(未命名)</em>}
                                   </span>
+                                  {sWarn.overdue > 0 && (
+                                    <span className="org-warn-badge org-warn-overdue">
+                                      🔴{sWarn.overdue}
+                                    </span>
+                                  )}
+                                  {sWarn.warning > 0 && (
+                                    <span className="org-warn-badge org-warn-near">
+                                      ⚠️{sWarn.warning}
+                                    </span>
+                                  )}
                                 </div>
                               </li>
                             );

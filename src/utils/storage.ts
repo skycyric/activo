@@ -1,11 +1,12 @@
-import type {
-  OGSMData,
-  WorkspaceData,
-  Department,
-  PeriodData,
-  Strategy,
-} from "../types/ogsm";
-import { WorkspaceDataSchema, OGSMDataSchema } from "../schemas/ogsm";
+import {
+  type OGSMData,
+  type WorkspaceData,
+  type Department,
+  type PeriodData,
+  type Strategy,
+  WorkspaceDataSchema,
+  OGSMDataSchema,
+} from "../schemas/ogsm";
 
 const WORKSPACE_KEY = "ogsm_workspace_v1";
 const LEGACY_KEY = "ogsm_power_tool_data";
@@ -94,23 +95,11 @@ function migrateMeasureDateRangeFromPlanItems(strategy: Strategy): boolean {
       .filter((it) => it.linkedMeasureId === measure.id);
     if (linked.length === 0) continue;
 
-    const starts = linked
-      .map((it) => toIsoDateLoose(it.plannedStartDate))
-      .filter((d): d is string => !!d)
-      .sort();
     const ends = linked
-      .map(
-        (it) =>
-          toIsoDateLoose(it.plannedEndDate) ??
-          toIsoDateLoose(it.plannedStartDate),
-      )
+      .map((it) => toIsoDateLoose(it.plannedEndDate))
       .filter((d): d is string => !!d)
       .sort();
 
-    if (!measure.startDate && starts.length > 0) {
-      measure.startDate = starts[0];
-      changed = true;
-    }
     if (!measure.endDate && ends.length > 0) {
       measure.endDate = ends[ends.length - 1];
       changed = true;
@@ -155,8 +144,8 @@ function migrateSyncDuplicates(ws: WorkspaceData): boolean {
 }
 
 /**
- * Migrate old PlanItem date fields (date / startDate / endDate) to the new
- * plannedStartDate / plannedEndDate fields introduced 2026-03.
+ * Migrate old PlanItem date fields to the current plannedEndDate / actualEndDate fields.
+ * Also cleans up legacy plannedStartDate / actualStartDate if still present.
  */
 function migratePlanItemDateFields(ws: WorkspaceData): boolean {
   let changed = false;
@@ -167,21 +156,27 @@ function migratePlanItemDateFields(ws: WorkspaceData): boolean {
           for (const ap of strategy.actionPlans) {
             for (const item of ap.items) {
               const raw = item as unknown as Record<string, unknown>;
-              if ("date" in raw || "startDate" in raw || "endDate" in raw) {
-                if (!item.plannedStartDate) {
-                  item.plannedStartDate = toIsoDateLoose(
-                    (raw.startDate as string | undefined) ??
-                      (raw.date as string | undefined),
-                  );
-                }
+              const hasLegacy =
+                "date" in raw ||
+                "startDate" in raw ||
+                "endDate" in raw ||
+                "plannedStartDate" in raw ||
+                "actualStartDate" in raw;
+              if (hasLegacy) {
                 if (!item.plannedEndDate) {
-                  item.plannedEndDate = toIsoDateLoose(
-                    raw.endDate as string | undefined,
-                  );
+                  item.plannedEndDate =
+                    toIsoDateLoose(
+                      (raw.endDate as string | undefined) ??
+                        (raw.plannedEndDate as string | undefined) ??
+                        (raw.startDate as string | undefined) ??
+                        (raw.date as string | undefined),
+                    ) ?? undefined;
                 }
                 delete raw.date;
                 delete raw.startDate;
                 delete raw.endDate;
+                delete raw.plannedStartDate;
+                delete raw.actualStartDate;
                 changed = true;
               }
             }
@@ -216,21 +211,27 @@ function normalizeOGSMData(ogsm: OGSMData): boolean {
       for (const ap of strategy.actionPlans) {
         for (const item of ap.items) {
           const raw = item as unknown as Record<string, unknown>;
-          if ("date" in raw || "startDate" in raw || "endDate" in raw) {
-            if (!item.plannedStartDate) {
-              item.plannedStartDate = toIsoDateLoose(
-                (raw.startDate as string | undefined) ??
-                  (raw.date as string | undefined),
-              );
-            }
+          const hasLegacy =
+            "date" in raw ||
+            "startDate" in raw ||
+            "endDate" in raw ||
+            "plannedStartDate" in raw ||
+            "actualStartDate" in raw;
+          if (hasLegacy) {
             if (!item.plannedEndDate) {
-              item.plannedEndDate = toIsoDateLoose(
-                raw.endDate as string | undefined,
-              );
+              item.plannedEndDate =
+                toIsoDateLoose(
+                  (raw.endDate as string | undefined) ??
+                    (raw.plannedEndDate as string | undefined) ??
+                    (raw.startDate as string | undefined) ??
+                    (raw.date as string | undefined),
+                ) ?? undefined;
             }
             delete raw.date;
             delete raw.startDate;
             delete raw.endDate;
+            delete raw.plannedStartDate;
+            delete raw.actualStartDate;
             changed = true;
           }
         }

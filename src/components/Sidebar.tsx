@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from "react";
-import type { OGSMData, Goal, Strategy, WorkspaceData } from "../types/ogsm";
+import type { OGSMData, Goal, Strategy, WorkspaceData } from "../schemas/ogsm";
 
 interface Props {
   workspace: WorkspaceData;
@@ -186,7 +186,7 @@ export default function Sidebar({
                     onDeletePeriod(activeDeptId, p.id);
                   }}
                 >
-                  ×
+                  🗑
                 </button>
               )}
             </div>

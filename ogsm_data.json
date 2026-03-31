@@ -289,16 +289,14 @@
                             "description": "EC活動專頁 需求單交付",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-02-09"
+                            "linkedMeasureId": "msr_mn4ay4lx_ht1f"
                           },
                           {
                             "id": "item_mn4c97sn_ao3e",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-02-24"
+                            "linkedMeasureId": "msr_mn4ay4lx_ht1f"
                           },
                           {
                             "id": "item_mn4c9g8n_bbpq",
@@ -306,7 +304,6 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-03-02",
                             "plannedEndDate": "2026-03-13"
                           },
                           {
@@ -315,7 +312,6 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-03-11",
                             "plannedEndDate": "2026-03-20"
                           },
                           {
@@ -323,8 +319,7 @@
                             "description": "贈品大貨入庫",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-03-13"
+                            "linkedMeasureId": "msr_mn4ay4lx_ht1f"
                           },
                           {
                             "id": "item_mn4caaqf_ld9l",
@@ -332,7 +327,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-03-18",
                             "plannedEndDate": "2026-04-30"
                           },
                           {
@@ -341,7 +335,6 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedStartDate": "2026-03-21",
                             "plannedEndDate": "2026-03-22"
                           }
                         ]
@@ -356,24 +349,21 @@
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedStartDate": "2026-02-09"
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           },
                           {
                             "id": "item_mn4cbwvc_jse9",
                             "description": "EC活動專頁 需求單交付",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedStartDate": "2026-03-06"
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           },
                           {
                             "id": "item_mn4cc4ov_riz2",
                             "description": "贈品大貨入庫",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedStartDate": "2026-03-31"
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           }
                         ]
                       },
@@ -388,7 +378,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedStartDate": "2026-04-08",
                             "plannedEndDate": "2026-05-13"
                           },
                           {
@@ -396,8 +385,7 @@
                             "description": "線下攤位活動 啟動",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedStartDate": "2026-04-11"
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           }
                         ]
                       },
@@ -417,40 +405,35 @@
                             "description": "富邦提供贊助案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedStartDate": "2026-02-23"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cdwv4_c5pt",
                             "description": "回簽報價單",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedStartDate": "2026-03-11"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4ce1v4_3jz8",
                             "description": "提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedStartDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cea6g_5u1u",
                             "description": "提供設計文案單",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedStartDate": "2026-03-11"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cee34_vybw",
                             "description": "申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedStartDate": "2026-03-13"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cekc8_28i5",
@@ -458,7 +441,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedStartDate": "2026-04-11",
                             "plannedEndDate": "2026-04-12"
                           }
                         ]
@@ -473,16 +455,14 @@
                             "description": "提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5fbq_iw7d",
-                            "plannedStartDate": "2026-03-23"
+                            "linkedMeasureId": "msr_mn4c5fbq_iw7d"
                           },
                           {
                             "id": "item_mn4cfn34_1kuz",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn4c5fbq_iw7d",
-                            "plannedStartDate": "2026-03-30"
+                            "linkedMeasureId": "msr_mn4c5fbq_iw7d"
                           },
                           {
                             "id": "item_mn4cfu74_jvhi",
@@ -490,7 +470,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4c5fbq_iw7d",
-                            "plannedStartDate": "2026-06-20",
                             "plannedEndDate": "2026-06-20"
                           }
                         ]
@@ -505,32 +484,28 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedStartDate": "2026-02-02"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4ch11d_tduj",
                             "description": "上申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedStartDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4ch5zc_4116",
                             "description": "燈會主辦單位行前會",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedStartDate": "2026-02-11"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4chend_w1ay",
                             "description": "進場",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedStartDate": "2026-03-03"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4chjtl_hc1k",
@@ -538,7 +513,6 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedStartDate": "2026-03-03",
                             "plannedEndDate": "2026-03-15"
                           }
                         ]
@@ -553,32 +527,28 @@
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedStartDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4ciau1_8rgl",
                             "description": "EC活動專頁 需求單交付",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedStartDate": "2026-02-23"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4cikhl_oegg",
                             "description": "提設計需求",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedStartDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4cipbe_4f0a",
                             "description": "贈品大貨入庫",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedStartDate": "2026-03-16"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4cix29_afie",
@@ -586,7 +556,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedStartDate": "2026-03-25",
                             "plannedEndDate": "2026-04-24"
                           },
                           {
@@ -594,8 +563,7 @@
                             "description": "線下攤位活動 啟動",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedStartDate": "2026-04-03"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           }
                         ]
                       },
@@ -745,24 +713,21 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5sv3gv_geir",
-                            "plannedStartDate": "2026-03-16"
+                            "linkedMeasureId": "msr_mn5sv3gv_geir"
                           },
                           {
                             "id": "item_mn5t5h6y_sr07",
                             "description": "二提",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5sv3gv_geir",
-                            "plannedStartDate": "2026-03-23"
+                            "linkedMeasureId": "msr_mn5sv3gv_geir"
                           },
                           {
                             "id": "item_mn5t5pjm_8hfs",
                             "description": "上申議書",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5sv3gv_geir",
-                            "plannedStartDate": "2026-03-27"
+                            "linkedMeasureId": "msr_mn5sv3gv_geir"
                           }
                         ]
                       },
@@ -776,8 +741,7 @@
                             "description": "台新啟動",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5sylvd_nuk4",
-                            "plannedStartDate": "2026-01-01"
+                            "linkedMeasureId": "msr_mn5sylvd_nuk4"
                           },
                           {
                             "id": "item_mn5t6igz_ufae",
@@ -785,8 +749,7 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn5sylvd_nuk4",
-                            "notes": "審核中",
-                            "plannedStartDate": "2026-02-04"
+                            "notes": "審核中"
                           }
                         ]
                       },
@@ -800,16 +763,14 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t0ny9_npgk",
-                            "plannedStartDate": "2026-03-20"
+                            "linkedMeasureId": "msr_mn5t0ny9_npgk"
                           },
                           {
                             "id": "item_mn5v2jpj_pkbi",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5t0ny9_npgk",
-                            "plannedStartDate": "2026-03-25"
+                            "linkedMeasureId": "msr_mn5t0ny9_npgk"
                           }
                         ]
                       },
@@ -823,24 +784,21 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedStartDate": "2026-02-11"
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5"
                           },
                           {
                             "id": "item_mn5v340p_6bis",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedStartDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5"
                           },
                           {
                             "id": "item_mn5v39xb_8k3b",
                             "description": "視覺設計完稿",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedStartDate": "2026-03-20"
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5"
                           }
                         ]
                       },
@@ -854,16 +812,14 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vh5q3_k8hf",
-                            "plannedStartDate": "2026-03-23"
+                            "linkedMeasureId": "msr_mn5vh5q3_k8hf"
                           },
                           {
                             "id": "item_mn5viatg_ek1y",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5vh5q3_k8hf",
-                            "plannedStartDate": "2026-03-27"
+                            "linkedMeasureId": "msr_mn5vh5q3_k8hf"
                           }
                         ]
                       },
@@ -877,8 +833,7 @@
                             "description": "購物金啟動",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t1mf5_hv8r",
-                            "plannedStartDate": "2026-02-01"
+                            "linkedMeasureId": "msr_mn5t1mf5_hv8r"
                           }
                         ]
                       },
@@ -892,24 +847,21 @@
                             "description": "活動啟動+春節製作物上架",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t3jpe_3lse",
-                            "plannedStartDate": "2026-01-09"
+                            "linkedMeasureId": "msr_mn5t3jpe_3lse"
                           },
                           {
                             "id": "item_mn5v4juw_g7y9",
                             "description": "LINE推播+隱藏官網上架",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t3jpe_3lse",
-                            "plannedStartDate": "2026-01-16"
+                            "linkedMeasureId": "msr_mn5t3jpe_3lse"
                           },
                           {
                             "id": "item_mn5v4rp4_0wx8",
                             "description": "IG限動上架",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t3jpe_3lse",
-                            "plannedStartDate": "2026-02-19"
+                            "linkedMeasureId": "msr_mn5t3jpe_3lse"
                           }
                         ]
                       },
@@ -924,7 +876,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn5t0ny9_npgk",
-                            "plannedStartDate": "2026-05-01",
                             "plannedEndDate": "2026-08-31"
                           }
                         ]
@@ -940,7 +891,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedStartDate": "2026-04-01",
                             "plannedEndDate": "2026-06-30"
                           }
                         ]
@@ -956,7 +906,6 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn5vh5q3_k8hf",
-                            "plannedStartDate": "2026-04-13",
                             "plannedEndDate": "2026-05-31"
                           }
                         ]
@@ -1101,24 +1050,21 @@
                             "description": "提供案型給資訊以及採購單位評估可行性",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vlyf9_31cy",
-                            "plannedStartDate": "2026-01-27"
+                            "linkedMeasureId": "msr_mn5vlyf9_31cy"
                           },
                           {
                             "id": "item_mn5wetyc_53dy",
                             "description": "採購討論,會再提供6檔活動",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vlyf9_31cy",
-                            "plannedStartDate": "2026-02-24"
+                            "linkedMeasureId": "msr_mn5vlyf9_31cy"
                           },
                           {
                             "id": "item_mn5wf37g_0iti",
                             "description": "依照現有功能完成提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vlyf9_31cy",
-                            "plannedStartDate": "2026-03-18"
+                            "linkedMeasureId": "msr_mn5vlyf9_31cy"
                           }
                         ]
                       },
@@ -1132,16 +1078,14 @@
                             "description": "初步討論",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedStartDate": "2026-02-27"
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           },
                           {
                             "id": "item_mn5wfovg_41i1",
                             "description": "活動提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedStartDate": "2026-03-12"
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           },
                           {
                             "id": "item_mn5wfv30_zjn5",
@@ -1150,7 +1094,6 @@
                             "completed": false,
                             "linkedMeasureId": "msr_mn5w16so_mfan",
                             "notes": "文案陸續提供",
-                            "plannedStartDate": "2026-03-20",
                             "plannedEndDate": "2026-04-10"
                           },
                           {
@@ -1158,16 +1101,14 @@
                             "description": "報價蒐集完成",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedStartDate": "2026-03-27"
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           },
                           {
                             "id": "item_mn5wgmqs_ktr9",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedStartDate": "2026-03-31"
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           }
                         ]
                       },
@@ -1181,16 +1122,14 @@
                             "description": "提案",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w4ovd_q8g0",
-                            "plannedStartDate": "2026-03-27"
+                            "linkedMeasureId": "msr_mn5w4ovd_q8g0"
                           },
                           {
                             "id": "item_mn5whh8d_7ceg",
                             "description": "上線",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w4ovd_q8g0",
-                            "plannedStartDate": "2026-04-20"
+                            "linkedMeasureId": "msr_mn5w4ovd_q8g0"
                           }
                         ]
                       },
@@ -1204,16 +1143,14 @@
                             "description": "方向討論",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedStartDate": "2026-03-13"
+                            "linkedMeasureId": "msr_mn5w5gki_zdwh"
                           },
                           {
                             "id": "item_mn5wiyct_rxoe",
                             "description": "廠商提案",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedStartDate": "2026-04-10"
+                            "linkedMeasureId": "msr_mn5w5gki_zdwh"
                           }
                         ]
                       },
@@ -1227,32 +1164,28 @@
                             "description": "Q1提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedStartDate": "2026-02-02"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           },
                           {
                             "id": "item_mn5wkmh1_812n",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedStartDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           },
                           {
                             "id": "item_mn5wkt7y_5bz4",
                             "description": "二月檔上線",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedStartDate": "2026-02-13"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           },
                           {
                             "id": "item_mn5wkzse_0ffr",
                             "description": "三月檔上線",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedStartDate": "2026-03-14"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           }
                         ]
                       },
@@ -1266,24 +1199,21 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w97l7_09c4",
-                            "plannedStartDate": "2026-02-02"
+                            "linkedMeasureId": "msr_mn5w97l7_09c4"
                           },
                           {
                             "id": "item_mn5wlo19_3kfq",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w97l7_09c4",
-                            "plannedStartDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn5w97l7_09c4"
                           },
                           {
                             "id": "item_mn5wlu26_560g",
                             "description": "上線",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w97l7_09c4",
-                            "plannedStartDate": "2026-03-13"
+                            "linkedMeasureId": "msr_mn5w97l7_09c4"
                           }
                         ]
                       },
@@ -1297,24 +1227,21 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w8zbn_l12i",
-                            "plannedStartDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn5w8zbn_l12i"
                           },
                           {
                             "id": "item_mn5wmcke_43zf",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w8zbn_l12i",
-                            "plannedStartDate": "2026-03-15"
+                            "linkedMeasureId": "msr_mn5w8zbn_l12i"
                           },
                           {
                             "id": "item_mn5wmjxa_albl",
                             "description": "三月檔上線",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w8zbn_l12i",
-                            "plannedStartDate": "2026-03-30"
+                            "linkedMeasureId": "msr_mn5w8zbn_l12i"
                           }
                         ]
                       },

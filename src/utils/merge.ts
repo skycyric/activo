@@ -24,7 +24,7 @@ import type {
   Team,
   Department,
   PeriodData,
-} from "../types/ogsm";
+} from "../schemas/ogsm";
 
 // public types
 

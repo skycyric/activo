@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import type { WorkspaceData, Strategy } from "../types/ogsm";
+import type { WorkspaceData, Strategy } from "../schemas/ogsm";
 
 function sActionProgress(s: Strategy): number {
   const total = s.measures.length;

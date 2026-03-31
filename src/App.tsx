@@ -7,7 +7,7 @@ import type {
   Department,
   PeriodData,
   Team,
-} from "./types/ogsm";
+} from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
   saveWorkspace,
@@ -442,6 +442,13 @@ export default function App() {
         return t;
       });
       updateWorkspace({ ...workspace, teams: stamped });
+    },
+    [workspace, updateWorkspace],
+  );
+
+  const handleUpdateWarnDaysBefore = useCallback(
+    (n: number) => {
+      updateWorkspace({ ...workspace, warnDaysBefore: n });
     },
     [workspace, updateWorkspace],
   );
@@ -1075,6 +1082,7 @@ export default function App() {
         ) : selectedGoalId === null ? (
           <OverviewPage
             data={data}
+            warnDaysBefore={workspace.warnDaysBefore ?? 7}
             onSelectGoal={(id) => {
               setSelectedGoalId(id);
               setSelectedStrategyId(null);
@@ -1099,6 +1107,7 @@ export default function App() {
               filterOwner={filterOwner}
               onFilterOwner={setFilterOwner}
               teams={teams}
+              warnDaysBefore={workspace.warnDaysBefore ?? 7}
             />
             {selectedStrategy && (
               <DetailPanel
@@ -1110,6 +1119,8 @@ export default function App() {
                 onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
                 teams={teams}
                 allMembers={allMembers}
+                warnDaysBefore={workspace.warnDaysBefore ?? 7}
+                onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
               />
             )}
           </>

@@ -8,8 +8,9 @@ import type {
   TeamMember,
   ActionPlan,
   PlanItem,
-} from "../types/ogsm";
+} from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
+import { getPlanItemWarning } from "../utils/planWarnings";
 
 interface Props {
   strategy: Strategy;
@@ -19,6 +20,8 @@ interface Props {
   onDelete: () => void;
   teams: Team[];
   allMembers: TeamMember[];
+  warnDaysBefore: number;
+  onUpdateWarnDaysBefore: (n: number) => void;
 }
 
 function InlineEdit({
@@ -103,8 +106,16 @@ function KpiCard({
   linkedTotal?: number;
   linkedDone?: number;
 }) {
+  const isProgress = kpi.kpiType === "progress";
   const hasActual = kpi.actual !== null && kpi.actual !== undefined;
-  const rawRate = hasActual ? kpi.achievementRate : null;
+  // 進度型：直接用 actual 作為圓環值（target 固定 100，achievementRate = actual）
+  const rawRate = isProgress
+    ? hasActual
+      ? kpi.actual
+      : null
+    : hasActual
+      ? kpi.achievementRate
+      : null;
   const rate = rawRate ?? 0;
   const rateIsNull = rawRate === null || rawRate === undefined;
   const size = 72;
@@ -163,6 +174,21 @@ function KpiCard({
           className="kpi-label-edit"
           placeholder="KPI 名稱"
         />
+        {/* 類型標籤：唯讀，建立時已定，不可切換 */}
+        <span
+          style={{
+            display: "inline-block",
+            fontSize: 10,
+            padding: "1px 7px",
+            marginBottom: 4,
+            borderRadius: 10,
+            border: `1px solid ${isProgress ? "#a78bfa" : "#d1d5db"}`,
+            background: isProgress ? "#f5f3ff" : "#f9fafb",
+            color: isProgress ? "#7c3aed" : "#6b7280",
+          }}
+        >
+          {isProgress ? "進度型" : "量化型"}
+        </span>
         {typeof linkedTotal !== "undefined" && linkedTotal > 0 && (
           <div style={{ fontSize: 10, color: "var(--text)", marginBottom: 6 }}>
             關聯項目：{linkedDone}/{linkedTotal} 項
@@ -170,7 +196,7 @@ function KpiCard({
         )}
         <div className="kpi-inputs">
           <label className="kpi-field">
-            達成率
+            {isProgress ? "進度" : "達成率"}
             <span
               className="kpi-num-input"
               style={{
@@ -194,6 +220,12 @@ function KpiCard({
               value={kpi.target ?? ""}
               placeholder="—"
               className="kpi-num-input"
+              readOnly={isProgress}
+              style={
+                isProgress
+                  ? { background: "#f3f4f6", cursor: "default" }
+                  : undefined
+              }
               onChange={(e) => {
                 const target =
                   e.target.value === "" ? null : parseFloat(e.target.value);
@@ -227,21 +259,23 @@ function KpiCard({
               }}
             />
           </label>
-          <label className="kpi-field">
-            單位
-            <input
-              type="text"
-              value={kpi.unit}
-              placeholder="人/筆…"
-              className="kpi-num-input"
-              style={{ width: 44 }}
-              onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
-            />
-          </label>
+          {!isProgress && (
+            <label className="kpi-field">
+              單位
+              <input
+                type="text"
+                value={kpi.unit}
+                placeholder="人/筆…"
+                className="kpi-num-input"
+                style={{ width: 44 }}
+                onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
+              />
+            </label>
+          )}
         </div>
       </div>
       <button className="kpi-delete-btn" onClick={onDelete} title="刪除 KPI">
-        ✕
+        🗑
       </button>
     </div>
   );
@@ -277,12 +311,10 @@ function toIsoDate(s: string | undefined, year: number): string {
  * Check if a plan item's date range overlaps with a given quarter
  */
 function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
-  const start = item.plannedStartDate;
-  if (!start) return false;
-  const s = parseMonthDay(start);
-  if (!s) return false;
-  const e = item.plannedEndDate ? parseMonthDay(item.plannedEndDate) : null;
-  const endMonth = e ? e.month : s.month;
+  const endDate = item.plannedEndDate;
+  if (!endDate) return false;
+  const e = parseMonthDay(endDate);
+  if (!e) return false;
   const qMonths: Record<string, [number, number]> = {
     Q1: [1, 3],
     Q2: [4, 6],
@@ -290,7 +322,7 @@ function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
     Q4: [10, 12],
   };
   const [qStart, qEnd] = qMonths[quarter] ?? [1, 3];
-  return s.month <= qEnd && endMonth >= qStart;
+  return e.month >= qStart && e.month <= qEnd;
 }
 
 function doesMeasureOverlapQuarter(
@@ -377,7 +409,6 @@ function parseActionPlans(
           const completed = /完成|結案|啟動/.test(description);
           return {
             id: genId("item"),
-            plannedStartDate: toIsoDate(rangeMatch[1], year),
             plannedEndDate: toIsoDate(rangeMatch[2], year),
             description,
             completed,
@@ -392,7 +423,7 @@ function parseActionPlans(
           /完成|結案|啟動/.test(description) && /^\d+\/\d+/.test(line);
         return {
           id: genId("item"),
-          plannedStartDate: date ? toIsoDate(date, year) : undefined,
+          plannedEndDate: date ? toIsoDate(date, year) : undefined,
           description,
           completed,
         };
@@ -414,6 +445,8 @@ export default function DetailPanel({
   onDelete,
   teams,
   allMembers,
+  warnDaysBefore,
+  onUpdateWarnDaysBefore,
 }: Props) {
   const year = _period
     ? parseInt(_period.match(/\d{4}/)?.[0] ?? "") || new Date().getFullYear()
@@ -433,7 +466,6 @@ export default function DetailPanel({
     });
     return map;
   });
-
   useEffect(() => {
     if (!ownerDropOpen) return;
     const handler = (e: MouseEvent) => {
@@ -597,108 +629,109 @@ export default function DetailPanel({
     item: PlanItem,
     extra?: React.ReactNode,
     readOnly: boolean = false,
-  ) => (
-    <tr
-      key={item.id}
-      className={`${item.completed ? "plan-row-done" : ""}${readOnly ? " plan-row-readonly" : ""}`}
-    >
-      <td className="plan-tbl-check">
-        <input
-          type="checkbox"
-          disabled={readOnly}
-          checked={item.completed}
-          onChange={() =>
-            !readOnly && updatePlanItem(item.id, { completed: !item.completed })
-          }
-        />
-      </td>
-      <td className="plan-tbl-name">
-        {extra}
-        <input
-          className="plan-tbl-desc"
-          disabled={readOnly}
-          value={item.description}
-          placeholder="新項目"
-          onChange={(e) =>
-            !readOnly &&
-            updatePlanItem(item.id, { description: e.target.value })
-          }
-        />
-      </td>
-      <td>
-        <input
-          type="date"
-          className="plan-tbl-date"
-          disabled={readOnly}
-          value={item.plannedStartDate ?? ""}
-          title="預計開始"
-          onChange={(e) =>
-            !readOnly &&
-            updatePlanItem(item.id, { plannedStartDate: e.target.value })
-          }
-        />
-      </td>
-      <td>
-        <input
-          type="date"
-          className="plan-tbl-date plan-tbl-actual"
-          disabled={readOnly}
-          value={item.actualStartDate ?? ""}
-          title="實際開始"
-          onChange={(e) =>
-            !readOnly &&
-            updatePlanItem(item.id, { actualStartDate: e.target.value })
-          }
-        />
-      </td>
-      <td>
-        <input
-          type="date"
-          className="plan-tbl-date"
-          disabled={readOnly}
-          value={item.plannedEndDate ?? ""}
-          title="預計完成"
-          onChange={(e) =>
-            !readOnly &&
-            updatePlanItem(item.id, { plannedEndDate: e.target.value })
-          }
-        />
-      </td>
-      <td>
-        <input
-          type="date"
-          className="plan-tbl-date plan-tbl-actual"
-          disabled={readOnly}
-          value={item.actualEndDate ?? ""}
-          title="實際完成"
-          onChange={(e) =>
-            !readOnly &&
-            updatePlanItem(item.id, { actualEndDate: e.target.value })
-          }
-        />
-      </td>
-      <td>
-        <input
-          className="plan-tbl-notes"
-          disabled={readOnly}
-          value={item.notes ?? ""}
-          placeholder="備註"
-          onChange={(e) =>
-            !readOnly && updatePlanItem(item.id, { notes: e.target.value })
-          }
-        />
-      </td>
-      <td className="plan-tbl-del">
-        <button
-          className="plan-item-del"
-          disabled={readOnly}
-          onClick={() => !readOnly && deletePlanItem(item.id, item.description)}
-        >
-          ✕
-        </button>
-      </td>
-    </tr>
-  );
+  ) => {
+    const warn = getPlanItemWarning(item, warnDaysBefore);
+    let daysLeft: number | null = null;
+    if (warn === "warning" && item.plannedEndDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const end = new Date(item.plannedEndDate);
+      end.setHours(0, 0, 0, 0);
+      daysLeft = Math.ceil((end.getTime() - today.getTime()) / 86400000);
+    }
+    return (
+      <tr
+        key={item.id}
+        className={`${item.completed ? "plan-row-done" : ""}${warn === "overdue" ? " plan-row-overdue" : warn === "warning" ? " plan-row-warning" : ""}${readOnly ? " plan-row-readonly" : ""}`}
+      >
+        <td className="plan-tbl-check">
+          <input
+            type="checkbox"
+            disabled={readOnly}
+            checked={item.completed}
+            onChange={() =>
+              !readOnly &&
+              updatePlanItem(item.id, { completed: !item.completed })
+            }
+          />
+        </td>
+        <td className="plan-tbl-name">
+          {warn === "overdue" && (
+            <span className="plan-warn-badge plan-warn-overdue" title="已逾期">
+              🔴
+            </span>
+          )}
+          {warn === "warning" && (
+            <span
+              className="plan-warn-badge plan-warn-near"
+              title={`距截止日 ${daysLeft} 天`}
+            >
+              ⚠️{daysLeft}d
+            </span>
+          )}
+          {extra}
+          <input
+            className="plan-tbl-desc"
+            disabled={readOnly}
+            value={item.description}
+            placeholder="新項目"
+            onChange={(e) =>
+              !readOnly &&
+              updatePlanItem(item.id, { description: e.target.value })
+            }
+          />
+        </td>
+        <td>
+          <input
+            type="date"
+            className="plan-tbl-date"
+            disabled={readOnly}
+            value={item.plannedEndDate ?? ""}
+            title="預計完成"
+            onChange={(e) =>
+              !readOnly &&
+              updatePlanItem(item.id, { plannedEndDate: e.target.value })
+            }
+          />
+        </td>
+        <td>
+          <input
+            type="date"
+            className="plan-tbl-date plan-tbl-actual"
+            disabled={readOnly}
+            value={item.actualEndDate ?? ""}
+            title="實際完成"
+            onChange={(e) =>
+              !readOnly &&
+              updatePlanItem(item.id, { actualEndDate: e.target.value })
+            }
+          />
+        </td>
+        <td>
+          <input
+            className="plan-tbl-notes"
+            disabled={readOnly}
+            value={item.notes ?? ""}
+            placeholder="備註"
+            onChange={(e) =>
+              !readOnly && updatePlanItem(item.id, { notes: e.target.value })
+            }
+          />
+        </td>
+        <td className="plan-tbl-del">
+          <button
+            className="plan-item-del"
+            disabled={readOnly}
+            onClick={() =>
+              !readOnly && deletePlanItem(item.id, item.description)
+            }
+          >
+            🗑
+          </button>
+        </td>
+      </tr>
+    );
+  };
 
   function planItemMatchesFilter(item: PlanItem): boolean {
     const q = searchQuery.trim().toLowerCase();
@@ -815,14 +848,15 @@ export default function DetailPanel({
     });
   };
 
-  const addKpiToMeasure = (msrId: string) => {
+  const addKpiToMeasure = (msrId: string, kpiType: "value" | "progress") => {
     const newKpi: KPI = {
       id: genId("kpi"),
-      label: "新 KPI",
-      target: null,
+      label: kpiType === "progress" ? "新進度指標" : "新 KPI",
+      target: kpiType === "progress" ? 100 : null,
       actual: null,
-      unit: "%",
+      unit: kpiType === "progress" ? "%" : "%",
       achievementRate: null,
+      kpiType,
     };
     onUpdate({
       ...strategy,
@@ -830,6 +864,7 @@ export default function DetailPanel({
         m.id === msrId ? { ...m, kpis: [...m.kpis, newKpi] } : m,
       ),
     });
+    setPendingKpiType(null);
   };
 
   const defaultCollapsed = () => {
@@ -841,6 +876,12 @@ export default function DetailPanel({
   };
   const [measureCollapsed, setMeasureCollapsed] =
     useState<Record<string, boolean>>(defaultCollapsed);
+
+  // 新增 KPI 時的類型選擇：msrId => 待確認的 kpiType
+  const [pendingKpiType, setPendingKpiType] = useState<{
+    msrId: string;
+    kpiType: "value" | "progress";
+  } | null>(null);
 
   const allKpis = strategy.measures.flatMap((m) =>
     m.kpis.map((k) => ({ ...k, msrId: m.id })),
@@ -1322,13 +1363,65 @@ export default function DetailPanel({
                           >
                             📋 複製
                           </button>
-                          <button
-                            className="detail-add-btn"
-                            onClick={() => addKpiToMeasure(m.id)}
-                            style={{ padding: "6px 10px" }}
-                          >
-                            + 新增 KPI
-                          </button>
+                          {pendingKpiType?.msrId === m.id ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                              }}
+                            >
+                              <select
+                                autoFocus
+                                value={pendingKpiType.kpiType}
+                                onChange={(e) =>
+                                  setPendingKpiType({
+                                    msrId: m.id,
+                                    kpiType: e.target.value as
+                                      | "value"
+                                      | "progress",
+                                  })
+                                }
+                                style={{
+                                  fontSize: 12,
+                                  padding: "4px 6px",
+                                  borderRadius: 6,
+                                  border: "1px solid #d1d5db",
+                                }}
+                              >
+                                <option value="value">量化型</option>
+                                <option value="progress">進度型</option>
+                              </select>
+                              <button
+                                className="detail-add-btn"
+                                style={{ padding: "6px 10px" }}
+                                onClick={() =>
+                                  addKpiToMeasure(m.id, pendingKpiType.kpiType)
+                                }
+                              >
+                                確認
+                              </button>
+                              <button
+                                className="plan-del-btn"
+                                onClick={() => setPendingKpiType(null)}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              className="detail-add-btn"
+                              onClick={() =>
+                                setPendingKpiType({
+                                  msrId: m.id,
+                                  kpiType: "value",
+                                })
+                              }
+                              style={{ padding: "6px 10px" }}
+                            >
+                              + 新增 KPI
+                            </button>
+                          )}
                           <button
                             className="plan-del-btn"
                             onClick={() => deleteMeasure(m.id)}
@@ -1390,6 +1483,7 @@ export default function DetailPanel({
                 gap: 8,
                 alignItems: "center",
                 marginBottom: 12,
+                flexWrap: "wrap",
               }}
             >
               {quarters.map((q) => (
@@ -1401,6 +1495,26 @@ export default function DetailPanel({
                   {q}
                 </button>
               ))}
+              <label
+                className="plan-warn-setting"
+                style={{ marginLeft: "auto" }}
+                title="距預計完成日幾天內未完成時顯示警告"
+              >
+                ⏰ 預警
+                <input
+                  type="number"
+                  className="plan-warn-days-input"
+                  min={1}
+                  max={60}
+                  value={warnDaysBefore}
+                  onChange={(e) =>
+                    onUpdateWarnDaysBefore(
+                      Math.max(1, parseInt(e.target.value) || 7),
+                    )
+                  }
+                />
+                天前
+              </label>
             </div>
 
             {/* For the selected quarter, show each Measure's checklist items */}
@@ -1543,8 +1657,6 @@ export default function DetailPanel({
                             <tr>
                               <th>✓</th>
                               <th>項目名稱</th>
-                              <th>預計開始</th>
-                              <th>實際開始</th>
                               <th>預計完成</th>
                               <th>實際完成</th>
                               <th>備註</th>
@@ -1658,8 +1770,6 @@ export default function DetailPanel({
                           <tr>
                             <th>✓</th>
                             <th>項目名稱</th>
-                            <th>預計開始</th>
-                            <th>實際開始</th>
                             <th>預計完成</th>
                             <th>實際完成</th>
                             <th>備註</th>

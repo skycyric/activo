@@ -26,6 +26,8 @@ export const KPISchema = z.object({
   actual: z.number().nullable(),
   unit: z.string(),
   achievementRate: z.number().nullable(),
+  /** "value"＝量化型（預設）；"progress"＝進度型（actual 為 0-100 完成度）*/
+  kpiType: z.enum(["value", "progress"]).optional(),
 });
 
 // ── PlanItem ──────────────────────────────────────────────────────────────────
@@ -33,8 +35,6 @@ export const KPISchema = z.object({
 export const PlanItemSchema = z.object({
   id: z.string(),
   description: z.string(),
-  plannedStartDate: IsoDate,
-  actualStartDate: IsoDate,
   plannedEndDate: IsoDate,
   actualEndDate: IsoDate,
   completed: z.boolean(),
@@ -111,6 +111,31 @@ export const GoalKPISchema = z.object({
   target: z.number().nullable(),
   aggregation: z.enum(["SUM", "AVERAGE"]),
   linkedKpis: z.array(GoalKpiLinkSchema),
+  /**
+   * "value"        ＝ 量化值聚合（用 aggregation 決定 SUM/AVERAGE，預設）
+   * "pct_activity" ＝ 活動達標率：linked KPI 中 actual≥target 的比例
+   * "progress"     ＝ 進度完成率：linked 進度型 KPI 的 actual 平均
+   */
+  type: z.enum(["value", "pct_activity", "progress"]).optional(),
+  /**
+   * true = 顯示在 Goal 主要指標區（常駐可見）
+   * false/undefined = 收在「目標 KPI 看板」細節區（可展開）
+   */
+  isHeadline: z.boolean().optional(),
+  /**
+   * pct_activity 專用：選取其他 GoalKPI 的 id 作為門檻參照。
+   * 每個 id 對應一組「M KPI 集合 + 達標門檻」：
+   *   - M KPI 集合 = 該 GoalKPI 的 linkedKpis 所連結的 M KPI
+   *   - 達標門檻   = 該 GoalKPI 的 target
+   */
+  thresholdGoalKpiIds: z.array(z.string()).optional(),
+  /**
+   * pct_activity 專用：當同一個活動（Measure）被多個來源 GoalKPI 覆蓋時，
+   * 讓使用者指定「以哪個 GoalKPI 的目標來判斷該活動是否達標」。
+   * key   = measureId
+   * value = thresholdGoalKpiId（必須出現在 thresholdGoalKpiIds 中）
+   */
+  activitySourceOverrides: z.record(z.string(), z.string()).optional(),
 });
 
 export const GoalSchema = z.object({
@@ -171,6 +196,7 @@ export const WorkspaceDataSchema = z.object({
   deletedIds: z.array(z.string()).optional(),
   teams: z.array(TeamSchema).optional(),
   _migratedClearOwners: z.boolean().optional(),
+  warnDaysBefore: z.number().optional(), // 全域預警天數，預設 7
 });
 
 // ── Inferred TypeScript types ─────────────────────────────────────────────────
