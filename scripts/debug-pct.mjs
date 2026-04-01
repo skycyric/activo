@@ -1,4 +1,10 @@
 import fs from "fs";
+if (!fs.existsSync("ogsm_data.json")) {
+  console.error(
+    "Error: ogsm_data.json not found in current directory.\nRun this script from the project root directory.",
+  );
+  process.exit(1);
+}
 const data = JSON.parse(fs.readFileSync("ogsm_data.json", "utf8"));
 const dept = data.departments[0];
 const period = dept.periods[0];

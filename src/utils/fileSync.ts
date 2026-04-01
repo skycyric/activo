@@ -46,19 +46,16 @@ async function loadHandle(): Promise<FileSystemFileHandle | null> {
 async function queryPermission(
   handle: FileSystemFileHandle,
 ): Promise<PermissionState> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (handle as any).queryPermission({ mode: "readwrite" });
+  return handle.queryPermission({ mode: "readwrite" });
 }
 
 /** Request permission — MUST be called from a user-gesture handler (button click). */
 async function requestPermission(
   handle: FileSystemFileHandle,
 ): Promise<boolean> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (
-    ((await (handle as any).requestPermission({
-      mode: "readwrite",
-    })) as string) === "granted"
+    ((await handle.requestPermission({ mode: "readwrite" })) as string) ===
+    "granted"
   );
 }
 
@@ -75,8 +72,7 @@ export function isFileSystemAccessSupported(): boolean {
  */
 export async function pickDataFile(): Promise<FileSystemFileHandle | null> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [handle] = await (window as any).showOpenFilePicker({
+    const [handle] = await showOpenFilePicker({
       types: [
         {
           description: "JSON 資料檔",

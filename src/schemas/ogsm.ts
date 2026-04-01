@@ -61,9 +61,6 @@ export const MeasureStatusSchema = z.enum([
   "completed",
 ]);
 
-/** Measure 狀態的合法值（供元件邏輯參考） */
-export const MEASURE_STATUS_VALUES = MeasureStatusSchema.options;
-
 export const MeasureSchema = z.object({
   id: z.string(),
   rawText: z.string(),
@@ -85,11 +82,11 @@ export const StrategySchema = z.object({
   title: z.string(),
   rawText: z.string(),
   measures: z.array(MeasureSchema),
-  q1Text: z.string(),
-  q2Text: z.string(),
+  q1Text: z.string().optional(), // legacy CSV import field; migrated to actionPlans on load
+  q2Text: z.string().optional(), // legacy CSV import field; migrated to actionPlans on load
   actionPlans: z.array(ActionPlanSchema),
-  owner: z.string(), // legacy single-owner (kept for backward compat)
-  owners: z.array(z.string()).optional(), // multi-owner (preferred)
+  owner: z.string().optional(), // deprecated: read-only, migrated to owners on load
+  owners: z.array(z.string()).default([]), // multi-owner (canonical)
   notes: z.string(),
   completionRate: z.number(), // 0-200, computed from KPIs
   manualRate: z.number().nullable(),
@@ -195,8 +192,9 @@ export const WorkspaceDataSchema = z.object({
   savedAt: z.string().optional(),
   deletedIds: z.array(z.string()).optional(),
   teams: z.array(TeamSchema).optional(),
-  _migratedClearOwners: z.boolean().optional(),
-  warnDaysBefore: z.number().optional(), // 全域預警天數，預設 7
+  _migratedPhase2: z.boolean().optional(),
+  _migratedPhase3: z.boolean().optional(),
+  warnDaysBefore: z.number().optional(),
 });
 
 // ── Inferred TypeScript types ─────────────────────────────────────────────────
@@ -209,7 +207,9 @@ export type MeasureStatus = z.infer<typeof MeasureStatusSchema>;
 export type Measure = z.infer<typeof MeasureSchema>;
 export type GoalKpiLink = z.infer<typeof GoalKpiLinkSchema>;
 export type GoalKPI = z.infer<typeof GoalKPISchema>;
-export type Strategy = z.infer<typeof StrategySchema>;
+export type Strategy = Omit<z.infer<typeof StrategySchema>, "owner"> & {
+  readonly owner?: string; // deprecated: parse-only, never write; use `owners`
+};
 export type Goal = z.infer<typeof GoalSchema>;
 export type OGSMData = z.infer<typeof OGSMDataSchema>;
 export type PeriodData = z.infer<typeof PeriodDataSchema>;

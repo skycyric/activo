@@ -79,7 +79,7 @@ function StrategyRow({
           <span className="strategy-s-label">S{index + 1}</span>
           <span className="strategy-row-title">{s.title}</span>
           <div className="strategy-row-meta">
-            {(s.owners ?? (s.owner ? [s.owner] : [])).map((name) => (
+            {s.owners.map((name) => (
               <span key={name} className="owner-chip">
                 {name}
               </span>
@@ -160,11 +160,9 @@ export default function StrategyList({
   const [pctForm, setPctForm] = useState<{
     label: string;
     target: string;
-    type: "pct_activity";
   }>({
     label: "",
     target: "60",
-    type: "pct_activity",
   });
   const [topH, setTopH] = useState(260);
   const dragState = useRef<{ startY: number; startH: number } | null>(null);
@@ -239,7 +237,9 @@ export default function StrategyList({
           continue;
         for (const link of threshGk.linkedKpis) {
           if (!measureMap.has(link.measureId)) {
-            const s = strategies.find((s) => s.id === link.strategyId);
+            const s = (goal.strategies ?? []).find(
+              (s) => s.id === link.strategyId,
+            );
             const m = s?.measures.find((m) => m.id === link.measureId);
             measureMap.set(link.measureId, {
               measureId: link.measureId,
@@ -286,7 +286,9 @@ export default function StrategyList({
             for (const link of threshGk.linkedKpis) {
               if (link.measureId !== entry.measureId) continue;
               if (!chosen.kpiIds.includes(link.kpiId)) continue;
-              const s = strategies.find((s) => s.id === link.strategyId);
+              const s = (goal.strategies ?? []).find(
+                (s) => s.id === link.strategyId,
+              );
               const m = s?.measures.find((m) => m.id === link.measureId);
               const k = m?.kpis.find((k) => k.id === link.kpiId);
               if (!k) continue;
@@ -342,7 +344,7 @@ export default function StrategyList({
     }
 
     const values = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
-      const s = strategies.find((s) => s.id === link.strategyId);
+      const s = (goal.strategies ?? []).find((s) => s.id === link.strategyId);
       if (!s) return [];
       const m = s.measures.find((m) => m.id === link.measureId);
       if (!m) return [];
@@ -472,7 +474,10 @@ export default function StrategyList({
               ...gk,
               label: kpiForm.label.trim(),
               unit: kpiForm.unit.trim(),
-              target: isNaN(targetVal as number) ? null : targetVal,
+              target:
+                targetVal === null || Number.isNaN(targetVal)
+                  ? null
+                  : targetVal,
               aggregation: kpiForm.aggregation,
               type: kpiForm.type,
               isHeadline: kpiForm.isHeadline,
@@ -483,10 +488,11 @@ export default function StrategyList({
       onUpdateGoal({ ...goal, goalKpis: updated });
     } else {
       const newKpi: GoalKPI = {
-        id: genId(),
+        id: genId("gkpi"),
         label: kpiForm.label.trim(),
         unit: kpiForm.unit.trim(),
-        target: isNaN(targetVal as number) ? null : targetVal,
+        target:
+          targetVal === null || Number.isNaN(targetVal) ? null : targetVal,
         aggregation: kpiForm.aggregation,
         type: kpiForm.type,
         isHeadline: kpiForm.isHeadline,
@@ -517,19 +523,23 @@ export default function StrategyList({
           ? {
               ...gk,
               label: pctForm.label.trim(),
-              target: isNaN(targetVal as number) ? null : targetVal,
+              target:
+                targetVal === null || Number.isNaN(targetVal)
+                  ? null
+                  : targetVal,
             }
           : gk,
       );
       onUpdateGoal({ ...goal, goalKpis: updated });
     } else {
       const newKpi: GoalKPI = {
-        id: genId(),
+        id: genId("gkpi"),
         label: pctForm.label.trim(),
         unit: "%",
-        target: isNaN(targetVal as number) ? null : targetVal,
+        target:
+          targetVal === null || Number.isNaN(targetVal) ? null : targetVal,
         aggregation: "SUM",
-        type: pctForm.type,
+        type: "pct_activity",
         isHeadline: false,
         thresholdGoalKpiIds: [],
         linkedKpis: [],
@@ -540,7 +550,6 @@ export default function StrategyList({
     setPctForm({
       label: "",
       target: "60",
-      type: "pct_activity",
     });
   };
 
@@ -848,7 +857,6 @@ export default function StrategyList({
                         gk.target !== null && gk.target !== undefined
                           ? String(gk.target)
                           : "60",
-                      type: "pct_activity",
                     });
                   } else {
                     setEditingKpiId(gk.id);
@@ -922,9 +930,11 @@ export default function StrategyList({
                 if (!measureCoverage.has(link.measureId))
                   measureCoverage.set(link.measureId, []);
                 // 找 rawText
-                const s = strategies.find((s) => s.id === link.strategyId);
+                const s = (goal.strategies ?? []).find(
+                  (s) => s.id === link.strategyId,
+                );
                 const m = s?.measures.find((m) => m.id === link.measureId);
-                measureCoverage.get(link.measureId)!.push({
+                measureCoverage.get(link.measureId)?.push({
                   threshGkId: tid,
                   threshGkLabel: tGk.label,
                   measureRawText: m?.rawText ?? "（未知活動）",
@@ -1314,7 +1324,7 @@ export default function StrategyList({
                 className="g-kpi-toggle g-pct-add-btn"
                 onClick={() => {
                   setEditingPctId("new");
-                  setPctForm({ label: "", target: "60", type: "pct_activity" });
+                  setPctForm({ label: "", target: "60" });
                 }}
               >
                 ＋ 新增整體達標狀況

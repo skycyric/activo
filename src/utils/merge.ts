@@ -68,13 +68,16 @@ function fmt(val: unknown, field?: string): string {
         (a, p) => a + (p.items?.length ?? 0),
         0,
       );
-      return `${val.length} 組 legacy 時間軸 / ${total} 筆舊項目`;
+      return `${val.length} 個季度計畫 / ${total} 筆項目`;
     }
     if (field === "members") {
       return (
         (val as Array<{ name: string }>).map((m) => m.name).join("、") ||
         "(無成員)"
       );
+    }
+    if (field === "owners") {
+      return (val as string[]).join("、") || "(無負責人)";
     }
     return `${val.length} 項`;
   }
@@ -86,10 +89,7 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
   const diffs: FieldDiff[] = [];
   const fields: Array<[keyof Strategy, string]> = [
     ["title", "策略名稱"],
-    ["owner", "負責人"],
     ["notes", "備註"],
-    ["q1Text", "Q1 說明"],
-    ["q2Text", "Q2 說明"],
   ];
   for (const [f, label] of fields) {
     if (String(ls[f] ?? "") !== String(rs[f] ?? "")) {
@@ -100,6 +100,14 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         remoteVal: fmt(rs[f]),
       });
     }
+  }
+  if (JSON.stringify(ls.owners ?? []) !== JSON.stringify(rs.owners ?? [])) {
+    diffs.push({
+      field: "owners",
+      label: "負責人",
+      localVal: fmt(ls.owners ?? [], "owners"),
+      remoteVal: fmt(rs.owners ?? [], "owners"),
+    });
   }
   if (ls.manualRate !== rs.manualRate) {
     diffs.push({
@@ -126,7 +134,7 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
   if (JSON.stringify(ls.actionPlans) !== JSON.stringify(rs.actionPlans)) {
     diffs.push({
       field: "actionPlans",
-      label: "legacy 時間軸資料",
+      label: "行動計畫",
       localVal: fmt(ls.actionPlans, "actionPlans"),
       remoteVal: fmt(rs.actionPlans, "actionPlans"),
     });
@@ -369,12 +377,11 @@ function mergeTeams(
   deleted: Set<string>,
   resolutions?: ConflictResolutions,
 ): { teams: Team[]; count: number } {
-  const safeLocal = local ?? [];
-  const filtered = safeLocal.filter((t) => !deleted.has(t.id));
+  const filtered = local.filter((t) => !deleted.has(t.id));
   const map = new Map<string, Team>(filtered.map((t) => [t.id, t]));
-  let count = safeLocal.length - filtered.length; // 計入本地端因 tombstone 被刪除的項目
+  let count = local.length - filtered.length; // 計入本地端因 tombstone 被刪除的項目
 
-  for (const rt of remote ?? []) {
+  for (const rt of remote) {
     if (deleted.has(rt.id)) {
       if (map.delete(rt.id)) count++;
       continue;
@@ -497,9 +504,10 @@ export function mergeWorkspaces(
     teams,
     version: Math.max(local.version ?? 1, remote.version ?? 1),
     deletedIds: Array.from(deleted),
-    _migratedClearOwners:
-      (local._migratedClearOwners ?? false) ||
-      (remote._migratedClearOwners ?? false),
+    _migratedPhase2:
+      local._migratedPhase2 === true && remote._migratedPhase2 === true,
+    _migratedPhase3:
+      local._migratedPhase3 === true && remote._migratedPhase3 === true,
   };
 
   return { workspace, autoMerged: dc + tc };

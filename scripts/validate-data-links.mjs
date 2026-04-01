@@ -2,6 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 const dataPath = path.resolve(process.cwd(), "ogsm_data.json");
+if (!fs.existsSync(dataPath)) {
+  console.error(
+    `Error: ogsm_data.json not found at ${dataPath}\nRun this script from the project root directory.`,
+  );
+  process.exit(1);
+}
 const raw = fs.readFileSync(dataPath, "utf8");
 const data = JSON.parse(raw);
 

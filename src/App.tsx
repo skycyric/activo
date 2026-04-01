@@ -17,7 +17,9 @@ import {
   exportWorkspaceJSON,
   importJSON,
   readFileAsText,
+  validateOrWarn,
 } from "./utils/storage";
+import { WorkspaceDataSchema } from "./schemas/ogsm";
 import {
   isFileSystemAccessSupported,
   pickDataFile,
@@ -28,7 +30,6 @@ import {
   writeDataFile,
   clearDataFile,
 } from "./utils/fileSync";
-import { exportWorkspaceXlsx } from "./utils/exportXlsx";
 import {
   mergeWorkspaces,
   detectConflicts,
@@ -66,24 +67,32 @@ function recompute(data: OGSMData): OGSMData {
   };
 }
 
+// Module-level singleton: ensures all useState/useRef initializers read the
+// exact same object, preventing ID or timestamp drift from multiple calls.
+let _initialWorkspace: WorkspaceData | null = null;
 function getInitialWorkspace(): WorkspaceData {
+  if (_initialWorkspace) return _initialWorkspace;
   const ws = loadWorkspace();
-  if (ws) return ws;
+  if (ws) return (_initialWorkspace = ws);
   const legacy = loadLegacyData();
-  if (legacy) return wrapOGSMInWorkspace(legacy, "營企本部");
+  if (legacy)
+    return (_initialWorkspace = wrapOGSMInWorkspace(legacy, "營企本部"));
   try {
-    return wrapOGSMInWorkspace(parseOGSM(csvRaw), "營企本部");
+    return (_initialWorkspace = wrapOGSMInWorkspace(
+      parseOGSM(csvRaw),
+      "營企本部",
+    ));
   } catch {
-    return wrapOGSMInWorkspace(
+    return (_initialWorkspace = wrapOGSMInWorkspace(
       {
         objectives: { orgO: "", deptO: "" },
         goals: [],
-        period: "2026 H1",
+        period: `${new Date().getFullYear()} H1`,
         importedAt: new Date().toISOString(),
         overallRate: 0,
       },
       "部門一",
-    );
+    ));
   }
 }
 
@@ -102,7 +111,6 @@ export default function App() {
   );
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
-  const [exportingXlsx, setExportingXlsx] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
@@ -129,6 +137,7 @@ export default function App() {
     try {
       const text = await readDataFile(handle);
       const remote: WorkspaceData = JSON.parse(text);
+      validateOrWarn(WorkspaceDataSchema, remote, "applyHandle");
       loadedFileVersionRef.current = remote.version ?? null;
       setWorkspace(remote);
       saveWorkspace(remote);
@@ -215,7 +224,7 @@ export default function App() {
 
       const payload: WorkspaceData = {
         ...toWrite,
-        version: (toWrite.version ?? 1) + 1,
+        version: (loadedFileVersionRef.current ?? toWrite.version ?? 1) + 1,
         savedAt: new Date().toISOString(),
       };
       loadedFileVersionRef.current = payload.version;
@@ -238,13 +247,16 @@ export default function App() {
       const content = text.trim();
       if (content && content !== "{}") {
         const remote: WorkspaceData = JSON.parse(content);
+        loadedFileVersionRef.current = remote.version ?? null;
         setWorkspace(remote);
         saveWorkspace(remote);
       } else {
+        loadedFileVersionRef.current = workspace.version ?? null;
         await writeDataFile(handle, JSON.stringify(workspace, null, 2));
       }
     } catch {
       // File is empty or unreadable — initialise with current workspace
+      loadedFileVersionRef.current = workspace.version ?? null;
       await writeDataFile(handle, JSON.stringify(workspace, null, 2));
     }
     setSyncStatus("saved");
@@ -308,8 +320,8 @@ export default function App() {
         JSON.stringify(payload, null, 2),
       );
       loadedFileVersionRef.current = payload.version;
-      setWorkspace(merged);
-      saveWorkspace(merged);
+      setWorkspace(payload);
+      saveWorkspace(payload);
       setSyncStatus("saved");
       setSyncError("");
       setIsDirty(false);
@@ -410,7 +422,7 @@ export default function App() {
   const data: OGSMData = activePeriod?.ogsm ?? {
     objectives: { orgO: "", deptO: "" },
     goals: [],
-    period: "2026 H1",
+    period: `${new Date().getFullYear()} H1`,
     importedAt: new Date().toISOString(),
     overallRate: 0,
   };
@@ -480,16 +492,17 @@ export default function App() {
 
   const handleAddDept = useCallback(() => {
     const year = new Date().getFullYear();
+    const halfYear: "H1" | "H2" = new Date().getMonth() >= 6 ? "H2" : "H1";
     const emptyOgsm: OGSMData = {
       objectives: { orgO: "", deptO: "" },
       goals: [],
-      period: `${year} H1`,
+      period: `${year} ${halfYear}`,
       importedAt: new Date().toISOString(),
       overallRate: 0,
     };
     const period: PeriodData = {
       id: genId("period"),
-      halfYear: "H1",
+      halfYear,
       year,
       ogsm: emptyOgsm,
     };
@@ -628,8 +641,9 @@ export default function App() {
         ),
       };
       updateWorkspace(next);
-      const remaining = next.departments.find((d) => d.id === deptId)!
-        .periods[0];
+      const remaining = next.departments.find((d) => d.id === deptId)
+        ?.periods[0];
+      if (!remaining) return;
       setActivePeriodId(remaining.id);
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
@@ -654,7 +668,7 @@ export default function App() {
     if (!selectedGoal) return [];
     return selectedGoal.strategies.filter((s) => {
       if (filterOwner !== "all") {
-        const ownerList = s.owners ?? (s.owner ? [s.owner] : []);
+        const ownerList = s.owners;
         if (!ownerList.includes(filterOwner)) return false;
       }
       return true;
@@ -691,10 +705,8 @@ export default function App() {
       title: "新策略（點擊編輯名稱）",
       rawText: "",
       measures: [{ id: genId("msr"), rawText: "", kpis: [] }],
-      q1Text: "",
-      q2Text: "",
       actionPlans: [],
-      owner: "",
+      owners: [],
       notes: "",
       completionRate: 0,
       manualRate: null,
@@ -715,7 +727,7 @@ export default function App() {
   const handleDeleteStrategy = useCallback(
     (strategyId: string) => {
       if (!confirm("確定要刪除這個策略嗎？")) return;
-      const next = {
+      const next = recompute({
         ...data,
         goals: data.goals.map((g) =>
           g.id !== selectedGoalId
@@ -725,7 +737,7 @@ export default function App() {
                 strategies: g.strategies.filter((s) => s.id !== strategyId),
               },
         ),
-      };
+      });
       // Tombstone the deleted strategy so merge won't resurrect it
       const wsNext: WorkspaceData = {
         ...workspace,
@@ -799,10 +811,10 @@ export default function App() {
       if (!confirm("確定要刪除這個目標（G）及其所有策略嗎？")) return;
       const goal = data.goals.find((g) => g.id === goalId);
       const strategyIds = goal?.strategies.map((s) => s.id) ?? [];
-      const next = {
+      const next = recompute({
         ...data,
         goals: data.goals.filter((g) => g.id !== goalId),
-      };
+      });
       // Tombstone the deleted goal and all its strategies
       const tombstones = [goalId, ...strategyIds];
       const wsNext: WorkspaceData = {
@@ -836,17 +848,6 @@ export default function App() {
       updateWorkspace,
     ],
   );
-
-  const handleExportXlsx = async () => {
-    setExportingXlsx(true);
-    try {
-      await exportWorkspaceXlsx(workspace);
-    } catch (err) {
-      alert("匯出失敗：" + String(err));
-    } finally {
-      setExportingXlsx(false);
-    }
-  };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -992,14 +993,6 @@ export default function App() {
             ))}
           <button
             className="btn-secondary"
-            onClick={handleExportXlsx}
-            disabled={exportingXlsx}
-            style={{ cursor: exportingXlsx ? "wait" : "pointer" }}
-          >
-            {exportingXlsx ? "匯出中…" : "📊 匯出報告"}
-          </button>
-          <button
-            className="btn-secondary"
             onClick={() => exportWorkspaceJSON(workspace)}
           >
             💾 備份
@@ -1113,7 +1106,6 @@ export default function App() {
               <DetailPanel
                 key={selectedStrategy.id}
                 strategy={selectedStrategy}
-                period={data.period}
                 onClose={() => setSelectedStrategyId(null)}
                 onUpdate={handleUpdateStrategy}
                 onDelete={() => handleDeleteStrategy(selectedStrategy.id)}

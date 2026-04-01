@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback, useRef } from "react";
 import type { OGSMData, Goal, Strategy, WorkspaceData } from "../schemas/ogsm";
 
 interface Props {
@@ -55,24 +55,36 @@ export default function Sidebar({
   const [showAddPeriod, setShowAddPeriod] = useState(false);
   const [addPeriodTitle, setAddPeriodTitle] = useState("");
 
+  const dragCtrlRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      dragCtrlRef.current?.abort();
+    },
+    [],
+  );
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
+      dragCtrlRef.current?.abort();
+      const ctrl = new AbortController();
+      dragCtrlRef.current = ctrl;
       const startX = e.clientX;
       const startWidth = sidebarWidth;
-      const onMouseMove = (moveEvent: MouseEvent) => {
-        const newWidth = Math.max(
-          200,
-          Math.min(600, startWidth + (moveEvent.clientX - startX)),
-        );
-        setSidebarWidth(newWidth);
-      };
-      const onMouseUp = () => {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-      };
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener(
+        "mousemove",
+        (moveEvent: MouseEvent) => {
+          const newWidth = Math.max(
+            200,
+            Math.min(600, startWidth + (moveEvent.clientX - startX)),
+          );
+          setSidebarWidth(newWidth);
+        },
+        { signal: ctrl.signal },
+      );
+      document.addEventListener("mouseup", () => ctrl.abort(), {
+        signal: ctrl.signal,
+      });
     },
     [sidebarWidth],
   );
@@ -94,7 +106,7 @@ export default function Sidebar({
     const yearMatch = raw.match(/(\d{4})/);
     const halfMatch = raw.match(/H[12]/);
     if (!yearMatch || !halfMatch) {
-      alert("格式錯誤，請輸入如「2026 H1」");
+      alert(`格式錯誤，請輸入如「${new Date().getFullYear()} H1」`);
       return;
     }
     onAddPeriod(

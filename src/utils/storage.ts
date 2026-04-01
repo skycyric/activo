@@ -4,9 +4,12 @@ import {
   type Department,
   type PeriodData,
   type Strategy,
+  type ActionPlan,
+  type PlanItem,
   WorkspaceDataSchema,
   OGSMDataSchema,
 } from "../schemas/ogsm";
+import { genId } from "./csvParser";
 
 const WORKSPACE_KEY = "ogsm_workspace_v1";
 const LEGACY_KEY = "ogsm_power_tool_data";
@@ -15,7 +18,7 @@ const LEGACY_KEY = "ogsm_power_tool_data";
  * 在開發期間驗證資料是否符合 schema，不符合時印出 console.warn。
  * 不阻斷執行，避免破壞已有存檔資料。
  */
-function validateOrWarn<T>(
+export function validateOrWarn<T>(
   schema: {
     safeParse: (v: unknown) => {
       success: boolean;
@@ -34,10 +37,6 @@ function validateOrWarn<T>(
   }
 }
 
-function genId(prefix = "id"): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-}
-
 export function saveWorkspace(ws: WorkspaceData): void {
   try {
     normalizeWorkspaceData(ws);
@@ -53,25 +52,13 @@ export function loadWorkspace(): WorkspaceData | null {
     if (!raw) return null;
     const ws: WorkspaceData = JSON.parse(raw);
     if (normalizeWorkspaceData(ws)) {
-      saveWorkspace(ws);
+      try {
+        localStorage.setItem(WORKSPACE_KEY, JSON.stringify(ws));
+      } catch (e) {
+        console.error("Failed to save workspace", e);
+      }
     }
     validateOrWarn(WorkspaceDataSchema, ws, "loadWorkspace");
-    // One-time: clear strategy owners when no teams configured
-    if (!ws._migratedClearOwners) {
-      if (!ws.teams || ws.teams.length === 0) {
-        for (const dept of ws.departments) {
-          for (const period of dept.periods) {
-            for (const goal of period.ogsm.goals) {
-              for (const strategy of goal.strategies) {
-                strategy.owner = "";
-              }
-            }
-          }
-        }
-      }
-      ws._migratedClearOwners = true;
-      saveWorkspace(ws);
-    }
     return ws;
   } catch {
     return null;
@@ -83,8 +70,8 @@ function toIsoDateLoose(v: unknown): string | undefined {
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const m = v.match(/^(\d{1,2})\/(\d{1,2})$/);
   if (!m) return undefined;
-  const nowYear = new Date().getFullYear();
-  return `${nowYear}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  // Cannot reliably infer year from MM/DD alone; skip to avoid corrupting historical dates
+  return undefined;
 }
 
 function migrateMeasureDateRangeFromPlanItems(strategy: Strategy): boolean {
@@ -188,15 +175,187 @@ function migratePlanItemDateFields(ws: WorkspaceData): boolean {
   return changed;
 }
 
-function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+/**
+ * Parse ActionPlan entries from the legacy q1Text / q2Text CSV fields.
+ * Equivalent to the parseActionPlans logic formerly in DetailPanel.tsx;
+ * moved here so the migration runs at load time, not inside the render cycle.
+ */
+function parseActionPlansForMigration(
+  q1Text: string,
+  q2Text: string,
+  year: number,
+): ActionPlan[] {
+  const plans: ActionPlan[] = [];
+
+  function toIsoForYear(s: string | undefined): string | undefined {
+    if (!s) return undefined;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (m) return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+    return undefined;
+  }
+
+  function parseItems(text: string): PlanItem[] {
+    return text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const rangeMatch = line.match(
+          /^(\d{1,2}\/\d{1,2})\s*[-~]\s*(\d{1,2}\/\d{1,2})/,
+        );
+        if (rangeMatch) {
+          const description = line.substring(rangeMatch[0].length).trim();
+          return {
+            id: genId("item"),
+            plannedEndDate: toIsoForYear(rangeMatch[2]),
+            description,
+            completed: /完成|結案|啟動/.test(description),
+          };
+        }
+        const dateMatch = line.match(/^(\d+\/\d+(?:\/\d+)?)/);
+        const date = dateMatch ? dateMatch[1] : "";
+        const description = dateMatch
+          ? line.substring(dateMatch[0].length).trim()
+          : line;
+        return {
+          id: genId("item"),
+          plannedEndDate: toIsoForYear(date) ?? undefined,
+          description,
+          completed:
+            /完成|結案|啟動/.test(description) && /^\d+\/\d+/.test(line),
+        };
+      });
+  }
+
+  function parseQ(text: string, quarter: "Q1" | "Q2") {
+    if (!text.trim()) return;
+    const sectionRe = /【([^】]+)】/g;
+    const sections: Array<{ title: string; start: number }> = [];
+    let m;
+    while ((m = sectionRe.exec(text)) !== null) {
+      sections.push({ title: m[1], start: m.index + m[0].length });
+    }
+    if (sections.length === 0) {
+      plans.push({
+        id: genId("plan"),
+        quarter,
+        title: `${quarter} 行動計畫`,
+        items: parseItems(text),
+      });
+      return;
+    }
+    for (let i = 0; i < sections.length; i++) {
+      const content = text.substring(
+        sections[i].start,
+        i + 1 < sections.length
+          ? sections[i + 1].start - sections[i + 1].title.length - 2
+          : text.length,
+      );
+      plans.push({
+        id: genId("plan"),
+        quarter,
+        title: sections[i].title,
+        items: parseItems(content),
+      });
+    }
+  }
+
+  parseQ(q1Text, "Q1");
+  parseQ(q2Text, "Q2");
+  return plans;
+}
+
+/**
+ * One-time migration: populate actionPlans from q1Text / q2Text for strategies
+ * that were imported from CSV before the Measure model replaced ActionPlans.
+ * Idempotent — only fills strategies whose actionPlans array is still empty.
+ */
+function migrateActionPlansFromQText(ws: WorkspaceData): boolean {
   let changed = false;
-  if (migrateSyncDuplicates(ws)) changed = true;
-  if (migratePlanItemDateFields(ws)) changed = true;
   for (const dept of ws.departments) {
     for (const period of dept.periods) {
       for (const goal of period.ogsm.goals) {
         for (const strategy of goal.strategies) {
-          if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+          if (
+            strategy.actionPlans.length === 0 &&
+            (strategy.q1Text || strategy.q2Text)
+          ) {
+            const generated = parseActionPlansForMigration(
+              strategy.q1Text ?? "",
+              strategy.q2Text ?? "",
+              period.year,
+            );
+            if (generated.length > 0) {
+              strategy.actionPlans = generated;
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+export function migrateOwnerToOwners(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          if (
+            (!strategy.owners || strategy.owners.length === 0) &&
+            strategy.owner
+          ) {
+            strategy.owners = [strategy.owner];
+            changed = true;
+          }
+          if (strategy.owner !== undefined) {
+            strategy.owner = undefined;
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+  let changed = false;
+  // One-time heavy migrations — gated by _migratedPhase2 so they run only once
+  if (!ws._migratedPhase2) {
+    if (migrateSyncDuplicates(ws)) changed = true;
+    if (migratePlanItemDateFields(ws)) changed = true;
+    for (const dept of ws.departments) {
+      for (const period of dept.periods) {
+        for (const goal of period.ogsm.goals) {
+          for (const strategy of goal.strategies) {
+            if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+          }
+        }
+      }
+    }
+    if (migrateActionPlansFromQText(ws)) changed = true;
+    ws._migratedPhase2 = true;
+    changed = true;
+  }
+  if (!ws._migratedPhase3) {
+    if (migrateOwnerToOwners(ws)) changed = true;
+    ws._migratedPhase3 = true;
+    changed = true;
+  }
+  // Always-run invariant: ensure owners is always an array regardless of migration state.
+  // Guards against externally-modified or imported files where owners may be missing.
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          if (!Array.isArray(strategy.owners)) {
+            strategy.owners = [];
+            changed = true;
+          }
         }
       }
     }
@@ -237,6 +396,22 @@ function normalizeOGSMData(ogsm: OGSMData): boolean {
         }
       }
       if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+      // Ensure owner→owners migration runs even for standalone OGSMData imports
+      if (
+        (!strategy.owners || strategy.owners.length === 0) &&
+        strategy.owner
+      ) {
+        strategy.owners = [strategy.owner];
+        changed = true;
+      }
+      if (!Array.isArray(strategy.owners)) {
+        strategy.owners = [];
+        changed = true;
+      }
+      if (strategy.owner !== undefined) {
+        strategy.owner = undefined;
+        changed = true;
+      }
     }
   }
   return changed;
@@ -248,6 +423,7 @@ export function loadLegacyData(): OGSMData | null {
     if (!raw) return null;
     const ogsm: OGSMData = JSON.parse(raw);
     normalizeOGSMData(ogsm);
+    validateOrWarn(OGSMDataSchema, ogsm, "loadLegacyData");
     return ogsm;
   } catch {
     return null;
@@ -273,22 +449,6 @@ export function wrapOGSMInWorkspace(
     periods: [period],
   };
   return { departments: [dept], version: 1 };
-}
-
-export function exportJSON(ogsm: OGSMData): void {
-  const toExport: OGSMData = JSON.parse(JSON.stringify(ogsm));
-  normalizeOGSMData(toExport);
-  const blob = new Blob([JSON.stringify(toExport, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `ogsm_${ogsm.period.replace(/\s/g, "_")}_${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 export function exportWorkspaceJSON(ws: WorkspaceData): void {
@@ -338,7 +498,7 @@ export function importJSON(file: File): Promise<OGSMData | WorkspaceData> {
           resolve(parsed as OGSMData);
           return;
         }
-        resolve(parsed as OGSMData | WorkspaceData);
+        reject(new Error("不支援的 JSON 格式：請選擇 OGSM 或工作區檔案"));
       } catch {
         reject(new Error("Invalid JSON file"));
       }

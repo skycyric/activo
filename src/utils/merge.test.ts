@@ -1,5 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { detectConflicts, mergeWorkspaces } from "./merge";
+import { migrateOwnerToOwners } from "./storage";
 import type { WorkspaceData, Strategy, Goal } from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ function makeStrategy(overrides: Partial<Strategy> = {}): Strategy {
     q1Text: "",
     q2Text: "",
     actionPlans: [],
-    owner: "",
+    owners: [],
     notes: "",
     completionRate: 0,
     manualRate: null,
@@ -50,7 +51,7 @@ function makeWorkspace(goals: Goal[]): WorkspaceData {
             ogsm: {
               objectives: { orgO: "", deptO: "" },
               goals,
-              period: "2026 H1",
+              period: `${new Date().getFullYear()} H1`,
               importedAt: "2026-01-01T00:00:00.000Z",
               overallRate: 0,
             },
@@ -368,5 +369,69 @@ describe("mergeWorkspaces — Teams", () => {
     remote.deletedIds = ["t1"];
     const { workspace } = mergeWorkspaces(local, remote);
     expect(workspace.teams?.find((t) => t.id === "t1")).toBeUndefined();
+  });
+});
+
+// ─── migrateOwnerToOwners ────────────────────────────────────────────────────
+
+describe("migrateOwnerToOwners", () => {
+  test("owner 有值且 owners 為空 → 複製到 owners 並清除 owner", () => {
+    const ws = makeWorkspace([
+      makeGoal([makeStrategy({ owner: "王大明", owners: [] })]),
+    ]);
+    const changed = migrateOwnerToOwners(ws);
+    const s = ws.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(changed).toBe(true);
+    expect(s.owners).toEqual(["王大明"]);
+    expect(s.owner).toBeUndefined();
+  });
+
+  test("owners 已有值 → 保留 owners，仍清除 owner", () => {
+    const ws = makeWorkspace([
+      makeGoal([makeStrategy({ owner: "王大明", owners: ["李小華"] })]),
+    ]);
+    migrateOwnerToOwners(ws);
+    const s = ws.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.owners).toEqual(["李小華"]);
+    expect(s.owner).toBeUndefined();
+  });
+
+  test("owner 和 owners 皆空 → owners 維持 []，不觸發 changed", () => {
+    const ws = makeWorkspace([
+      makeGoal([makeStrategy({ owner: undefined, owners: [] })]),
+    ]);
+    const changed = migrateOwnerToOwners(ws);
+    const s = ws.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(changed).toBe(false);
+    expect(s.owners).toEqual([]);
+  });
+});
+
+// ─── owners 衝突偵測 ─────────────────────────────────────────────────────────
+
+describe("detectConflicts — owners 欄位", () => {
+  test("owners 陣列不同 → fieldDiff 包含 owners", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          owners: ["王大明"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          owners: ["李小華"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const ownersDiff = result[0].fieldDiffs.find((d) => d.field === "owners");
+    expect(ownersDiff).toBeDefined();
+    expect(ownersDiff?.localVal).toBe("王大明");
+    expect(ownersDiff?.remoteVal).toBe("李小華");
   });
 });

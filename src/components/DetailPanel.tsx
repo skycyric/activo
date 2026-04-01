@@ -14,7 +14,6 @@ import { getPlanItemWarning } from "../utils/planWarnings";
 
 interface Props {
   strategy: Strategy;
-  period: string | null;
   onClose: () => void;
   onUpdate: (s: Strategy) => void;
   onDelete: () => void;
@@ -40,7 +39,7 @@ function InlineEdit({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const commit = () => {
-    onSave(draft || value);
+    onSave(draft);
     setEditing(false);
   };
 
@@ -72,6 +71,9 @@ function InlineEdit({
         onChange={(e) => setDraft(e.target.value)}
         onFocus={(e) => e.target.select()}
         onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setEditing(false);
+        }}
       />
     );
   }
@@ -297,17 +299,6 @@ function parseMonthDay(s: string) {
 }
 
 /**
- * Convert date string to ISO format YYYY-MM-DD
- */
-function toIsoDate(s: string | undefined, year: number): string {
-  if (!s) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
-  if (m) return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
-  return "";
-}
-
-/**
  * Check if a plan item's date range overlaps with a given quarter
  */
 function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
@@ -349,97 +340,10 @@ function doesMeasureOverlapQuarter(
   return linkedItems.some((item) => doesItemOverlapQuarter(item, quarter));
 }
 
-/**
- * Parse ActionPlan from q1Text/q2Text
- */
-function parseActionPlans(
-  q1Text: string,
-  q2Text: string,
-  year: number,
-): ActionPlan[] {
-  const plans: ActionPlan[] = [];
-
-  function parseQ(text: string, quarter: "Q1" | "Q2") {
-    if (!text.trim()) return;
-    const sectionRe = /【([^】]+)】/g;
-    const sections: Array<{ title: string; start: number }> = [];
-    let m;
-    while ((m = sectionRe.exec(text)) !== null) {
-      sections.push({ title: m[1], start: m.index + m[0].length });
-    }
-
-    if (sections.length === 0) {
-      plans.push({
-        id: genId("plan"),
-        quarter,
-        title: `${quarter} 行動計畫`,
-        items: parseItems(text),
-      });
-      return;
-    }
-
-    for (let i = 0; i < sections.length; i++) {
-      const content = text.substring(
-        sections[i].start,
-        i + 1 < sections.length
-          ? sections[i + 1].start - sections[i + 1].title.length - 2
-          : text.length,
-      );
-      plans.push({
-        id: genId("plan"),
-        quarter,
-        title: sections[i].title,
-        items: parseItems(content),
-      });
-    }
-  }
-
-  function parseItems(text: string): PlanItem[] {
-    return text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((line) => {
-        // Try date range first: M/D-M/D or M/D~M/D
-        const rangeMatch = line.match(
-          /^(\d{1,2}\/\d{1,2})\s*[-~]\s*(\d{1,2}\/\d{1,2})/,
-        );
-        if (rangeMatch) {
-          const description = line.substring(rangeMatch[0].length).trim();
-          const completed = /完成|結案|啟動/.test(description);
-          return {
-            id: genId("item"),
-            plannedEndDate: toIsoDate(rangeMatch[2], year),
-            description,
-            completed,
-          };
-        }
-        const dateMatch = line.match(/^(\d+\/\d+(?:\/\d+)?)/);
-        const date = dateMatch ? dateMatch[1] : "";
-        const description = dateMatch
-          ? line.substring(dateMatch[0].length).trim()
-          : line;
-        const completed =
-          /完成|結案|啟動/.test(description) && /^\d+\/\d+/.test(line);
-        return {
-          id: genId("item"),
-          plannedEndDate: date ? toIsoDate(date, year) : undefined,
-          description,
-          completed,
-        };
-      });
-  }
-
-  parseQ(q1Text, "Q1");
-  parseQ(q2Text, "Q2");
-  return plans;
-}
-
 // ─── Detail Panel ──────────────────────────────────────────────────────────────
 
 export default function DetailPanel({
   strategy,
-  period: _period,
   onClose,
   onUpdate,
   onDelete,
@@ -448,9 +352,6 @@ export default function DetailPanel({
   warnDaysBefore,
   onUpdateWarnDaysBefore,
 }: Props) {
-  const year = _period
-    ? parseInt(_period.match(/\d{4}/)?.[0] ?? "") || new Date().getFullYear()
-    : new Date().getFullYear();
   const [tab, setTab] = useState<"measure" | "plans" | "notes">("measure");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterOwner, setFilterOwner] = useState<string>("all");
@@ -488,42 +389,36 @@ export default function DetailPanel({
     localStorage.setItem("ogsm_panel_width", panelWidth.toString());
   }, [panelWidth]);
 
-  // Initialize actionPlans from q1Text/q2Text if not already present
-  useEffect(() => {
-    if (
-      strategy.actionPlans.length === 0 &&
-      (strategy.q1Text || strategy.q2Text)
-    ) {
-      const generated = parseActionPlans(
-        strategy.q1Text,
-        strategy.q2Text,
-        year,
-      );
-      if (generated.length > 0) {
-        onUpdate({ ...strategy, actionPlans: generated });
-      }
-    }
-  }, [strategy.q1Text, strategy.q2Text]);
-
+  const dragCtrlRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      dragCtrlRef.current?.abort();
+    },
+    [],
+  );
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
+      dragCtrlRef.current?.abort();
+      const ctrl = new AbortController();
+      dragCtrlRef.current = ctrl;
       const startX = e.clientX;
       const startWidth = panelWidth;
-      const onMouseMove = (moveEvent: MouseEvent) => {
-        // Panel is on right edge, deltaX < 0 means drag left -> width increases
-        const newWidth = Math.max(
-          400,
-          Math.min(1200, startWidth - (moveEvent.clientX - startX)),
-        );
-        setPanelWidth(newWidth);
-      };
-      const onMouseUp = () => {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-      };
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener(
+        "mousemove",
+        (moveEvent: MouseEvent) => {
+          // Panel is on right edge, deltaX < 0 means drag left -> width increases
+          const newWidth = Math.max(
+            400,
+            Math.min(1200, startWidth - (moveEvent.clientX - startX)),
+          );
+          setPanelWidth(newWidth);
+        },
+        { signal: ctrl.signal },
+      );
+      document.addEventListener("mouseup", () => ctrl.abort(), {
+        signal: ctrl.signal,
+      });
     },
     [panelWidth],
   );
@@ -735,13 +630,8 @@ export default function DetailPanel({
 
   function planItemMatchesFilter(item: PlanItem): boolean {
     const q = searchQuery.trim().toLowerCase();
-    const ownerOk =
-      filterOwner === "all" || (item.owner ?? "").includes(filterOwner);
-    const textOk =
-      !q ||
-      item.description.toLowerCase().includes(q) ||
-      (item.owner ?? "").toLowerCase().includes(q);
-    return ownerOk && textOk;
+    const textOk = !q || item.description.toLowerCase().includes(q);
+    return textOk;
   }
 
   // Plan helpers (plans are managed via Measures and fixed quarters)
@@ -807,10 +697,9 @@ export default function DetailPanel({
 
   // Measure helpers (活動/項目)
   // Owner helpers
-  const ownersList =
-    strategy.owners ?? (strategy.owner ? [strategy.owner] : []);
+  const ownersList = strategy.owners;
   const setOwners = (names: string[]) =>
-    onUpdate({ ...strategy, owners: names, owner: names[0] ?? "" });
+    onUpdate({ ...strategy, owners: names });
   const removeOwner = (name: string) =>
     setOwners(ownersList.filter((n) => n !== name));
 
@@ -864,7 +753,7 @@ export default function DetailPanel({
         m.id === msrId ? { ...m, kpis: [...m.kpis, newKpi] } : m,
       ),
     });
-    setPendingKpiType(null);
+    setKpiDropdownMsrId(null);
   };
 
   const defaultCollapsed = () => {
@@ -877,15 +766,10 @@ export default function DetailPanel({
   const [measureCollapsed, setMeasureCollapsed] =
     useState<Record<string, boolean>>(defaultCollapsed);
 
-  // 新增 KPI 時的類型選擇：msrId => 待確認的 kpiType
-  const [pendingKpiType, setPendingKpiType] = useState<{
-    msrId: string;
-    kpiType: "value" | "progress";
-  } | null>(null);
+  // 新增 KPI Dropdown：記錄目前展開選單的 measure id
+  const [kpiDropdownMsrId, setKpiDropdownMsrId] = useState<string | null>(null);
 
-  const allKpis = strategy.measures.flatMap((m) =>
-    m.kpis.map((k) => ({ ...k, msrId: m.id })),
-  );
+  const allKpisCount = strategy.measures.reduce((n, m) => n + m.kpis.length, 0);
   // Plan items count
   const totalItems = strategy.actionPlans.flatMap((p) => p.items).length;
   const doneItems = strategy.actionPlans
@@ -1020,10 +904,8 @@ export default function DetailPanel({
             </div>
           ) : (
             <InlineEdit
-              value={strategy.owner}
-              onSave={(v) =>
-                onUpdate({ ...strategy, owner: v, owners: v ? [v] : [] })
-              }
+              value={strategy.owners[0] ?? ""}
+              onSave={(v) => onUpdate({ ...strategy, owners: v ? [v] : [] })}
               className="owner-chip owner-edit"
               placeholder="負責單位"
             />
@@ -1106,7 +988,7 @@ export default function DetailPanel({
           className={`detail-tab ${tab === "measure" ? "active" : ""}`}
           onClick={() => setTab("measure")}
         >
-          📊 成效指標 {allKpis.length > 0 ? `(${allKpis.length})` : ""}
+          📊 成效指標 {allKpisCount > 0 ? `(${allKpisCount})` : ""}
         </button>
         <button
           className={`detail-tab ${tab === "plans" ? "active" : ""}`}
@@ -1182,8 +1064,6 @@ export default function DetailPanel({
                 })
                 .map((m) => {
                   const collapsed = !!measureCollapsed[m.id];
-                  const isFromOtherQuarter =
-                    (m.quarter ?? selectedQuarter) !== selectedQuarter;
                   return (
                     <div
                       key={m.id}
@@ -1194,24 +1074,15 @@ export default function DetailPanel({
                         className="plan-section-header"
                         style={{ alignItems: "center" }}
                       >
-                        {isFromOtherQuarter ? (
-                          <span
-                            className="synced-badge"
-                            title={`來源: ${m.quarter}`}
-                          >
-                            ↩ {m.quarter}
-                          </span>
-                        ) : (
-                          <span
-                            className="measure-drag-handle"
-                            title="拖曳移動到其他季度（按住 Ctrl 為複製）"
-                            draggable
-                            onDragStart={(e) => onMeasureDragStart(e, m.id)}
-                            onDragEnd={onMeasureDragEnd}
-                          >
-                            ⠿
-                          </span>
-                        )}
+                        <span
+                          className="measure-drag-handle"
+                          title="拖曳移動到其他季度（按住 Ctrl 為複製）"
+                          draggable
+                          onDragStart={(e) => onMeasureDragStart(e, m.id)}
+                          onDragEnd={onMeasureDragEnd}
+                        >
+                          ⠿
+                        </span>
                         <span
                           className={`plan-collapse-arrow${collapsed ? " collapsed" : ""}`}
                           onClick={() =>
@@ -1283,14 +1154,21 @@ export default function DetailPanel({
                           <input
                             type="date"
                             className="measure-date-input"
-                            value={m.updatedAt ?? ""}
+                            value={(m.updatedAt ?? "").slice(0, 10)}
                             title="最後更新日期"
                             onChange={(e) =>
                               onUpdate({
                                 ...strategy,
                                 measures: strategy.measures.map((ms) =>
                                   ms.id === m.id
-                                    ? { ...ms, updatedAt: e.target.value }
+                                    ? {
+                                        ...ms,
+                                        updatedAt: e.target.value
+                                          ? new Date(
+                                              e.target.value,
+                                            ).toISOString()
+                                          : undefined,
+                                      }
                                     : ms,
                                 ),
                               })
@@ -1363,65 +1241,83 @@ export default function DetailPanel({
                           >
                             📋 複製
                           </button>
-                          {pendingKpiType?.msrId === m.id ? (
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                              }}
-                            >
-                              <select
-                                autoFocus
-                                value={pendingKpiType.kpiType}
-                                onChange={(e) =>
-                                  setPendingKpiType({
-                                    msrId: m.id,
-                                    kpiType: e.target.value as
-                                      | "value"
-                                      | "progress",
-                                  })
-                                }
-                                style={{
-                                  fontSize: 12,
-                                  padding: "4px 6px",
-                                  borderRadius: 6,
-                                  border: "1px solid #d1d5db",
-                                }}
-                              >
-                                <option value="value">量化型</option>
-                                <option value="progress">進度型</option>
-                              </select>
-                              <button
-                                className="detail-add-btn"
-                                style={{ padding: "6px 10px" }}
-                                onClick={() =>
-                                  addKpiToMeasure(m.id, pendingKpiType.kpiType)
-                                }
-                              >
-                                確認
-                              </button>
-                              <button
-                                className="plan-del-btn"
-                                onClick={() => setPendingKpiType(null)}
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ) : (
+                          <div style={{ position: "relative" }}>
                             <button
                               className="detail-add-btn"
-                              onClick={() =>
-                                setPendingKpiType({
-                                  msrId: m.id,
-                                  kpiType: "value",
-                                })
-                              }
                               style={{ padding: "6px 10px" }}
+                              onClick={() =>
+                                setKpiDropdownMsrId(
+                                  kpiDropdownMsrId === m.id ? null : m.id,
+                                )
+                              }
                             >
-                              + 新增 KPI
+                              + 新增 KPI ▾
                             </button>
-                          )}
+                            {kpiDropdownMsrId === m.id && (
+                              <>
+                                {/* 點擊外部關閉 */}
+                                <div
+                                  style={{
+                                    position: "fixed",
+                                    inset: 0,
+                                    zIndex: 99,
+                                  }}
+                                  onClick={() => setKpiDropdownMsrId(null)}
+                                />
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: "calc(100% + 4px)",
+                                    right: 0,
+                                    zIndex: 100,
+                                    background: "#fff",
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 8,
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+                                    minWidth: 130,
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  {(
+                                    [
+                                      ["value", "📐 量化型"],
+                                      ["progress", "📊 進度型"],
+                                    ] as const
+                                  ).map(([type, label]) => (
+                                    <button
+                                      key={type}
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "9px 14px",
+                                        textAlign: "left",
+                                        background: "none",
+                                        border: "none",
+                                        fontSize: 13,
+                                        cursor: "pointer",
+                                        color: "#374151",
+                                      }}
+                                      onMouseEnter={(e) =>
+                                        ((
+                                          e.currentTarget as HTMLButtonElement
+                                        ).style.background = "#f3f4f6")
+                                      }
+                                      onMouseLeave={(e) =>
+                                        ((
+                                          e.currentTarget as HTMLButtonElement
+                                        ).style.background = "none")
+                                      }
+                                      onClick={() => {
+                                        addKpiToMeasure(m.id, type);
+                                      }}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
                           <button
                             className="plan-del-btn"
                             onClick={() => deleteMeasure(m.id)}

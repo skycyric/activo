@@ -60,7 +60,7 @@ export function parseCSVRaw(text: string): string[][] {
 
 // ─── KPI Extractor ────────────────────────────────────────────────────────
 
-export function extractKPIs(text: string): KPI[] {
+function extractKPIs(text: string): KPI[] {
   const kpis: KPI[] = [];
   const lines = text.split("\n");
 
@@ -99,9 +99,6 @@ export function avgRate(rates: number[]): number {
   return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
 }
 
-// ─── Action Plans (Legacy) ────────────────────────────────────────────────
-// DEPRECATED: actionPlans no longer populate from CSV; use Measure model instead.
-
 // ─── Main OGSM Parser ─────────────────────────────────────────────────────
 
 export function parseOGSM(csvText: string): OGSMData {
@@ -134,7 +131,6 @@ export function parseOGSM(csvText: string): OGSMData {
       q1Text: dText,
       q2Text: eText,
       actionPlans: [], // Legacy: no longer populated from CSV
-      owner: fText,
       owners: fText ? [fText] : [],
       notes: gText,
       completionRate: rate,
@@ -178,10 +174,10 @@ export function parseOGSM(csvText: string): OGSMData {
       });
       // Legacy: actionPlans no longer populated from CSV imports
       if (fT) {
-        ref.currentStrategy.owner = fT;
-        ref.currentStrategy.owners = fT
-          ? [fT, ...(ref.currentStrategy.owners ?? []).filter((o) => o !== fT)]
-          : ref.currentStrategy.owners;
+        ref.currentStrategy.owners = [
+          fT,
+          ...ref.currentStrategy.owners.filter((o) => o !== fT),
+        ];
       }
       if (gT) ref.currentStrategy.notes += "\n" + gT;
     }
@@ -199,11 +195,14 @@ export function parseOGSM(csvText: string): OGSMData {
 
   const overallRate = avgRate(goals.map((g) => g.completionRate));
 
+  const now = new Date();
+  const half = now.getMonth() >= 6 ? "H2" : "H1";
+
   return {
     objectives: { orgO, deptO },
     goals,
-    period: "2026 H1",
-    importedAt: new Date().toISOString(),
+    period: `${now.getFullYear()} ${half}`,
+    importedAt: now.toISOString(),
     overallRate,
   };
 }

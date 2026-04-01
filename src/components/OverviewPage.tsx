@@ -9,7 +9,7 @@ import type {
 } from "../schemas/ogsm";
 import {
   countStrategyWarnings,
-  getPlanItemWarning,
+  computePctActivityRate,
 } from "../utils/planWarnings";
 
 interface Props {
@@ -33,35 +33,9 @@ interface NodeStats {
 function goalKpiRate(gk: GoalKPI, goal: Goal): number | null {
   const gkType = gk.type ?? "value";
 
-  // ── pct_activity：依 thresholdGoalKpiIds 計算活動達標率 ─────────────────
+  // ── pct_activity：使用共用函式（含 activitySourceOverrides）──────────────────────────────
   if (gkType === "pct_activity") {
-    const activityMap = new Map<string, boolean>();
-    for (const threshId of gk.thresholdGoalKpiIds ?? []) {
-      const threshGk = (goal.goalKpis ?? []).find((g) => g.id === threshId);
-      if (
-        !threshGk ||
-        threshGk.target === null ||
-        threshGk.target === undefined
-      )
-        continue;
-      for (const link of threshGk.linkedKpis) {
-        const s = goal.strategies.find((s) => s.id === link.strategyId);
-        const m = s?.measures.find((m) => m.id === link.measureId);
-        const k = m?.kpis.find((k) => k.id === link.kpiId);
-        if (!k) continue;
-        const met = (k.actual ?? 0) >= threshGk.target;
-        const existing = activityMap.get(link.measureId);
-        if (existing === undefined || (!existing && met))
-          activityMap.set(link.measureId, met);
-      }
-    }
-    const totalCount = activityMap.size;
-    if (totalCount === 0) return null;
-    const metCount = Array.from(activityMap.values()).filter(Boolean).length;
-    const actualPct = (metCount / totalCount) * 100;
-    const target = gk.target ?? 60;
-    if (target <= 0) return null;
-    return Math.round((actualPct / target) * 100);
+    return computePctActivityRate(gk, goal);
   }
 
   // ── progress：linked 進度型 KPI 的 actual 平均 ────────────────────────────
@@ -187,7 +161,7 @@ function gTooltip(g: Goal, gs: NodeStats): string {
 }
 
 // S tooltip: KPI (all) + 行動計畫(= Measures)
-function sTooltip(_s: Strategy, ss: NodeStats): string {
+function sTooltip(ss: NodeStats): string {
   const parts: string[] = [];
   if (ss.kpiTotal > 0) parts.push(`KPI ${ss.kpiDone}/${ss.kpiTotal}達標`);
   if (ss.planTotal > 0)
@@ -259,34 +233,6 @@ export default function OverviewPage({
     (m) => m.status === "completed",
   );
 
-  // PlanItem 警示統計（跨所有 G/S）
-  type PlanItemWarnCtx = {
-    id: string;
-    description: string;
-    stratTitle: string;
-    goalId: string;
-    stratId: string;
-  };
-  const oWarnOverdue: PlanItemWarnCtx[] = [];
-  const oWarnNear: PlanItemWarnCtx[] = [];
-  data.goals.forEach((g) =>
-    g.strategies.forEach((s) =>
-      s.actionPlans
-        .flatMap((p) => p.items)
-        .forEach((item) => {
-          const w = getPlanItemWarning(item, warnDaysBefore);
-          const ctx = {
-            id: item.id,
-            description: item.description || "（未命名）",
-            stratTitle: s.title || "（未命名策略）",
-            goalId: g.id,
-            stratId: s.id,
-          };
-          if (w === "overdue") oWarnOverdue.push(ctx);
-          else if (w === "warning") oWarnNear.push(ctx);
-        }),
-    ),
-  );
   return (
     <div className="overview-page">
       {/*  O Stats Header  */}
@@ -395,52 +341,6 @@ export default function OverviewPage({
         </div>
         {oExpandedStatus &&
           (() => {
-            const isWarnKey =
-              oExpandedStatus === "overdue" || oExpandedStatus === "warning";
-            if (isWarnKey) {
-              const items =
-                oExpandedStatus === "overdue" ? oWarnOverdue : oWarnNear;
-              const label =
-                oExpandedStatus === "overdue" ? "🔴 逾期" : "⚠️ 即將到期";
-              return (
-                <div className="ov-status-list">
-                  <div className="ov-status-list-header">
-                    <span>
-                      {label}（{items.length} 項）
-                    </span>
-                    <button
-                      className="ov-status-list-close"
-                      onClick={() => setOExpandedStatus(null)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  {items.length === 0 ? (
-                    <div className="ov-status-list-empty">無項目</div>
-                  ) : (
-                    <div className="ov-status-list-body">
-                      {items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="ov-status-list-item"
-                          onClick={() =>
-                            onSelectStrategy(item.goalId, item.stratId)
-                          }
-                          title="點擊開啟策略詳細頁"
-                        >
-                          <span className="ov-status-list-name">
-                            {item.description}
-                          </span>
-                          <span className="ov-status-list-path">
-                            {item.stratTitle}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            }
             const items =
               oExpandedStatus === "not-started"
                 ? oPlanNotStarted
@@ -542,7 +442,7 @@ export default function OverviewPage({
               </div>
 
               <ul className="org-children">
-                {data.goals.map((g: Goal, gi: number) => {
+                {data.goals.map((g: Goal) => {
                   const gs = gStats(g);
                   const gOverdue = g.strategies.reduce(
                     (a, s) =>
@@ -567,7 +467,7 @@ export default function OverviewPage({
                           e.key === "Enter" && onSelectGoal(g.id)
                         }
                       >
-                        <span className="org-badge org-badge-g">{`G${gi + 1}`}</span>
+                        <span className="org-badge org-badge-g">{g.label}</span>
                         <span className="org-title">
                           {g.title || <em>(未命名)</em>}
                         </span>
@@ -596,7 +496,7 @@ export default function OverviewPage({
                                 {/* S node */}
                                 <div
                                   className="org-node org-node-s"
-                                  data-tooltip={sTooltip(s, ss)}
+                                  data-tooltip={sTooltip(ss)}
                                   onClick={() => onSelectStrategy(g.id, s.id)}
                                   role="button"
                                   tabIndex={0}

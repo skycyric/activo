@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { OGSMData, Team, TeamMember } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 
@@ -19,6 +19,11 @@ export default function DeptSettingsPage({
   const [teamDraft, setTeamDraft] = useState<Team[]>(() =>
     JSON.parse(JSON.stringify(teams)),
   );
+
+  // Re-sync draft when parent teams prop changes (e.g. after file reload / undo)
+  useEffect(() => {
+    setTeamDraft(JSON.parse(JSON.stringify(teams)));
+  }, [teams]);
 
   const addTeam = () =>
     setTeamDraft([...teamDraft, { id: genId("team"), name: "", members: [] }]);

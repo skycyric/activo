@@ -36,12 +36,7 @@ export default function ConflictModal({
   const allResolved = resolvedCount === conflicts.length;
 
   return (
-    <div
-      className="conflict-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-    >
+    <div className="conflict-overlay">
       <div className="conflict-modal">
         {/* Header */}
         <div className="conflict-header">
