@@ -27,8 +27,13 @@ import {
   hasSavedHandle,
   authorizeDataFile,
   readDataFile,
+  readDataFileMeta,
   writeDataFile,
   clearDataFile,
+  pickDataFolder,
+  peekDataFolder,
+  clearDataFolder,
+  scanForConflictCopies,
 } from "./utils/fileSync";
 import {
   mergeWorkspaces,
@@ -127,7 +132,13 @@ export default function App() {
   const authInProgressRef = useRef(false);
   const pendingClickHandlerRef = useRef<EventListener | null>(null);
   const loadedFileVersionRef = useRef<number | null>(null);
+  const loadedFileLastModifiedRef = useRef<number | null>(null);
   const [mergeToast, setMergeToast] = useState("");
+  // Remote-update banner (background polling)
+  const [remoteUpdateBanner, setRemoteUpdateBanner] = useState(false);
+  // Refs used inside polling interval (avoid stale closure)
+  const syncStatusRef = useRef<SyncStatus>("unlinked");
+  const conflictOpenRef = useRef(false);
   // Manual save / dirty tracking
   const [isDirty, setIsDirty] = useState(false);
   // Conflict resolution state
@@ -135,12 +146,25 @@ export default function App() {
   const [conflictResolutions, setConflictResolutions] =
     useState<ConflictResolutions>({});
   const conflictDiskWsRef = useRef<WorkspaceData | null>(null);
+  // Directory handle for conflict-copy scanning
+  const dirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
+  const [conflictCopies, setConflictCopies] = useState<
+    { handle: FileSystemFileHandle; name: string }[]
+  >([]);
+  // Tracks which copy triggered the current ConflictModal (for post-merge delete)
+  const conflictSourceCopyRef = useRef<{
+    handle: FileSystemFileHandle;
+    name: string;
+  } | null>(null);
 
   // Shared: attach handle + read file into workspace
   const applyHandle = useCallback(async (handle: FileSystemFileHandle) => {
     fileHandleRef.current = handle;
     try {
-      const text = await readDataFile(handle);
+      const [text, lastModified] = await Promise.all([
+        readDataFile(handle),
+        readDataFileMeta(handle),
+      ]);
       let remote: WorkspaceData;
       try {
         remote = JSON.parse(text);
@@ -156,9 +180,11 @@ export default function App() {
       }
       validateOrWarn(WorkspaceDataSchema, remote, "applyHandle");
       loadedFileVersionRef.current = remote.version ?? null;
+      loadedFileLastModifiedRef.current = lastModified;
       setWorkspace(remote);
       saveWorkspace(remote);
       setIsDirty(false);
+      setRemoteUpdateBanner(false);
       setSyncStatus("saved");
       setSyncError("");
     } catch (e) {
@@ -175,25 +201,29 @@ export default function App() {
       const handle = await peekDataFile();
       if (handle) {
         await applyHandle(handle);
-        return;
+      } else {
+        const savedExists = await hasSavedHandle();
+        if (savedExists) {
+          // Handle saved but needs user gesture to re-grant — auto-fire on first click
+          setSyncStatus("pending");
+          const handler: EventListener = () => {
+            if (authInProgressRef.current) return;
+            authInProgressRef.current = true;
+            authorizeDataFile()
+              .then(async (h) => {
+                if (h) await applyHandle(h);
+              })
+              .finally(() => {
+                authInProgressRef.current = false;
+              });
+          };
+          pendingClickHandlerRef.current = handler;
+          document.addEventListener("click", handler, { once: true });
+        }
       }
-      const savedExists = await hasSavedHandle();
-      if (!savedExists) return;
-      // Handle saved but needs user gesture to re-grant — auto-fire on first click
-      setSyncStatus("pending");
-      const handler: EventListener = () => {
-        if (authInProgressRef.current) return;
-        authInProgressRef.current = true;
-        authorizeDataFile()
-          .then(async (h) => {
-            if (h) await applyHandle(h);
-          })
-          .finally(() => {
-            authInProgressRef.current = false;
-          });
-      };
-      pendingClickHandlerRef.current = handler;
-      document.addEventListener("click", handler, { once: true });
+      // Restore directory handle for conflict-copy scanning (permission may already be granted)
+      const dirHandle = await peekDataFolder();
+      if (dirHandle) dirHandleRef.current = dirHandle;
     })();
     return () => {
       if (pendingClickHandlerRef.current) {
@@ -203,21 +233,90 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── 同步 refs 供 polling interval 讀取（避免 stale closure）────────
+  useEffect(() => {
+    syncStatusRef.current = syncStatus;
+  }, [syncStatus]);
+  useEffect(() => {
+    conflictOpenRef.current = conflictEntries.length > 0;
+  }, [conflictEntries.length]);
+
+  // ─── 背景輪詢：每 30 秒檢查檔案是否被他人更新 ─────────────────────
+  const POLL_INTERVAL_MS = 30_000;
+  useEffect(() => {
+    if (!fsSupported) return;
+    const poll = async () => {
+      const handle = fileHandleRef.current;
+      if (!handle) return;
+      // 存檔中、待授權或衝突 modal 開著時跳過
+      if (
+        syncStatusRef.current === "saving" ||
+        syncStatusRef.current === "pending" ||
+        conflictOpenRef.current
+      )
+        return;
+      if (loadedFileLastModifiedRef.current === null) return;
+      try {
+        const lastMod = await readDataFileMeta(handle);
+        if (lastMod > loadedFileLastModifiedRef.current) {
+          setRemoteUpdateBanner(true);
+        }
+      } catch {
+        // best-effort：讀不到就靜默略過
+      }
+      // 順便扫描目錄中是否有 OneDrive 衝突副本
+      const dir = dirHandleRef.current;
+      if (dir) {
+        try {
+          const copies = await scanForConflictCopies(dir, handle.name);
+          if (copies.length > 0) {
+            setConflictCopies((prev) => {
+              // 不重複已知的副本
+              const prevNames = new Set(prev.map((c) => c.name));
+              const newOnes = copies.filter((c) => !prevNames.has(c.name));
+              return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+            });
+          }
+        } catch {
+          // best-effort
+        }
+      }
+    };
+    const timer = setInterval(poll, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fsSupported]);
+
   const fileSaveNow = useCallback(async (ws: WorkspaceData) => {
     const handle = fileHandleRef.current;
     if (!handle) return;
     setSyncStatus("saving");
     try {
-      // Read current file to detect concurrent writes
+      // ── 第一次讀檔 ───────────────────────────────────────────────
+      const firstMeta = await readDataFileMeta(handle);
       const diskText = await readDataFile(handle);
       const onDisk: WorkspaceData = JSON.parse(diskText);
       let toWrite = ws;
 
-      if (
-        loadedFileVersionRef.current !== null &&
-        onDisk.version !== undefined &&
-        onDisk.version !== loadedFileVersionRef.current
-      ) {
+      // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
+      // 給其他使用者也在存檔的情況留出同步時間，
+      // 避免兩人幾乎同時按存檔卻互相看不到對方的寫入。
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // ── 第二次讀檔：確認 lastModified 是否在等待期間又變動 ────────
+      const secondMeta = await readDataFileMeta(handle);
+      if (secondMeta !== firstMeta) {
+        // 等待期間檔案又被人更新，重新讀取最新內容再做衝突偵測
+        const freshText = await readDataFile(handle);
+        const freshDisk: WorkspaceData = JSON.parse(freshText);
+        // 以最新的磁碟版本取代原本的 onDisk
+        Object.assign(onDisk, freshDisk);
+      }
+
+      // 若 loadedFileVersionRef.current 為 null（舊格式無版本號），視為版本 -1，
+      // 讓任何有版本的 onDisk 都能觸發衝突偵測（而非直接跳過）。
+      const loadedVer = loadedFileVersionRef.current ?? -1;
+      if (onDisk.version !== undefined && onDisk.version !== loadedVer) {
         // Version mismatch: check for user-visible conflicts first
         const conflicts = detectConflicts(ws, onDisk);
         if (conflicts.length > 0) {
@@ -246,14 +345,37 @@ export default function App() {
       };
       loadedFileVersionRef.current = payload.version;
       await writeDataFile(handle, JSON.stringify(payload, null, 2));
+      // 更新 lastModified 基準，避免存檔後的輪詢誤報
+      loadedFileLastModifiedRef.current = await readDataFileMeta(handle);
       setSyncStatus("saved");
       setSyncError("");
       setIsDirty(false);
+      setRemoteUpdateBanner(false);
     } catch (e) {
       setSyncStatus("error");
       setSyncError("檔案寫入失敗：" + String(e));
     }
   }, []);
+
+  // ─── Banner 處理函式 ──────────────────────────────────────────────
+  const handleRemoteRefresh = useCallback(async () => {
+    if (
+      isDirty &&
+      !window.confirm("你有未儲存的變更，重新整理後會遺失。確定嗎？")
+    )
+      return;
+    const handle = fileHandleRef.current;
+    if (handle) await applyHandle(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty, applyHandle]);
+
+  const handleRemoteSaveAndRefresh = useCallback(async () => {
+    await fileSaveNow(workspace);
+    // fileSaveNow 後直接重新讀檔，確保拿到最新合併結果
+    const handle = fileHandleRef.current;
+    if (handle) await applyHandle(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, fileSaveNow, applyHandle]);
 
   const handleLinkFile = useCallback(async () => {
     const handle = await pickDataFile();
@@ -282,9 +404,13 @@ export default function App() {
         setWorkspace(remote);
         saveWorkspace(remote);
       } else {
-        // 空檔案：以當前 workspace 初始化
-        loadedFileVersionRef.current = workspace.version ?? null;
-        await writeDataFile(handle, JSON.stringify(workspace, null, 2));
+        // 空檔案：以當前 workspace 初始化，並寫入版本號 1
+        const initVer = 1;
+        loadedFileVersionRef.current = initVer;
+        await writeDataFile(
+          handle,
+          JSON.stringify({ ...workspace, version: initVer }, null, 2),
+        );
       }
       setSyncStatus("saved");
       setSyncError("");
@@ -306,6 +432,89 @@ export default function App() {
       document.removeEventListener("click", pendingClickHandlerRef.current);
       pendingClickHandlerRef.current = null;
     }
+  }, []);
+
+  const handleLinkFolder = useCallback(async () => {
+    const dir = await pickDataFolder();
+    if (!dir) return;
+    dirHandleRef.current = dir;
+    // 立刻扫描一次
+    const handle = fileHandleRef.current;
+    if (handle) {
+      try {
+        const copies = await scanForConflictCopies(dir, handle.name);
+        setConflictCopies(copies);
+      } catch {
+        // best-effort
+      }
+    }
+  }, []);
+
+  const handleUnlinkFolder = useCallback(async () => {
+    dirHandleRef.current = null;
+    setConflictCopies([]);
+    await clearDataFolder();
+  }, []);
+
+  const handleMergeCopy = useCallback(
+    async (copy: { handle: FileSystemFileHandle; name: string }) => {
+      try {
+        const text = await readDataFile(copy.handle);
+        const remote: WorkspaceData = JSON.parse(text);
+        const conflicts = detectConflicts(workspace, remote);
+        conflictDiskWsRef.current = remote;
+        conflictSourceCopyRef.current = copy;
+        if (conflicts.length > 0) {
+          setConflictEntries(conflicts);
+          setConflictResolutions({});
+        } else {
+          // 無衝突：直接自動合併
+          const { workspace: merged, autoMerged } = mergeWorkspaces(
+            workspace,
+            remote,
+          );
+          const payload: WorkspaceData = {
+            ...merged,
+            version: (merged.version ?? 1) + 1,
+            savedAt: new Date().toISOString(),
+          };
+          if (fileHandleRef.current) {
+            await writeDataFile(
+              fileHandleRef.current,
+              JSON.stringify(payload, null, 2),
+            );
+            loadedFileVersionRef.current = payload.version;
+            loadedFileLastModifiedRef.current = await readDataFileMeta(
+              fileHandleRef.current,
+            );
+          }
+          setWorkspace(payload);
+          saveWorkspace(payload);
+          setIsDirty(false);
+          if (autoMerged > 0) {
+            setMergeToast(`已從副本自動合併 ${autoMerged} 項變更`);
+            setTimeout(() => setMergeToast(""), 4000);
+          }
+          // 詢問是否刪除副本
+          if (
+            dirHandleRef.current &&
+            window.confirm(`已成功合併「${copy.name}」，是否刪除此副本檔案？`)
+          ) {
+            await dirHandleRef.current.removeEntry(copy.name);
+          }
+          setConflictCopies((prev) => prev.filter((c) => c.name !== copy.name));
+          conflictSourceCopyRef.current = null;
+        }
+      } catch (e) {
+        setSyncError("讀取副本失敗：" + String(e));
+        setSyncStatus("error");
+      }
+    },
+    [workspace],
+  );
+
+  const handleDismissCopy = useCallback((name: string) => {
+    setConflictCopies((prev) => prev.filter((c) => c.name !== name));
   }, []);
 
   // Badge click when status is "pending": manual retry with user gesture
@@ -353,17 +562,29 @@ export default function App() {
         JSON.stringify(payload, null, 2),
       );
       loadedFileVersionRef.current = payload.version;
+      loadedFileLastModifiedRef.current = await readDataFileMeta(
+        fileHandleRef.current,
+      );
       setWorkspace(payload);
       saveWorkspace(payload);
       setSyncStatus("saved");
       setSyncError("");
       setIsDirty(false);
+      // 若此次衝突來自副本 merge，詢問是否刪除
+      const src = conflictSourceCopyRef.current;
+      if (src && dirHandleRef.current) {
+        if (window.confirm(`衝突已解決，是否刪除副本檔案「${src.name}」？`)) {
+          await dirHandleRef.current.removeEntry(src.name);
+        }
+        setConflictCopies((prev) => prev.filter((c) => c.name !== src.name));
+      }
     } catch (e) {
       setSyncStatus("error");
       setSyncError("檔案寫入失敗：" + String(e));
     } finally {
       setConflictEntries([]);
       conflictDiskWsRef.current = null;
+      conflictSourceCopyRef.current = null;
     }
   }, [workspace, conflictResolutions]);
 
@@ -1019,6 +1240,23 @@ export default function App() {
                 <button className="btn-secondary" onClick={handleUnlinkFile}>
                   🔗 已連結檔案
                 </button>
+                {dirHandleRef.current ? (
+                  <button
+                    className="btn-secondary"
+                    onClick={handleUnlinkFolder}
+                    title="進行中：每 30 秒自動扫描 OneDrive 副本"
+                  >
+                    🔍 副本扫描中
+                  </button>
+                ) : (
+                  <button
+                    className="btn-secondary"
+                    onClick={handleLinkFolder}
+                    title="選擇資料檔剀在的資料夾，啟用 OneDrive 副本自動偵測"
+                  >
+                    🔍 啟用副本偵測
+                  </button>
+                )}
               </>
             ) : (
               <button className="btn-secondary" onClick={handleLinkFile}>
@@ -1059,7 +1297,69 @@ export default function App() {
       {syncStatus === "error" && syncError && (
         <div className="sp-error-banner">⚠️ {syncError}</div>
       )}
+      {remoteUpdateBanner && (
+        <div className="remote-update-banner">
+          <span>⚡ 偵測到共用檔案已被他人更新</span>
+          <div className="remote-update-actions">
+            {isDirty && (
+              <button
+                className="btn-secondary remote-update-btn"
+                onClick={handleRemoteSaveAndRefresh}
+              >
+                先存檔再重新整理
+              </button>
+            )}
+            <button
+              className="btn-secondary remote-update-btn"
+              onClick={handleRemoteRefresh}
+            >
+              {isDirty ? "捨棄變更並重新整理" : "重新整理"}
+            </button>
+            <button
+              className="remote-update-dismiss"
+              onClick={() => {
+                // 將基準推進到現在，避免下次輪詢重複顯示同一個更新
+                readDataFileMeta(fileHandleRef.current!).then((t) => {
+                  loadedFileLastModifiedRef.current = t;
+                });
+                setRemoteUpdateBanner(false);
+              }}
+            >
+              稍後處理
+            </button>
+          </div>
+        </div>
+      )}
       {mergeToast && <div className="merge-toast">🔀 {mergeToast}</div>}
+
+      {conflictCopies.length > 0 && (
+        <div className="copy-scan-banner">
+          <span className="copy-scan-title">
+            📂 偵測到 {conflictCopies.length} 個 OneDrive 衝突副本
+          </span>
+          <div className="copy-scan-list">
+            {conflictCopies.map((copy) => (
+              <div key={copy.name} className="copy-scan-item">
+                <span className="copy-scan-name" title={copy.name}>
+                  {copy.name}
+                </span>
+                <button
+                  className="btn-secondary copy-scan-btn"
+                  onClick={() => handleMergeCopy(copy)}
+                >
+                  合併此副本
+                </button>
+                <button
+                  className="remote-update-dismiss"
+                  onClick={() => handleDismissCopy(copy.name)}
+                >
+                  忽略
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {conflictEntries.length > 0 && (
         <ConflictModal

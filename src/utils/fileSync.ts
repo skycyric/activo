@@ -140,6 +140,17 @@ export async function readDataFile(
   return file.text();
 }
 
+/**
+ * Return only the lastModified timestamp (ms) without reading the full content.
+ * Cheap enough to call in a polling interval.
+ */
+export async function readDataFileMeta(
+  handle: FileSystemFileHandle,
+): Promise<number> {
+  const file = await handle.getFile();
+  return file.lastModified;
+}
+
 /** Overwrite the file with new content. */
 export async function writeDataFile(
   handle: FileSystemFileHandle,
@@ -163,4 +174,107 @@ export async function clearDataFile(): Promise<void> {
   } catch {
     // best-effort
   }
+}
+
+// ── Directory handle (for conflict-copy scanning) ─────────────────────────
+
+const DIR_HANDLE_KEY = "dataDir";
+
+async function saveDirectoryHandle(
+  handle: FileSystemDirectoryHandle,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).put(handle, DIR_HANDLE_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).get(DIR_HANDLE_KEY);
+    req.onsuccess = () =>
+      resolve((req.result as FileSystemDirectoryHandle) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Show a directory picker so the user can choose the OneDrive folder
+ * that contains the data file.  Saves the handle to IndexedDB.
+ */
+export async function pickDataFolder(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const handle = await showDirectoryPicker({ mode: "readwrite" });
+    await saveDirectoryHandle(handle as FileSystemDirectoryHandle);
+    return handle as FileSystemDirectoryHandle;
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === "AbortError") return null;
+    throw e;
+  }
+}
+
+/**
+ * Returns the saved directory handle if permission is still granted, else null.
+ * Safe to call on page load without a user gesture.
+ */
+export async function peekDataFolder(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const handle = await loadDirectoryHandle();
+    if (!handle) return null;
+    const state = await handle.queryPermission({ mode: "readwrite" });
+    return state === "granted" ? handle : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove the persisted directory handle from IndexedDB. */
+export async function clearDataFolder(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(DIR_HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Scan a directory for OneDrive conflict copies of a given file.
+ *
+ * OneDrive renames conflict copies as:
+ *   "{originalBase} - {MachineOrUser info}.json"
+ *
+ * We detect any .json file in the same folder whose name starts with
+ * "{originalBase} - " (and is not the original file itself).
+ */
+export async function scanForConflictCopies(
+  dirHandle: FileSystemDirectoryHandle,
+  originalFileName: string,
+): Promise<{ handle: FileSystemFileHandle; name: string }[]> {
+  const results: { handle: FileSystemFileHandle; name: string }[] = [];
+  const base = originalFileName.replace(/\.json$/i, "");
+  const conflictPrefix = `${base} - `;
+
+  for await (const [name, entry] of dirHandle.entries()) {
+    if (entry.kind !== "file") continue;
+    if (!name.toLowerCase().endsWith(".json")) continue;
+    if (name === originalFileName) continue;
+    if (name.startsWith(conflictPrefix)) {
+      results.push({
+        handle: entry as FileSystemFileHandle,
+        name,
+      });
+    }
+  }
+  return results;
 }

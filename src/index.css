@@ -191,6 +191,81 @@ body,
   flex-shrink: 0;
 }
 
+/* Remote update banner */
+.remote-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fffbeb;
+  border-bottom: 2px solid #f59e0b;
+  padding: 8px 20px;
+  font-size: 13px;
+  color: #92400e;
+  flex-shrink: 0;
+}
+.remote-update-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.remote-update-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.remote-update-dismiss {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: #78716c;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.remote-update-dismiss:hover {
+  background: #e7e5e4;
+}
+
+/* Conflict-copy scan banner */
+.copy-scan-banner {
+  background: #fdf4ff;
+  border-bottom: 2px solid #c084fc;
+  padding: 8px 20px;
+  font-size: 13px;
+  color: #6b21a8;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.copy-scan-title {
+  font-weight: 600;
+}
+.copy-scan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.copy-scan-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.copy-scan-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: #7e22ce;
+}
+.copy-scan-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  flex-shrink: 0;
+}
+
 /* Merge notification toast */
 .merge-toast {
   background: #f0fdf4;
