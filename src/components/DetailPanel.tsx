@@ -23,6 +23,7 @@ interface Props {
   onUpdateWarnDaysBefore: (n: number) => void;
   initialTab?: "measure" | "plans" | "notes";
   initialWarnFilter?: "overdue" | "warning" | null;
+  initialMeasureId?: string;
 }
 
 function InlineEdit({
@@ -629,9 +630,10 @@ export default function DetailPanel({
   onUpdateWarnDaysBefore,
   initialTab,
   initialWarnFilter,
+  initialMeasureId,
 }: Props) {
   const [tab, setTab] = useState<"measure" | "plans" | "notes">(
-    initialTab ?? "measure",
+    initialMeasureId ? "plans" : (initialTab ?? "measure"),
   );
   const [warnFilter, setWarnFilter] = useState<"overdue" | "warning" | null>(
     initialWarnFilter ?? null,
@@ -646,8 +648,13 @@ export default function DetailPanel({
   >(() => {
     const map: Record<string, boolean> = {};
     strategy.measures.forEach((m) => {
-      // If opened with a warnFilter, expand all sections so filtered items are visible
-      map[m.id] = initialWarnFilter ? false : true;
+      if (initialMeasureId) {
+        // Only expand the target measure, collapse the rest
+        map[m.id] = m.id !== initialMeasureId;
+      } else {
+        // If opened with a warnFilter, expand all sections so filtered items are visible
+        map[m.id] = initialWarnFilter ? false : true;
+      }
     });
     return map;
   });

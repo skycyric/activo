@@ -2809,11 +2809,12 @@ body,
   overflow-y: auto;
 }
 .ov-warn-list-item {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 7px 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 8px 14px;
   cursor: pointer;
   transition: background 0.12s;
   border-bottom: 1px solid #fef2f2;
@@ -2824,18 +2825,40 @@ body,
 .ov-warn-list-item:hover {
   background: #fff1f2;
 }
-.ov-warn-list-desc {
-  font-size: 13px;
-  color: #1f2937;
-  flex: 1;
+.ov-warn-list-measure {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+  grid-column: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+.ov-warn-list-desc {
+  font-size: 13px;
+  color: #1f2937;
+  grid-column: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-warn-list-notes {
+  font-size: 11.5px;
+  color: #6b7280;
+  grid-column: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
 }
 .ov-warn-list-meta {
   font-size: 11px;
   color: #6b7280;
   white-space: nowrap;
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
   flex-shrink: 0;
 }
 
@@ -3781,6 +3804,27 @@ body,
   border-left-color: transparent;
 }
 
+.period-tab-copy {
+  background: none;
+  border: none;
+  border-left: 1px solid rgba(99, 102, 241, 0.25);
+  color: #4b5563;
+  font-size: 12px;
+  padding: 4px 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+  display: none;
+}
+.period-tab-wrap:hover .period-tab-copy {
+  display: inline-block;
+}
+.period-tab-copy:hover {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8 !important;
+  border-left-color: transparent;
+}
+
 .period-tab-add {
   background: none;
   border: 1.5px dashed rgba(99, 102, 241, 0.3);
@@ -3842,6 +3886,14 @@ body,
 .period-add-select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.period-copy-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a5b4fc;
+  white-space: nowrap;
+  opacity: 0.85;
 }
 
 .period-add-confirm {

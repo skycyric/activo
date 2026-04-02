@@ -14,6 +14,12 @@ interface Props {
   onDeleteDept: (id: string) => void;
   onSwitchPeriod: (id: string) => void;
   onAddPeriod: (deptId: string, halfYear: "H1" | "H2", year: number) => void;
+  onCopyPeriod: (
+    deptId: string,
+    sourcePeriodId: string,
+    halfYear: "H1" | "H2",
+    year: number,
+  ) => void;
   onDeletePeriod: (deptId: string, periodId: string) => void;
   onSelectGoal: (id: string) => void;
   onSelectStrategy: (id: string) => void;
@@ -33,6 +39,7 @@ export default function Sidebar({
   onDeleteDept,
   onSwitchPeriod,
   onAddPeriod,
+  onCopyPeriod,
   onDeletePeriod,
   onSelectGoal,
   onSelectStrategy,
@@ -58,6 +65,8 @@ export default function Sidebar({
   const [editingDeptName, setEditingDeptName] = useState("");
   const [showAddPeriod, setShowAddPeriod] = useState(false);
   const [addPeriodTitle, setAddPeriodTitle] = useState("");
+  // copy mode: stores the source period id when user clicks 📋
+  const [copySourceId, setCopySourceId] = useState<string | null>(null);
 
   const dragCtrlRef = useRef<AbortController | null>(null);
   useEffect(
@@ -113,13 +122,28 @@ export default function Sidebar({
       alert(`格式錯誤，請輸入如「${new Date().getFullYear()} H1」`);
       return;
     }
-    onAddPeriod(
-      activeDeptId,
-      halfMatch[0] as "H1" | "H2",
-      parseInt(yearMatch[1]),
-    );
+    const halfYear = halfMatch[0] as "H1" | "H2";
+    const year = parseInt(yearMatch[1]);
+    if (copySourceId) {
+      onCopyPeriod(activeDeptId, copySourceId, halfYear, year);
+    } else {
+      onAddPeriod(activeDeptId, halfYear, year);
+    }
     setShowAddPeriod(false);
     setAddPeriodTitle("");
+    setCopySourceId(null);
+  };
+
+  const openCopyForm = (periodId: string) => {
+    setCopySourceId(periodId);
+    setShowAddPeriod(true);
+    setAddPeriodTitle("");
+  };
+
+  const closeAddForm = () => {
+    setShowAddPeriod(false);
+    setAddPeriodTitle("");
+    setCopySourceId(null);
   };
 
   return (
@@ -193,6 +217,16 @@ export default function Sidebar({
               >
                 {p.year} {p.halfYear}
               </button>
+              <button
+                className="period-tab-copy"
+                title={"複製此期間"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openCopyForm(p.id);
+                }}
+              >
+                📋
+              </button>
               {activeDept.periods.length > 1 && (
                 <button
                   className="period-tab-del"
@@ -210,7 +244,10 @@ export default function Sidebar({
           <button
             className="period-tab-add"
             title={"新增期間"}
-            onClick={() => setShowAddPeriod((v) => !v)}
+            onClick={() => {
+              setCopySourceId(null);
+              setShowAddPeriod((v) => !v);
+            }}
           >
             {"＋"}
           </button>
@@ -218,15 +255,31 @@ export default function Sidebar({
 
         {showAddPeriod && (
           <div className="period-add-form">
+            {copySourceId && (
+              <span className="period-copy-label">
+                📋 複製自：
+                {activeDept?.periods.find((p) => p.id === copySourceId)
+                  ? `${
+                      activeDept.periods.find((p) => p.id === copySourceId)!
+                        .year
+                    } ${
+                      activeDept.periods.find((p) => p.id === copySourceId)!
+                        .halfYear
+                    }`
+                  : ""}
+              </span>
+            )}
             <input
               className="period-add-select"
               type="text"
-              placeholder="例: 2026 H1"
+              placeholder={
+                copySourceId ? "目標期間, 如: 2026 H2" : "例: 2026 H1"
+              }
               value={addPeriodTitle}
               onChange={(e) => setAddPeriodTitle(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAddPeriodConfirm();
-                if (e.key === "Escape") setShowAddPeriod(false);
+                if (e.key === "Escape") closeAddForm();
               }}
               autoFocus
             />
@@ -234,12 +287,9 @@ export default function Sidebar({
               className="period-add-confirm"
               onClick={handleAddPeriodConfirm}
             >
-              {"新增"}
+              {copySourceId ? "複製" : "新增"}
             </button>
-            <button
-              className="period-add-cancel"
-              onClick={() => setShowAddPeriod(false)}
-            >
+            <button className="period-add-cancel" onClick={closeAddForm}>
               ×
             </button>
           </div>

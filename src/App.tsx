@@ -118,7 +118,8 @@ export default function App() {
   );
   const [pendingDetailNav, setPendingDetailNav] = useState<{
     tab: "plans";
-    warnFilter: "overdue" | "warning";
+    warnFilter?: "overdue" | "warning";
+    measureId?: string;
   } | null>(null);
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
@@ -906,6 +907,96 @@ export default function App() {
     [workspace, updateWorkspace],
   );
 
+  const handleCopyPeriod = useCallback(
+    (
+      deptId: string,
+      sourcePeriodId: string,
+      halfYear: "H1" | "H2",
+      year: number,
+    ) => {
+      const dept = workspace.departments.find((d) => d.id === deptId);
+      if (!dept) return;
+      if (
+        dept.periods.some((p) => p.halfYear === halfYear && p.year === year)
+      ) {
+        alert(`${year} ${halfYear} 已存在`);
+        return;
+      }
+      const src = dept.periods.find((p) => p.id === sourcePeriodId);
+      if (!src) return;
+
+      // 深拷貝 OGSM，重發所有 ID（避免 merge 衝突），重設實際御完成狀態
+      const now = new Date().toISOString();
+      const copiedOgsm: OGSMData = {
+        ...src.ogsm,
+        period: `${year} ${halfYear}`,
+        importedAt: now,
+        overallRate: 0,
+        goals: src.ogsm.goals.map((g) => ({
+          ...g,
+          id: genId("goal"),
+          completionRate: 0,
+          updatedAt: now,
+          strategies: g.strategies.map((s) => ({
+            ...s,
+            id: genId("str"),
+            completionRate: 0,
+            manualRate: null,
+            updatedAt: now,
+            measures: s.measures.map((m) => ({
+              ...m,
+              id: genId("msr"),
+              kpis: m.kpis.map((k) => ({
+                ...k,
+                id: genId("kpi"),
+                actual: null,
+                currentValue: null,
+                achievementRate: null,
+              })),
+            })),
+            actionPlans: s.actionPlans.map((ap) => ({
+              ...ap,
+              id: genId("ap"),
+              items: ap.items.map((item) => ({
+                ...item,
+                id: genId("item"),
+                completed: false,
+                actualEndDate: undefined,
+              })),
+            })),
+          })),
+        })),
+      };
+
+      const period: PeriodData = {
+        id: genId("period"),
+        halfYear,
+        year,
+        ogsm: copiedOgsm,
+      };
+      const next = {
+        ...workspace,
+        departments: workspace.departments.map((d) =>
+          d.id !== deptId
+            ? d
+            : {
+                ...d,
+                periods: [...d.periods, period].sort((a, b) =>
+                  a.year !== b.year
+                    ? a.year - b.year
+                    : a.halfYear.localeCompare(b.halfYear),
+                ),
+              },
+        ),
+      };
+      updateWorkspace(next);
+      setActivePeriodId(period.id);
+      setSelectedGoalId(null);
+      setSelectedStrategyId(null);
+    },
+    [workspace, updateWorkspace],
+  );
+
   const handleSwitchPeriod = useCallback((periodId: string) => {
     setActivePeriodId(periodId);
     setSelectedGoalId(null);
@@ -1246,7 +1337,7 @@ export default function App() {
                     onClick={handleUnlinkFolder}
                     title="進行中：每 30 秒自動扫描 OneDrive 副本"
                   >
-                    🔍 副本扫描中
+                    🔍 副本掃描中
                   </button>
                 ) : (
                   <button
@@ -1385,6 +1476,7 @@ export default function App() {
           onDeleteDept={handleDeleteDept}
           onSwitchPeriod={handleSwitchPeriod}
           onAddPeriod={handleAddPeriod}
+          onCopyPeriod={handleCopyPeriod}
           onDeletePeriod={handleDeletePeriod}
           onSelectGoal={(id) => {
             setSelectedGoalId(id);
@@ -1421,6 +1513,11 @@ export default function App() {
                 warnFilter ? { tab: "plans", warnFilter } : null,
               );
             }}
+            onSelectMeasure={(goalId, stratId, measureId) => {
+              setSelectedGoalId(goalId);
+              setSelectedStrategyId(stratId);
+              setPendingDetailNav({ tab: "plans", measureId });
+            }}
             onEditObjective={handleEditObjective}
             onAddGoal={handleAddGoal}
           />
@@ -1446,7 +1543,11 @@ export default function App() {
             />
             {selectedStrategy && (
               <DetailPanel
-                key={selectedStrategy.id + (pendingDetailNav?.warnFilter ?? "")}
+                key={
+                  selectedStrategy.id +
+                  (pendingDetailNav?.warnFilter ?? "") +
+                  (pendingDetailNav?.measureId ?? "")
+                }
                 strategy={selectedStrategy}
                 onClose={() => setSelectedStrategyId(null)}
                 onUpdate={handleUpdateStrategy}
@@ -1457,6 +1558,7 @@ export default function App() {
                 onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
                 initialTab={pendingDetailNav?.tab}
                 initialWarnFilter={pendingDetailNav?.warnFilter}
+                initialMeasureId={pendingDetailNav?.measureId}
               />
             )}
           </>

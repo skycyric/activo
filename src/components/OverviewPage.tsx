@@ -18,6 +18,7 @@ interface Props {
     strategyId: string,
     warnFilter?: "overdue" | "warning",
   ) => void;
+  onSelectMeasure: (goalId: string, stratId: string, measureId: string) => void;
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
 }
@@ -115,6 +116,7 @@ export default function OverviewPage({
   warnDaysBefore,
   onSelectGoal,
   onSelectStrategy,
+  onSelectMeasure,
   onEditObjective,
   onAddGoal,
 }: Props) {
@@ -128,12 +130,13 @@ export default function OverviewPage({
   // 全頁警告計畫項目（逾期 / 即將到期）
   type WarnItemCtx = {
     itemId: string;
-    description: string;
+    measureName: string; // 連結活動名稱（Measure.rawText），無連結時為策略名
+    description: string; // PlanItem.description
+    notes: string; // PlanItem.notes
     plannedEndDate: string;
     warnType: "overdue" | "warning";
     goalId: string;
     stratId: string;
-    stratTitle: string;
   };
   const allWarnItems: WarnItemCtx[] = data.goals.flatMap((g) =>
     g.strategies.flatMap((s) =>
@@ -141,15 +144,21 @@ export default function OverviewPage({
         p.items.flatMap((item) => {
           const w = getPlanItemWarning(item, warnDaysBefore);
           if (!w) return [];
+          const linkedMeasure = item.linkedMeasureId
+            ? s.measures.find((m) => m.id === item.linkedMeasureId)
+            : null;
+          const measureName =
+            linkedMeasure?.rawText || s.title || "（未命名策略）";
           return [
             {
               itemId: item.id,
+              measureName,
               description: item.description,
+              notes: item.notes ?? "",
               plannedEndDate: item.plannedEndDate ?? "",
               warnType: w,
               goalId: g.id,
               stratId: s.id,
-              stratTitle: s.title || "（未命名策略）",
             },
           ];
         }),
@@ -426,8 +435,10 @@ export default function OverviewPage({
                       <div
                         key={m.id}
                         className="ov-status-list-item"
-                        onClick={() => onSelectStrategy(m.goalId, m.stratId)}
-                        title="點擊開啟策略詳細頁"
+                        onClick={() =>
+                          onSelectMeasure(m.goalId, m.stratId, m.id)
+                        }
+                        title="點擊開啟行動項目"
                       >
                         <span className="ov-status-list-name">
                           {m.displayName}
@@ -494,26 +505,27 @@ export default function OverviewPage({
                     }
                     title="點擊跳到行動計畫"
                   >
+                    <span className="ov-warn-list-measure">
+                      {x.measureName}
+                    </span>
                     <span className="ov-warn-list-desc">
                       {x.description || "（未命名）"}
                     </span>
+                    {x.notes && (
+                      <span className="ov-warn-list-notes">{x.notes}</span>
+                    )}
                     <span className="ov-warn-list-meta">
-                      {x.stratTitle}
                       {x.plannedEndDate && (
-                        <>
-                          {" "}
-                          ·{" "}
-                          <span
-                            style={{
-                              color:
-                                warnExpandedType === "overdue"
-                                  ? "#ef4444"
-                                  : "#f59e0b",
-                            }}
-                          >
-                            {x.plannedEndDate}
-                          </span>
-                        </>
+                        <span
+                          style={{
+                            color:
+                              warnExpandedType === "overdue"
+                                ? "#ef4444"
+                                : "#f59e0b",
+                          }}
+                        >
+                          {x.plannedEndDate}
+                        </span>
                       )}
                     </span>
                   </div>
