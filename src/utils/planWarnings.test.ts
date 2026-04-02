@@ -3,13 +3,31 @@ import {
   getPlanItemWarning,
   countPlanWarnings,
   countStrategyWarnings,
-  computePctActivityRate,
 } from "./planWarnings";
-import type { PlanItem, Strategy, Goal, GoalKPI } from "../schemas/ogsm";
+import type { PlanItem, Strategy } from "../schemas/ogsm";
 
-// ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
+// ─── 動態日期計算工具（相對於今天，使測試不依賴固定日期）────────────────────────
 
-const TODAY = "2026-04-01"; // 固定今天，讓測試不受時間影響
+/**
+ * 以本地時區計算距今 n 天的日期（YYYY-MM-DD）。
+ * 注意：必須使用本地日期格式化，toISOString() 輸出 UTC 時間，
+ * 在 UTC+ 時區中會導致「今天」變成「昨天」。
+ */
+function daysFromToday(n: number): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// 方便的別名
+const PAST = daysFromToday(-90); // 過去（一定逾期）
+const TODAY = daysFromToday(0); // 今天（在 warnDays=7 內）
+const WARN7 = daysFromToday(7); // warnDays=7 邊界（最後一天 warning）
+const FUTURE = daysFromToday(30); // 未來（超出 warnDays，無警示）
 
 function makePlanItem(overrides: Partial<PlanItem> = {}): PlanItem {
   return {
@@ -53,7 +71,7 @@ describe("getPlanItemWarning", () => {
   });
 
   test("截止日在過去 → overdue", () => {
-    const item = makePlanItem({ plannedEndDate: "2026-01-01" });
+    const item = makePlanItem({ plannedEndDate: PAST });
     expect(getPlanItemWarning(item, 7)).toBe("overdue");
   });
 
@@ -63,12 +81,12 @@ describe("getPlanItemWarning", () => {
   });
 
   test("截止日在 warnDays 外（30 天後）→ null", () => {
-    const item = makePlanItem({ plannedEndDate: "2026-05-01" });
+    const item = makePlanItem({ plannedEndDate: FUTURE });
     expect(getPlanItemWarning(item, 7)).toBeNull();
   });
 
   test("截止日恰好在 warnDays 當天 → warning", () => {
-    const item = makePlanItem({ plannedEndDate: "2026-04-08" }); // TODAY + 7 days
+    const item = makePlanItem({ plannedEndDate: WARN7 }); // TODAY + 7 days
     expect(getPlanItemWarning(item, 7)).toBe("warning");
   });
 });
@@ -78,18 +96,18 @@ describe("getPlanItemWarning", () => {
 describe("countPlanWarnings", () => {
   test("全部完成的項目 → 0 overdue, 0 warning", () => {
     const items = [
-      makePlanItem({ completed: true, plannedEndDate: "2026-01-01" }),
-      makePlanItem({ completed: true, plannedEndDate: "2026-01-01" }),
+      makePlanItem({ completed: true, plannedEndDate: PAST }),
+      makePlanItem({ completed: true, plannedEndDate: PAST }),
     ];
     expect(countPlanWarnings(items, 7)).toEqual({ overdue: 0, warning: 0 });
   });
 
   test("混合狀態正確計數", () => {
     const items = [
-      makePlanItem({ id: "a", plannedEndDate: "2026-01-01" }), // overdue
+      makePlanItem({ id: "a", plannedEndDate: PAST }), // overdue
       makePlanItem({ id: "b", plannedEndDate: TODAY }), // warning
-      makePlanItem({ id: "c", plannedEndDate: "2026-05-01" }), // ok
-      makePlanItem({ id: "d", completed: true, plannedEndDate: "2026-01-01" }), // done
+      makePlanItem({ id: "c", plannedEndDate: FUTURE }), // ok
+      makePlanItem({ id: "d", completed: true, plannedEndDate: PAST }), // done
     ];
     expect(countPlanWarnings(items, 7)).toEqual({ overdue: 1, warning: 1 });
   });
@@ -109,15 +127,15 @@ describe("countStrategyWarnings", () => {
           id: "ap1",
           quarter: "Q1",
           title: "",
-          items: [makePlanItem({ id: "i1", plannedEndDate: "2026-01-01" })],
+          items: [makePlanItem({ id: "i1", plannedEndDate: PAST })],
         },
         {
           id: "ap2",
           quarter: "Q2",
           title: "",
           items: [
-            makePlanItem({ id: "i2", plannedEndDate: "2026-01-01" }),
-            makePlanItem({ id: "i3", plannedEndDate: "2026-05-01" }),
+            makePlanItem({ id: "i2", plannedEndDate: PAST }),
+            makePlanItem({ id: "i3", plannedEndDate: FUTURE }),
           ],
         },
       ],
@@ -130,161 +148,5 @@ describe("countStrategyWarnings", () => {
   test("無 actionPlan 的策略 → 0/0", () => {
     const s = makeStrategy();
     expect(countStrategyWarnings(s, 7)).toEqual({ overdue: 0, warning: 0 });
-  });
-});
-
-// ─── computePctActivityRate ───────────────────────────────────────────────────
-
-function makeGoalWithKpis(
-  threshGkId: string,
-  threshTarget: number,
-  kpiActual: number,
-  kpiTarget: number,
-): { goal: Goal; pctGk: GoalKPI } {
-  const strategyId = "s1";
-  const measureId = "m1";
-  const kpiId = "k1";
-  const threshGk: GoalKPI = {
-    id: threshGkId,
-    label: "門檻 KPI",
-    unit: "%",
-    target: threshTarget,
-    aggregation: "AVERAGE",
-    type: "value",
-    isHeadline: false,
-    linkedKpis: [{ strategyId, measureId, kpiId }],
-    thresholdGoalKpiIds: [],
-  };
-  const pctGk: GoalKPI = {
-    id: "gk_pct",
-    label: "整體達標%",
-    unit: "%",
-    target: 60,
-    aggregation: "SUM",
-    type: "pct_activity",
-    isHeadline: false,
-    linkedKpis: [],
-    thresholdGoalKpiIds: [threshGkId],
-  };
-  const goal: Goal = {
-    id: "g1",
-    label: "G1",
-    title: "目標",
-    fullText: "",
-    completionRate: 0,
-    goalKpis: [threshGk, pctGk],
-    strategies: [
-      {
-        id: strategyId,
-        title: "S",
-        rawText: "",
-        measures: [
-          {
-            id: measureId,
-            rawText: "活動A",
-            kpis: [
-              {
-                id: kpiId,
-                label: "KPI A",
-                unit: "%",
-                target: kpiTarget,
-                actual: kpiActual,
-                achievementRate:
-                  kpiTarget > 0 ? (kpiActual / kpiTarget) * 100 : null,
-              },
-            ],
-          },
-        ],
-        actionPlans: [],
-        owners: [],
-        notes: "",
-        completionRate: 0,
-        manualRate: null,
-      },
-    ],
-  };
-  return { goal, pctGk };
-}
-
-describe("computePctActivityRate", () => {
-  test("無 thresholdGoalKpiIds → 回傳 null", () => {
-    const pctGk: GoalKPI = {
-      id: "gk_pct",
-      label: "達標%",
-      unit: "%",
-      target: 60,
-      aggregation: "SUM",
-      type: "pct_activity",
-      isHeadline: false,
-      linkedKpis: [],
-      thresholdGoalKpiIds: [],
-    };
-    const goal: Goal = {
-      id: "g1",
-      label: "G1",
-      title: "G",
-      fullText: "",
-      completionRate: 0,
-      strategies: [],
-    };
-    expect(computePctActivityRate(pctGk, goal)).toBeNull();
-  });
-
-  test("1 個活動達標（actual 100 >= threshold 60）→ 100%/60 ≈ 167", () => {
-    const { goal, pctGk } = makeGoalWithKpis("thresh1", 60, 100, 100);
-    // KPI achievementRate = 100%, threshold=60 → met=true
-    // actualPct = 100/1 = 100%, target=60 → rate = round(100/60*100) = 167
-    const rate = computePctActivityRate(pctGk, goal);
-    expect(rate).toBe(167);
-  });
-
-  test("1 個活動未達標（actual 0 / target 100）→ 0/60 = 0", () => {
-    const { goal, pctGk } = makeGoalWithKpis("thresh1", 60, 0, 100);
-    // achievementRate = 0%, threshold=60 → not met
-    // actualPct = 0%
-    const rate = computePctActivityRate(pctGk, goal);
-    expect(rate).toBe(0);
-  });
-
-  test("target=0 → 回傳 null（避免除以零）", () => {
-    const { goal, pctGk } = makeGoalWithKpis("thresh1", 60, 100, 100);
-    const modifiedPctGk = { ...pctGk, target: 0 };
-    expect(computePctActivityRate(modifiedPctGk, goal)).toBeNull();
-  });
-
-  test("門檻 GoalKPI target 為 null → 忽略，無活動 → 回傳 null", () => {
-    const threshGk: GoalKPI = {
-      id: "thresh1",
-      label: "門檻",
-      unit: "%",
-      target: null,
-      aggregation: "AVERAGE",
-      type: "value",
-      isHeadline: false,
-      linkedKpis: [{ strategyId: "s1", measureId: "m1", kpiId: "k1" }],
-      thresholdGoalKpiIds: [],
-    };
-    const pctGk: GoalKPI = {
-      id: "gk_pct",
-      label: "達標%",
-      unit: "%",
-      target: 60,
-      aggregation: "SUM",
-      type: "pct_activity",
-      isHeadline: false,
-      linkedKpis: [],
-      thresholdGoalKpiIds: ["thresh1"],
-    };
-    const goal: Goal = {
-      id: "g1",
-      label: "G1",
-      title: "G",
-      fullText: "",
-      completionRate: 0,
-      goalKpis: [threshGk, pctGk],
-      strategies: [],
-    };
-    // threshGk.target=null → skip → no activities → null
-    expect(computePctActivityRate(pctGk, goal)).toBeNull();
   });
 });

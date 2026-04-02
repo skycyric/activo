@@ -363,55 +363,66 @@ function normalizeWorkspaceData(ws: WorkspaceData): boolean {
   return changed;
 }
 
+/**
+ * 對單一 Strategy 物件執行所有遷移與不變量修正。
+ * 供 normalizeOGSMData（匯入單一檔案）與 normalizeWorkspaceData（完整工作區）共用，
+ * 避免邏輯重複。
+ */
+export function normalizeOneStrategy(strategy: Strategy): boolean {
+  let changed = false;
+  // Plan item date field migration
+  for (const ap of strategy.actionPlans) {
+    for (const item of ap.items) {
+      const raw = item as unknown as Record<string, unknown>;
+      const hasLegacy =
+        "date" in raw ||
+        "startDate" in raw ||
+        "endDate" in raw ||
+        "plannedStartDate" in raw ||
+        "actualStartDate" in raw;
+      if (hasLegacy) {
+        if (!item.plannedEndDate) {
+          item.plannedEndDate =
+            toIsoDateLoose(
+              (raw.endDate as string | undefined) ??
+                (raw.plannedEndDate as string | undefined) ??
+                (raw.startDate as string | undefined) ??
+                (raw.date as string | undefined),
+            ) ?? undefined;
+        }
+        delete raw.date;
+        delete raw.startDate;
+        delete raw.endDate;
+        delete raw.plannedStartDate;
+        delete raw.actualStartDate;
+        changed = true;
+      }
+    }
+  }
+  // Measure date range derivation from plan items
+  if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+  // owner (legacy scalar) → owners (array)
+  if ((!strategy.owners || strategy.owners.length === 0) && strategy.owner) {
+    strategy.owners = [strategy.owner];
+    changed = true;
+  }
+  if (strategy.owner !== undefined) {
+    (strategy as { owner?: string | undefined }).owner = undefined;
+    changed = true;
+  }
+  // Always ensure owners is an array (guards against externally-modified files)
+  if (!Array.isArray(strategy.owners)) {
+    strategy.owners = [];
+    changed = true;
+  }
+  return changed;
+}
+
 function normalizeOGSMData(ogsm: OGSMData): boolean {
   let changed = false;
   for (const goal of ogsm.goals) {
     for (const strategy of goal.strategies) {
-      for (const ap of strategy.actionPlans) {
-        for (const item of ap.items) {
-          const raw = item as unknown as Record<string, unknown>;
-          const hasLegacy =
-            "date" in raw ||
-            "startDate" in raw ||
-            "endDate" in raw ||
-            "plannedStartDate" in raw ||
-            "actualStartDate" in raw;
-          if (hasLegacy) {
-            if (!item.plannedEndDate) {
-              item.plannedEndDate =
-                toIsoDateLoose(
-                  (raw.endDate as string | undefined) ??
-                    (raw.plannedEndDate as string | undefined) ??
-                    (raw.startDate as string | undefined) ??
-                    (raw.date as string | undefined),
-                ) ?? undefined;
-            }
-            delete raw.date;
-            delete raw.startDate;
-            delete raw.endDate;
-            delete raw.plannedStartDate;
-            delete raw.actualStartDate;
-            changed = true;
-          }
-        }
-      }
-      if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
-      // Ensure owner→owners migration runs even for standalone OGSMData imports
-      if (
-        (!strategy.owners || strategy.owners.length === 0) &&
-        strategy.owner
-      ) {
-        strategy.owners = [strategy.owner];
-        changed = true;
-      }
-      if (!Array.isArray(strategy.owners)) {
-        strategy.owners = [];
-        changed = true;
-      }
-      if (strategy.owner !== undefined) {
-        strategy.owner = undefined;
-        changed = true;
-      }
+      if (normalizeOneStrategy(strategy)) changed = true;
     }
   }
   return changed;
@@ -467,6 +478,45 @@ export function exportWorkspaceJSON(ws: WorkspaceData): void {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * 解析並驗證 JSON 字串，回傳合法的 WorkspaceData 或 OGSMData。
+ * 解析/驗證失敗時拋出 Error（含詳細訊息）。
+ * 此函式為純函式，可直接在單元測試中呼叫。
+ */
+export function parseAndValidateJSON(text: string): OGSMData | WorkspaceData {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Invalid JSON file");
+  }
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    Array.isArray((parsed as { departments?: unknown[] }).departments)
+  ) {
+    normalizeWorkspaceData(parsed as WorkspaceData);
+    const r = WorkspaceDataSchema.safeParse(parsed);
+    if (!r.success) {
+      throw new Error(`工作區格式不符：${r.error.message}`);
+    }
+    return r.data;
+  }
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    Array.isArray((parsed as { goals?: unknown[] }).goals)
+  ) {
+    normalizeOGSMData(parsed as OGSMData);
+    const r = OGSMDataSchema.safeParse(parsed);
+    if (!r.success) {
+      throw new Error(`OGSM 資料格式不符：${r.error.message}`);
+    }
+    return r.data;
+  }
+  throw new Error("不支援的 JSON 格式：請選擇 OGSM 或工作區檔案");
+}
+
 export function importJSON(file: File): Promise<OGSMData | WorkspaceData> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -477,30 +527,9 @@ export function importJSON(file: File): Promise<OGSMData | WorkspaceData> {
           reject(new Error("Failed to read file"));
           return;
         }
-        const parsed = JSON.parse(result as string);
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          Array.isArray((parsed as { departments?: unknown[] }).departments)
-        ) {
-          normalizeWorkspaceData(parsed as WorkspaceData);
-          validateOrWarn(WorkspaceDataSchema, parsed, "importJSON:workspace");
-          resolve(parsed as WorkspaceData);
-          return;
-        }
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          Array.isArray((parsed as { goals?: unknown[] }).goals)
-        ) {
-          normalizeOGSMData(parsed as OGSMData);
-          validateOrWarn(OGSMDataSchema, parsed, "importJSON:ogsm");
-          resolve(parsed as OGSMData);
-          return;
-        }
-        reject(new Error("不支援的 JSON 格式：請選擇 OGSM 或工作區檔案"));
-      } catch {
-        reject(new Error("Invalid JSON file"));
+        resolve(parseAndValidateJSON(result as string));
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error("Invalid JSON file"));
       }
     };
     reader.onerror = () => reject(new Error("Failed to read file"));

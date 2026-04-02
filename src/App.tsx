@@ -44,6 +44,8 @@ import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
+type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
+
 function recompute(data: OGSMData): OGSMData {
   const goals = data.goals.map((g) => {
     const strategies = g.strategies.map((s) => {
@@ -109,13 +111,16 @@ export default function App() {
   const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(
     null,
   );
+  const [pendingDetailNav, setPendingDetailNav] = useState<{
+    tab: "plans";
+    warnFilter: "overdue" | "warning";
+  } | null>(null);
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
   const fsSupported = isFileSystemAccessSupported();
-  type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("unlinked");
   const [syncError, setSyncError] = useState("");
@@ -136,7 +141,19 @@ export default function App() {
     fileHandleRef.current = handle;
     try {
       const text = await readDataFile(handle);
-      const remote: WorkspaceData = JSON.parse(text);
+      let remote: WorkspaceData;
+      try {
+        remote = JSON.parse(text);
+      } catch {
+        throw new Error("檔案不是有效的 JSON");
+      }
+      if (
+        !remote ||
+        typeof remote !== "object" ||
+        !Array.isArray((remote as { departments?: unknown }).departments)
+      ) {
+        throw new Error("檔案格式不符：不是有效的工作區格式");
+      }
       validateOrWarn(WorkspaceDataSchema, remote, "applyHandle");
       loadedFileVersionRef.current = remote.version ?? null;
       setWorkspace(remote);
@@ -246,22 +263,38 @@ export default function App() {
       const text = await readDataFile(handle);
       const content = text.trim();
       if (content && content !== "{}") {
-        const remote: WorkspaceData = JSON.parse(content);
+        // 明確捕捉 JSON parse 錯誤，避免壞格式被靜默覆寫
+        let remote: WorkspaceData;
+        try {
+          remote = JSON.parse(content);
+        } catch {
+          throw new Error("檔案內容不是有效的 JSON，請確認後再試");
+        }
+        if (
+          !remote ||
+          typeof remote !== "object" ||
+          !Array.isArray((remote as { departments?: unknown }).departments)
+        ) {
+          throw new Error("檔案格式不符：不是有效的工作區格式");
+        }
+        validateOrWarn(WorkspaceDataSchema, remote, "handleLinkFile");
         loadedFileVersionRef.current = remote.version ?? null;
         setWorkspace(remote);
         saveWorkspace(remote);
       } else {
+        // 空檔案：以當前 workspace 初始化
         loadedFileVersionRef.current = workspace.version ?? null;
         await writeDataFile(handle, JSON.stringify(workspace, null, 2));
       }
-    } catch {
-      // File is empty or unreadable — initialise with current workspace
-      loadedFileVersionRef.current = workspace.version ?? null;
-      await writeDataFile(handle, JSON.stringify(workspace, null, 2));
+      setSyncStatus("saved");
+      setSyncError("");
+      setIsDirty(false);
+    } catch (e) {
+      // 連結失敗（格式錯誤 / 無法寫入）：顯示錯誤，不將 handle 視為有效
+      fileHandleRef.current = null;
+      setSyncStatus("error");
+      setSyncError("連結檔案失敗：" + String(e));
     }
-    setSyncStatus("saved");
-    setSyncError("");
-    setIsDirty(false);
   }, [workspace]);
 
   const handleUnlinkFile = useCallback(async () => {
@@ -542,7 +575,8 @@ export default function App() {
         alert("至少需要保留一個部門");
         return;
       }
-      if (!confirm("確定要刪除此部門及所有資料嗎？此操作無法復原。")) return;
+      if (!window.confirm("確定要刪除此部門及所有資料嗎？此操作無法復原。"))
+        return;
       const next = {
         ...workspace,
         departments: workspace.departments.filter((d) => d.id !== deptId),
@@ -628,7 +662,7 @@ export default function App() {
         alert("至少需要保留一個期間");
         return;
       }
-      if (!confirm("確定要刪除此期間的所有 OGSM 資料嗎？")) return;
+      if (!window.confirm("確定要刪除此期間的所有 OGSM 資料嗎？")) return;
       const next = {
         ...workspace,
         departments: workspace.departments.map((d) =>
@@ -726,7 +760,7 @@ export default function App() {
 
   const handleDeleteStrategy = useCallback(
     (strategyId: string) => {
-      if (!confirm("確定要刪除這個策略嗎？")) return;
+      if (!window.confirm("確定要刪除這個策略嗎？")) return;
       const next = recompute({
         ...data,
         goals: data.goals.map((g) =>
@@ -808,7 +842,7 @@ export default function App() {
 
   const handleDeleteGoal = useCallback(
     (goalId: string) => {
-      if (!confirm("確定要刪除這個目標（G）及其所有策略嗎？")) return;
+      if (!window.confirm("確定要刪除這個目標（G）及其所有策略嗎？")) return;
       const goal = data.goals.find((g) => g.id === goalId);
       const strategyIds = goal?.strategies.map((s) => s.id) ?? [];
       const next = recompute({
@@ -858,7 +892,7 @@ export default function App() {
         const parsed = await importJSON(file);
         if ("departments" in parsed) {
           if (
-            !confirm(
+            !window.confirm(
               "此 JSON 包含完整工作區資料，確定要取代目前的所有部門資料嗎？",
             )
           )
@@ -1080,9 +1114,12 @@ export default function App() {
               setSelectedGoalId(id);
               setSelectedStrategyId(null);
             }}
-            onSelectStrategy={(goalId, strategyId) => {
+            onSelectStrategy={(goalId, strategyId, warnFilter) => {
               setSelectedGoalId(goalId);
               setSelectedStrategyId(strategyId);
+              setPendingDetailNav(
+                warnFilter ? { tab: "plans", warnFilter } : null,
+              );
             }}
             onEditObjective={handleEditObjective}
             onAddGoal={handleAddGoal}
@@ -1093,7 +1130,12 @@ export default function App() {
               goal={selectedGoal}
               strategies={filteredStrategies}
               selectedStrategyId={selectedStrategyId}
-              onSelectStrategy={setSelectedStrategyId}
+              onSelectStrategy={(id, warnFilter) => {
+                setSelectedStrategyId(id);
+                setPendingDetailNav(
+                  warnFilter ? { tab: "plans", warnFilter } : null,
+                );
+              }}
               onAddStrategy={handleAddStrategy}
               onUpdateGoal={handleUpdateGoal}
               onDeleteGoal={handleDeleteGoal}
@@ -1104,7 +1146,7 @@ export default function App() {
             />
             {selectedStrategy && (
               <DetailPanel
-                key={selectedStrategy.id}
+                key={selectedStrategy.id + (pendingDetailNav?.warnFilter ?? "")}
                 strategy={selectedStrategy}
                 onClose={() => setSelectedStrategyId(null)}
                 onUpdate={handleUpdateStrategy}
@@ -1113,6 +1155,8 @@ export default function App() {
                 allMembers={allMembers}
                 warnDaysBefore={workspace.warnDaysBefore ?? 7}
                 onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
+                initialTab={pendingDetailNav?.tab}
+                initialWarnFilter={pendingDetailNav?.warnFilter}
               />
             )}
           </>

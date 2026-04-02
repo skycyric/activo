@@ -26,8 +26,21 @@ export const KPISchema = z.object({
   actual: z.number().nullable(),
   unit: z.string(),
   achievementRate: z.number().nullable(),
-  /** "value"＝量化型（預設）；"progress"＝進度型（actual 為 0-100 完成度）*/
-  kpiType: z.enum(["value", "progress"]).optional(),
+  /**
+   * "value"       ＝量化型（預設）
+   * "progress"    ＝進度型（actual 為 0-100 完成度）
+   * "growth"      ＝成長型（輸入基期值與現值，計算成長率；可選填目標成長率）
+   * "target_rate" ＝目標率型（和量化型相同填法，但達成率需再與目標率比較看成效）
+   */
+  kpiType: z.enum(["value", "progress", "growth", "target_rate"]).optional(),
+  /** 成長型專用：基期值（成長計算的起點） */
+  baseValue: z.number().nullable().optional(),
+  /** 成長型專用：現值（當前量測值） */
+  currentValue: z.number().nullable().optional(),
+  /** 成長型專用：目標成長率（%，選填；有值才顯示達成圓環） */
+  targetGrowthRate: z.number().nullable().optional(),
+  /** 目標率型專用：目標達成率（%，選填；有值時圓環顯示 achievementRate/targetRate） */
+  targetRate: z.number().nullable().optional(),
 });
 
 // ── PlanItem ──────────────────────────────────────────────────────────────────

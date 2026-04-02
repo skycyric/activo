@@ -21,6 +21,8 @@ interface Props {
   allMembers: TeamMember[];
   warnDaysBefore: number;
   onUpdateWarnDaysBefore: (n: number) => void;
+  initialTab?: "measure" | "plans" | "notes";
+  initialWarnFilter?: "overdue" | "warning" | null;
 }
 
 function InlineEdit({
@@ -38,8 +40,18 @@ function InlineEdit({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  // 用 ref 旗標避免 Escape 後 onBlur 仍觸發 commit
+  const cancelledRef = React.useRef(false);
+
   const commit = () => {
+    if (cancelledRef.current) return;
     onSave(draft);
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    cancelledRef.current = true;
+    setDraft(value);
     setEditing(false);
   };
 
@@ -48,6 +60,7 @@ function InlineEdit({
       <span
         className={`inline-edit-view ${className}`}
         onDoubleClick={() => {
+          cancelledRef.current = false;
           setDraft(value);
           setEditing(true);
         }}
@@ -72,7 +85,7 @@ function InlineEdit({
         onFocus={(e) => e.target.select()}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Escape") cancel();
         }}
       />
     );
@@ -87,7 +100,7 @@ function InlineEdit({
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
-        if (e.key === "Escape") setEditing(false);
+        if (e.key === "Escape") cancel();
       }}
     />
   );
@@ -109,15 +122,40 @@ function KpiCard({
   linkedDone?: number;
 }) {
   const isProgress = kpi.kpiType === "progress";
+  const isGrowth = kpi.kpiType === "growth";
+  const isTargetRate = kpi.kpiType === "target_rate";
   const hasActual = kpi.actual !== null && kpi.actual !== undefined;
-  // 進度型：直接用 actual 作為圓環值（target 固定 100，achievementRate = actual）
-  const rawRate = isProgress
-    ? hasActual
-      ? kpi.actual
-      : null
-    : hasActual
-      ? kpi.achievementRate
+
+  // 成長型：計算成長率
+  const growthRate =
+    isGrowth &&
+    kpi.baseValue != null &&
+    kpi.currentValue != null &&
+    kpi.baseValue !== 0
+      ? ((kpi.currentValue - kpi.baseValue) / kpi.baseValue) * 100
       : null;
+  const hasGrowthTarget = isGrowth && kpi.targetGrowthRate != null;
+
+  // 圓環顯示值
+  const rawRate = isGrowth
+    ? hasGrowthTarget && growthRate !== null
+      ? (growthRate / kpi.targetGrowthRate!) * 100
+      : null
+    : isTargetRate
+      ? hasActual
+        ? kpi.targetRate != null &&
+          kpi.targetRate !== 0 &&
+          kpi.achievementRate != null
+          ? (kpi.achievementRate / kpi.targetRate) * 100
+          : kpi.achievementRate
+        : null
+      : isProgress
+        ? hasActual
+          ? kpi.actual
+          : null
+        : hasActual
+          ? kpi.achievementRate
+          : null;
   const rate = rawRate ?? 0;
   const rateIsNull = rawRate === null || rawRate === undefined;
   const size = 72;
@@ -137,38 +175,72 @@ function KpiCard({
 
   return (
     <div className="kpi-card">
-      <svg width={size} height={size} style={{ flexShrink: 0 }}>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="#e5e7eb"
-          strokeWidth={5}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={5}
-          strokeDasharray={`${dash} ${circ}`}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: "stroke-dasharray 0.8s ease" }}
-        />
-        <text
-          x={size / 2}
-          y={size / 2 + 5}
-          textAnchor="middle"
-          fill={color}
-          fontSize={11}
-          fontWeight="800"
+      {/* 成長型且無目標成長率：不顯示圓環，改顯示成長率數字 */}
+      {isGrowth && !hasGrowthTarget ? (
+        <div
+          style={{
+            width: 72,
+            height: 72,
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 2,
+          }}
         >
-          {rateIsNull ? "—" : `${Math.round(rate)}%`}
-        </text>
-      </svg>
+          <span
+            style={{
+              fontSize: 16,
+              fontWeight: 800,
+              color:
+                growthRate === null
+                  ? "#4b5563"
+                  : growthRate >= 0
+                    ? "#10b981"
+                    : "#ef4444",
+            }}
+          >
+            {growthRate === null
+              ? "—"
+              : `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}%`}
+          </span>
+          <span style={{ fontSize: 9, color: "#9ca3af" }}>成長率</span>
+        </div>
+      ) : (
+        <svg width={size} height={size} style={{ flexShrink: 0 }}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke="#e5e7eb"
+            strokeWidth={5}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={5}
+            strokeDasharray={`${dash} ${circ}`}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            style={{ transition: "stroke-dasharray 0.8s ease" }}
+          />
+          <text
+            x={size / 2}
+            y={size / 2 + 5}
+            textAnchor="middle"
+            fill={color}
+            fontSize={11}
+            fontWeight="800"
+          >
+            {rateIsNull ? "—" : `${Math.round(rate)}%`}
+          </text>
+        </svg>
+      )}
       <div className="kpi-card-info" style={{ flex: 1 }}>
         <InlineEdit
           value={kpi.label}
@@ -184,12 +256,16 @@ function KpiCard({
             padding: "1px 7px",
             marginBottom: 4,
             borderRadius: 10,
-            border: `1px solid ${isProgress ? "#a78bfa" : "#d1d5db"}`,
-            background: isProgress ? "#f5f3ff" : "#f9fafb",
-            color: isProgress ? "#7c3aed" : "#6b7280",
+            border: `1px solid ${isProgress ? "#a78bfa" : isGrowth ? "#6ee7b7" : "#d1d5db"}`,
+            background: isProgress
+              ? "#f5f3ff"
+              : isGrowth
+                ? "#ecfdf5"
+                : "#f9fafb",
+            color: isProgress ? "#7c3aed" : isGrowth ? "#059669" : "#6b7280",
           }}
         >
-          {isProgress ? "進度型" : "量化型"}
+          {isProgress ? "進度型" : isGrowth ? "成長型" : "量化型"}
         </span>
         {typeof linkedTotal !== "undefined" && linkedTotal > 0 && (
           <div style={{ fontSize: 10, color: "var(--text)", marginBottom: 6 }}>
@@ -197,82 +273,282 @@ function KpiCard({
           </div>
         )}
         <div className="kpi-inputs">
-          <label className="kpi-field">
-            {isProgress ? "進度" : "達成率"}
-            <span
-              className="kpi-num-input"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                background: "#f3f4f6",
-                cursor: "default",
-              }}
-            >
-              {hasActual && kpi.achievementRate != null
-                ? Math.round(kpi.achievementRate)
-                : "—"}
-            </span>
-            %
-          </label>
-          <label className="kpi-field">
-            目標
-            <input
-              type="number"
-              min={0}
-              value={kpi.target ?? ""}
-              placeholder="—"
-              className="kpi-num-input"
-              readOnly={isProgress}
-              style={
-                isProgress
-                  ? { background: "#f3f4f6", cursor: "default" }
-                  : undefined
-              }
-              onChange={(e) => {
-                const target =
-                  e.target.value === "" ? null : parseFloat(e.target.value);
-                let rate: number | null = null;
-                if (target !== null && target > 0 && kpi.actual !== null)
-                  rate = (kpi.actual / target) * 100;
-                else if (
-                  kpi.actual !== null &&
-                  (target === null || target === 0)
-                )
-                  rate = 0;
-                onUpdate({ ...kpi, target, achievementRate: rate });
-              }}
-            />
-          </label>
-          <label className="kpi-field">
-            實際
-            <input
-              type="number"
-              min={0}
-              value={kpi.actual ?? ""}
-              placeholder="—"
-              className="kpi-num-input"
-              onChange={(e) => {
-                const actual =
-                  e.target.value === "" ? null : parseFloat(e.target.value);
-                let rate: number | null = null;
-                if (actual !== null && kpi.target !== null && kpi.target > 0)
-                  rate = (actual / kpi.target) * 100;
-                onUpdate({ ...kpi, actual, achievementRate: rate });
-              }}
-            />
-          </label>
-          {!isProgress && (
-            <label className="kpi-field">
-              單位
-              <input
-                type="text"
-                value={kpi.unit}
-                placeholder="人/筆…"
-                className="kpi-num-input"
-                style={{ width: 44 }}
-                onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
-              />
-            </label>
+          {isGrowth ? (
+            /* 成長型：基期值、現值、目標成長率（選填）、成長率（唯讀） */
+            <>
+              <label className="kpi-field">
+                基期值
+                <input
+                  type="number"
+                  value={kpi.baseValue ?? ""}
+                  placeholder="—"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const baseValue =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    const cur = kpi.currentValue ?? null;
+                    const gr =
+                      baseValue != null && cur != null && baseValue !== 0
+                        ? ((cur - baseValue) / baseValue) * 100
+                        : null;
+                    const rate =
+                      gr !== null &&
+                      kpi.targetGrowthRate != null &&
+                      kpi.targetGrowthRate !== 0
+                        ? (gr / kpi.targetGrowthRate) * 100
+                        : null;
+                    onUpdate({ ...kpi, baseValue, achievementRate: rate });
+                  }}
+                />
+              </label>
+              <label className="kpi-field">
+                現值
+                <input
+                  type="number"
+                  value={kpi.currentValue ?? ""}
+                  placeholder="—"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const currentValue =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    const base = kpi.baseValue ?? null;
+                    const gr =
+                      base != null && currentValue != null && base !== 0
+                        ? ((currentValue - base) / base) * 100
+                        : null;
+                    const rate =
+                      gr !== null &&
+                      kpi.targetGrowthRate != null &&
+                      kpi.targetGrowthRate !== 0
+                        ? (gr / kpi.targetGrowthRate) * 100
+                        : null;
+                    onUpdate({ ...kpi, currentValue, achievementRate: rate });
+                  }}
+                />
+              </label>
+              <label className="kpi-field">
+                目標成長率
+                <input
+                  type="number"
+                  value={kpi.targetGrowthRate ?? ""}
+                  placeholder="選填"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const targetGrowthRate =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    const rate =
+                      growthRate !== null &&
+                      targetGrowthRate != null &&
+                      targetGrowthRate !== 0
+                        ? (growthRate / targetGrowthRate) * 100
+                        : null;
+                    onUpdate({
+                      ...kpi,
+                      targetGrowthRate,
+                      achievementRate: rate,
+                    });
+                  }}
+                />
+                %
+              </label>
+              <label className="kpi-field">
+                成長率
+                <span
+                  className="kpi-num-input"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    background: "#f3f4f6",
+                    cursor: "default",
+                    color:
+                      growthRate === null
+                        ? "#4b5563"
+                        : growthRate >= 0
+                          ? "#059669"
+                          : "#ef4444",
+                    fontWeight: 700,
+                  }}
+                >
+                  {growthRate === null
+                    ? "—"
+                    : `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}`}
+                </span>
+                %
+              </label>
+            </>
+          ) : isTargetRate ? (
+            /* 目標率型：目標、實際、單位（同量化型）＋ 目標率輸入 */
+            <>
+              <label className="kpi-field">
+                達成率
+                <span
+                  className="kpi-num-input"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    background: "#f3f4f6",
+                    cursor: "default",
+                  }}
+                >
+                  {hasActual && kpi.achievementRate != null
+                    ? kpi.achievementRate.toFixed(1)
+                    : "—"}
+                </span>
+                %
+              </label>
+              <label className="kpi-field">
+                目標率
+                <input
+                  type="number"
+                  min={0}
+                  value={kpi.targetRate ?? ""}
+                  placeholder="選填"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const targetRate =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    onUpdate({ ...kpi, targetRate });
+                  }}
+                />
+                %
+              </label>
+              <label className="kpi-field">
+                目標值
+                <input
+                  type="number"
+                  min={0}
+                  value={kpi.target ?? ""}
+                  placeholder="—"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const target =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    let rate: number | null = null;
+                    if (target !== null && target > 0 && kpi.actual !== null)
+                      rate = (kpi.actual / target) * 100;
+                    onUpdate({ ...kpi, target, achievementRate: rate });
+                  }}
+                />
+              </label>
+              <label className="kpi-field">
+                實際值
+                <input
+                  type="number"
+                  min={0}
+                  value={kpi.actual ?? ""}
+                  placeholder="—"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const actual =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    let rate: number | null = null;
+                    if (
+                      actual !== null &&
+                      kpi.target !== null &&
+                      kpi.target > 0
+                    )
+                      rate = (actual / kpi.target) * 100;
+                    onUpdate({ ...kpi, actual, achievementRate: rate });
+                  }}
+                />
+              </label>
+              <label className="kpi-field">
+                單位
+                <input
+                  type="text"
+                  value={kpi.unit}
+                  placeholder="人/筆…"
+                  className="kpi-num-input"
+                  style={{ width: 44 }}
+                  onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
+                />
+              </label>
+            </>
+          ) : (
+            /* 量化型 / 進度型：原有欄位 */
+            <>
+              <label className="kpi-field">
+                {isProgress ? "進度" : "達成率"}
+                <span
+                  className="kpi-num-input"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    background: "#f3f4f6",
+                    cursor: "default",
+                  }}
+                >
+                  {hasActual && kpi.achievementRate != null
+                    ? Math.round(kpi.achievementRate)
+                    : "—"}
+                </span>
+                %
+              </label>
+              <label className="kpi-field">
+                目標
+                <input
+                  type="number"
+                  min={0}
+                  value={kpi.target ?? ""}
+                  placeholder="—"
+                  className="kpi-num-input"
+                  readOnly={isProgress}
+                  style={
+                    isProgress
+                      ? { background: "#f3f4f6", cursor: "default" }
+                      : undefined
+                  }
+                  onChange={(e) => {
+                    const target =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    let rate: number | null = null;
+                    if (target !== null && target > 0 && kpi.actual !== null)
+                      rate = (kpi.actual / target) * 100;
+                    else if (
+                      kpi.actual !== null &&
+                      (target === null || target === 0)
+                    )
+                      rate = 0;
+                    onUpdate({ ...kpi, target, achievementRate: rate });
+                  }}
+                />
+              </label>
+              <label className="kpi-field">
+                實際
+                <input
+                  type="number"
+                  min={0}
+                  value={kpi.actual ?? ""}
+                  placeholder="—"
+                  className="kpi-num-input"
+                  onChange={(e) => {
+                    const actual =
+                      e.target.value === "" ? null : parseFloat(e.target.value);
+                    let rate: number | null = null;
+                    if (
+                      actual !== null &&
+                      kpi.target !== null &&
+                      kpi.target > 0
+                    )
+                      rate = (actual / kpi.target) * 100;
+                    onUpdate({ ...kpi, actual, achievementRate: rate });
+                  }}
+                />
+              </label>
+              {!isProgress && (
+                <label className="kpi-field">
+                  單位
+                  <input
+                    type="text"
+                    value={kpi.unit}
+                    placeholder="人/筆…"
+                    className="kpi-num-input"
+                    style={{ width: 44 }}
+                    onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
+                  />
+                </label>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -351,8 +627,15 @@ export default function DetailPanel({
   allMembers,
   warnDaysBefore,
   onUpdateWarnDaysBefore,
+  initialTab,
+  initialWarnFilter,
 }: Props) {
-  const [tab, setTab] = useState<"measure" | "plans" | "notes">("measure");
+  const [tab, setTab] = useState<"measure" | "plans" | "notes">(
+    initialTab ?? "measure",
+  );
+  const [warnFilter, setWarnFilter] = useState<"overdue" | "warning" | null>(
+    initialWarnFilter ?? null,
+  );
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterOwner, setFilterOwner] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
@@ -363,7 +646,8 @@ export default function DetailPanel({
   >(() => {
     const map: Record<string, boolean> = {};
     strategy.measures.forEach((m) => {
-      map[m.id] = true;
+      // If opened with a warnFilter, expand all sections so filtered items are visible
+      map[m.id] = initialWarnFilter ? false : true;
     });
     return map;
   });
@@ -380,13 +664,24 @@ export default function DetailPanel({
     return () => document.removeEventListener("mousedown", handler);
   }, [ownerDropOpen]);
 
+  const [warnDaysLocal, setWarnDaysLocal] = useState<string>(
+    String(warnDaysBefore),
+  );
+  useEffect(() => {
+    setWarnDaysLocal(String(warnDaysBefore));
+  }, [warnDaysBefore]);
+
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = localStorage.getItem("ogsm_panel_width");
     return saved ? parseInt(saved, 10) : 800;
   });
 
   useEffect(() => {
-    localStorage.setItem("ogsm_panel_width", panelWidth.toString());
+    try {
+      localStorage.setItem("ogsm_panel_width", panelWidth.toString());
+    } catch {
+      // best-effort; ignore quota or privacy-mode errors
+    }
   }, [panelWidth]);
 
   const dragCtrlRef = useRef<AbortController | null>(null);
@@ -497,6 +792,57 @@ export default function DetailPanel({
     });
   };
 
+  const quarterFromDate = (dateStr: string): string | null => {
+    const m = dateStr.match(/^(\d{4})-(\d{1,2})-\d{1,2}$/);
+    if (!m) return null;
+    const month = parseInt(m[2]);
+    if (month <= 3) return "Q1";
+    if (month <= 6) return "Q2";
+    if (month <= 9) return "Q3";
+    return "Q4";
+  };
+
+  const updatePlannedEndDate = (id: string, newDate: string) => {
+    const currentAp = strategy.actionPlans.find((p) =>
+      p.items.some((i) => i.id === id),
+    );
+    if (!currentAp) {
+      updatePlanItem(id, { plannedEndDate: newDate });
+      return;
+    }
+    const targetQ = newDate ? quarterFromDate(newDate) : null;
+    if (!targetQ || targetQ === currentAp.quarter) {
+      updatePlanItem(id, { plannedEndDate: newDate });
+      return;
+    }
+    // Move item to the matching quarter's ActionPlan
+    const item = currentAp.items.find((i) => i.id === id);
+    if (!item) return;
+    const updatedItem = { ...item, plannedEndDate: newDate };
+    let newPlans = strategy.actionPlans.map((p) =>
+      p.id === currentAp.id
+        ? { ...p, items: p.items.filter((i) => i.id !== id) }
+        : p,
+    );
+    const targetAp = newPlans.find((p) => p.quarter === targetQ);
+    if (targetAp) {
+      newPlans = newPlans.map((p) =>
+        p.id === targetAp.id ? { ...p, items: [...p.items, updatedItem] } : p,
+      );
+    } else {
+      newPlans = [
+        ...newPlans,
+        {
+          id: genId("plan"),
+          quarter: targetQ,
+          title: targetQ + " 計畫",
+          items: [updatedItem],
+        },
+      ];
+    }
+    onUpdate({ ...strategy, actionPlans: newPlans });
+  };
+
   const deletePlanItem = (id: string, desc: string) => {
     if (!window.confirm(`確定要刪除「${desc || "此項目"}」嗎？`)) return;
     onUpdate({
@@ -534,6 +880,10 @@ export default function DetailPanel({
       end.setHours(0, 0, 0, 0);
       daysLeft = Math.ceil((end.getTime() - today.getTime()) / 86400000);
     }
+    const isActualLate =
+      !!item.actualEndDate &&
+      !!item.plannedEndDate &&
+      item.actualEndDate > item.plannedEndDate;
     return (
       <tr
         key={item.id}
@@ -584,15 +934,14 @@ export default function DetailPanel({
             value={item.plannedEndDate ?? ""}
             title="預計完成"
             onChange={(e) =>
-              !readOnly &&
-              updatePlanItem(item.id, { plannedEndDate: e.target.value })
+              !readOnly && updatePlannedEndDate(item.id, e.target.value)
             }
           />
         </td>
         <td>
           <input
             type="date"
-            className="plan-tbl-date plan-tbl-actual"
+            className={`plan-tbl-date plan-tbl-actual${isActualLate ? " plan-tbl-date--late" : ""}`}
             disabled={readOnly}
             value={item.actualEndDate ?? ""}
             title="實際完成"
@@ -631,7 +980,12 @@ export default function DetailPanel({
   function planItemMatchesFilter(item: PlanItem): boolean {
     const q = searchQuery.trim().toLowerCase();
     const textOk = !q || item.description.toLowerCase().includes(q);
-    return textOk;
+    if (!textOk) return false;
+    if (warnFilter) {
+      const w = getPlanItemWarning(item, warnDaysBefore);
+      return w === warnFilter;
+    }
+    return true;
   }
 
   // Plan helpers (plans are managed via Measures and fixed quarters)
@@ -672,6 +1026,14 @@ export default function DetailPanel({
         ...src,
         id: genId("msr"),
         quarter: targetQuarter,
+        status: "not-started",
+        kpis: src.kpis.map((k) => ({
+          ...k,
+          id: genId("kpi"),
+          actual: null,
+          achievementRate: null,
+          currentValue: null,
+        })),
       };
       onUpdate({ ...strategy, measures: [...strategy.measures, copy] });
     } else {
@@ -690,7 +1052,14 @@ export default function DetailPanel({
     const copy: Measure = {
       ...src,
       id: genId("msr"),
-      kpis: src.kpis.map((k) => ({ ...k, id: genId("kpi") })),
+      status: "not-started",
+      kpis: src.kpis.map((k) => ({
+        ...k,
+        id: genId("kpi"),
+        actual: null,
+        achievementRate: null,
+        currentValue: null,
+      })),
     };
     onUpdate({ ...strategy, measures: [...strategy.measures, copy] });
   };
@@ -737,15 +1106,28 @@ export default function DetailPanel({
     });
   };
 
-  const addKpiToMeasure = (msrId: string, kpiType: "value" | "progress") => {
+  const addKpiToMeasure = (
+    msrId: string,
+    kpiType: "value" | "progress" | "growth" | "target_rate",
+  ) => {
+    const labelMap = {
+      progress: "新進度指標",
+      growth: "新成長指標",
+      target_rate: "新目標率指標",
+      value: "新 KPI",
+    } as const;
     const newKpi: KPI = {
       id: genId("kpi"),
-      label: kpiType === "progress" ? "新進度指標" : "新 KPI",
+      label: labelMap[kpiType],
       target: kpiType === "progress" ? 100 : null,
       actual: null,
-      unit: kpiType === "progress" ? "%" : "%",
+      unit: "%",
       achievementRate: null,
       kpiType,
+      ...(kpiType === "growth"
+        ? { baseValue: null, currentValue: null, targetGrowthRate: null }
+        : {}),
+      ...(kpiType === "target_rate" ? { targetRate: null } : {}),
     };
     onUpdate({
       ...strategy,
@@ -789,7 +1171,8 @@ export default function DetailPanel({
             : "#4b5563";
 
   // ─── Filter helpers ──────────────────────────────────────────────────────────
-  const hasActiveFilter = searchQuery.trim() !== "" || filterOwner !== "all";
+  const hasActiveFilter =
+    searchQuery.trim() !== "" || filterOwner !== "all" || warnFilter !== null;
 
   // Collect unique owners from measures + plan items
   const measureOwners = Array.from(
@@ -813,7 +1196,17 @@ export default function DetailPanel({
       !q ||
       (m.rawText ?? "").toLowerCase().includes(q) ||
       (m.owner ?? "").toLowerCase().includes(q);
-    return ownerOk && textOk;
+    if (!ownerOk || !textOk) return false;
+    // warnFilter：該分區必須有至少一個命中的 plan item，否則整區隱藏
+    if (warnFilter) {
+      const linkedItems = strategy.actionPlans
+        .flatMap((p) => p.items)
+        .filter((i) => i.linkedMeasureId === m.id);
+      return linkedItems.some(
+        (i) => getPlanItemWarning(i, warnDaysBefore) === warnFilter,
+      );
+    }
+    return true;
   }
 
   const clearFilters = () => {
@@ -1282,6 +1675,8 @@ export default function DetailPanel({
                                     [
                                       ["value", "📐 量化型"],
                                       ["progress", "📊 進度型"],
+                                      ["growth", "📈 成長型"],
+                                      ["target_rate", "🎯 目標率型"],
                                     ] as const
                                   ).map(([type, label]) => (
                                     <button
@@ -1373,6 +1768,21 @@ export default function DetailPanel({
 
         {tab === "plans" && (
           <div className="plans-tab-content">
+            {warnFilter && (
+              <div className="plan-warn-filter-bar">
+                <span
+                  className={`meta-tag ${warnFilter === "overdue" ? "meta-warn-overdue" : "meta-warn-near"}`}
+                >
+                  {warnFilter === "overdue" ? "🔴 逾期篩選中" : "⚠️ 預警篩選中"}
+                </span>
+                <button
+                  className="plan-warn-filter-clear"
+                  onClick={() => setWarnFilter(null)}
+                >
+                  ✕ 清除篩選
+                </button>
+              </div>
+            )}
             <div
               style={{
                 display: "flex",
@@ -1402,10 +1812,11 @@ export default function DetailPanel({
                   className="plan-warn-days-input"
                   min={1}
                   max={60}
-                  value={warnDaysBefore}
-                  onChange={(e) =>
+                  value={warnDaysLocal}
+                  onChange={(e) => setWarnDaysLocal(e.target.value)}
+                  onBlur={() =>
                     onUpdateWarnDaysBefore(
-                      Math.max(1, parseInt(e.target.value) || 7),
+                      Math.max(1, parseInt(warnDaysLocal) || 7),
                     )
                   }
                 />
@@ -1449,13 +1860,20 @@ export default function DetailPanel({
                     return inQuarterPlan || measureOverlapsSelectedQuarter;
                   })
                   .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
-                // Deduplicate
+                // Deduplicate and sort by planned end date
                 const seen = new Set<string>();
-                const dedupItems = itemsForMeasure.filter((i) => {
-                  if (seen.has(i.id)) return false;
-                  seen.add(i.id);
-                  return true;
-                });
+                const dedupItems = itemsForMeasure
+                  .filter((i) => {
+                    if (seen.has(i.id)) return false;
+                    seen.add(i.id);
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    if (!a.plannedEndDate && !b.plannedEndDate) return 0;
+                    if (!a.plannedEndDate) return 1;
+                    if (!b.plannedEndDate) return -1;
+                    return a.plannedEndDate.localeCompare(b.plannedEndDate);
+                  });
                 const isFromOtherQuarter =
                   (m.quarter ?? selectedQuarter) !== selectedQuarter;
                 const doneCount = dedupItems.filter(
@@ -1609,13 +2027,20 @@ export default function DetailPanel({
                   );
                 })
                 .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
-              // Deduplicate
+              // Deduplicate and sort by planned end date
               const seen = new Set<string>();
-              const dedupUnlinked = unlinkedItems.filter((i) => {
-                if (seen.has(i.id)) return false;
-                seen.add(i.id);
-                return true;
-              });
+              const dedupUnlinked = unlinkedItems
+                .filter((i) => {
+                  if (seen.has(i.id)) return false;
+                  seen.add(i.id);
+                  return true;
+                })
+                .sort((a, b) => {
+                  if (!a.plannedEndDate && !b.plannedEndDate) return 0;
+                  if (!a.plannedEndDate) return 1;
+                  if (!b.plannedEndDate) return -1;
+                  return a.plannedEndDate.localeCompare(b.plannedEndDate);
+                });
               if (dedupUnlinked.length === 0) return null;
               const doneCount = dedupUnlinked.filter(
                 (it) => it.completed,

@@ -5,18 +5,19 @@ import type {
   Strategy,
   Measure,
   GoalKPI,
-  GoalKpiLink,
 } from "../schemas/ogsm";
-import {
-  countStrategyWarnings,
-  computePctActivityRate,
-} from "../utils/planWarnings";
+import { getPlanItemWarning } from "../utils/planWarnings";
+import { computeGoalKpiResult } from "../utils/goalKpi";
 
 interface Props {
   data: OGSMData;
   warnDaysBefore: number;
   onSelectGoal: (id: string) => void;
-  onSelectStrategy: (goalId: string, strategyId: string) => void;
+  onSelectStrategy: (
+    goalId: string,
+    strategyId: string,
+    warnFilter?: "overdue" | "warning",
+  ) => void;
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
 }
@@ -30,70 +31,9 @@ interface NodeStats {
 }
 
 //  GoalKPI helpers
+// goalKpiRate 委派給共用的 computeGoalKpiResult（utils/goalKpi.ts）
 function goalKpiRate(gk: GoalKPI, goal: Goal): number | null {
-  const gkType = gk.type ?? "value";
-
-  // ── pct_activity：使用共用函式（含 activitySourceOverrides）──────────────────────────────
-  if (gkType === "pct_activity") {
-    return computePctActivityRate(gk, goal);
-  }
-
-  // ── progress：linked 進度型 KPI 的 actual 平均 ────────────────────────────
-  if (gkType === "progress") {
-    const vals = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
-      const s = goal.strategies.find((s) => s.id === link.strategyId);
-      const m = s?.measures.find((m) => m.id === link.measureId);
-      const k = m?.kpis.find((k) => k.id === link.kpiId);
-      if (!k) return [];
-      return [k.actual ?? 0];
-    });
-    if (vals.length === 0) return null;
-    const avg = vals.reduce((a, v) => a + v, 0) / vals.length;
-    const target = gk.target ?? 100;
-    if (target <= 0) return null;
-    return Math.round((avg / target) * 100);
-  }
-
-  // ── value（原有邏輯）────────────────────────────────────────────────────────
-  const values = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
-    const s = goal.strategies.find((s) => s.id === link.strategyId);
-    const m = s?.measures.find((m) => m.id === link.measureId);
-    const k = m?.kpis.find((k) => k.id === link.kpiId);
-    if (!k) return [];
-    return [
-      {
-        actual: k.actual ?? 0,
-        target: k.target ?? 0,
-        achievementRate: k.achievementRate,
-      },
-    ];
-  });
-  if (values.length === 0) return null;
-  if (gk.aggregation === "AVERAGE") {
-    const rates = values
-      .map((v) => v.achievementRate)
-      .filter((r): r is number => r !== null && r !== undefined);
-    if (rates.length === 0) {
-      // fallback: compute from actual/target (matches StrategyList computeGoalKpi behaviour)
-      const avgActual =
-        values.reduce((a, v) => a + v.actual, 0) / values.length;
-      const avgTarget =
-        values.reduce((a, v) => a + v.target, 0) / values.length;
-      const denom =
-        gk.target !== null && gk.target !== undefined ? gk.target : avgTarget;
-      if (denom <= 0) return null;
-      return Math.round((avgActual / denom) * 100);
-    }
-    const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
-    const target =
-      gk.target !== null && gk.target !== undefined ? gk.target : 100;
-    return Math.round((avgRate / target) * 100);
-  } else {
-    const sumActual = values.reduce((a, v) => a + v.actual, 0);
-    const denominator = gk.target ?? values.reduce((a, v) => a + v.target, 0);
-    if (denominator <= 0) return null;
-    return Math.round((sumActual / denominator) * 100);
-  }
+  return computeGoalKpiResult(gk, goal).rate;
 }
 
 // sStats: "行動計畫" = Measure row；KPI = all KPIs in measures (not filtered by actual)
@@ -181,8 +121,45 @@ export default function OverviewPage({
   const [editingO, setEditingO] = useState(false);
   const [oText, setOText] = useState("");
   const [oExpandedStatus, setOExpandedStatus] = useState<string | null>(null);
+  const [warnExpandedType, setWarnExpandedType] = useState<
+    "overdue" | "warning" | null
+  >(null);
 
-  // O-level KPI 統計：只統計每個 G 的 GoalKPI 看板
+  // 全頁警告計畫項目（逾期 / 即將到期）
+  type WarnItemCtx = {
+    itemId: string;
+    description: string;
+    plannedEndDate: string;
+    warnType: "overdue" | "warning";
+    goalId: string;
+    stratId: string;
+    stratTitle: string;
+  };
+  const allWarnItems: WarnItemCtx[] = data.goals.flatMap((g) =>
+    g.strategies.flatMap((s) =>
+      s.actionPlans.flatMap((p) =>
+        p.items.flatMap((item) => {
+          const w = getPlanItemWarning(item, warnDaysBefore);
+          if (!w) return [];
+          return [
+            {
+              itemId: item.id,
+              description: item.description,
+              plannedEndDate: item.plannedEndDate ?? "",
+              warnType: w,
+              goalId: g.id,
+              stratId: s.id,
+              stratTitle: s.title || "（未命名策略）",
+            },
+          ];
+        }),
+      ),
+    ),
+  );
+  const overdueItems = allWarnItems.filter((x) => x.warnType === "overdue");
+  const nearItems = allWarnItems.filter((x) => x.warnType === "warning");
+
+  // O-level KPI 統計：G = GoalKPI 看板；M = Measure 內的 kpis
   const oKpiItems = data.goals.flatMap((g) =>
     (g.goalKpis ?? []).map((gk) => ({
       done: (goalKpiRate(gk, g) ?? 0) >= 100,
@@ -190,6 +167,25 @@ export default function OverviewPage({
   );
   const oKpiTotal = oKpiItems.length;
   const oKpiDone = oKpiItems.filter((k) => k.done).length;
+
+  const mKpiItems = data.goals.flatMap((g) =>
+    g.strategies.flatMap((s) =>
+      s.measures.flatMap((m) =>
+        (m.kpis ?? []).map((k) => ({ done: (k.achievementRate ?? 0) >= 100 })),
+      ),
+    ),
+  );
+  const mKpiTotal = mKpiItems.length;
+  const mKpiDone = mKpiItems.filter((k) => k.done).length;
+
+  // G 活動達標率：pct_activity 類型的 GoalKPI
+  const gPctItems = data.goals.flatMap((g) =>
+    (g.goalKpis ?? [])
+      .filter((gk) => (gk.type ?? "value") === "pct_activity")
+      .map((gk) => ({ done: (goalKpiRate(gk, g) ?? 0) >= 100 })),
+  );
+  const gPctTotal = gPctItems.length;
+  const gPctDone = gPctItems.filter((k) => k.done).length;
 
   // 活動統計：以 Measure 為單位，含 Goal/Strategy 來源資訊供展開清單使用
   type MeasureWithCtx = Measure & {
@@ -278,66 +274,118 @@ export default function OverviewPage({
           </div>
         </div>
         <div className="ov-stat-items">
-          <div className="ov-stat-item">
-            <span
-              className="ov-stat-num"
-              style={{
-                color:
-                  oKpiDone === oKpiTotal && oKpiTotal > 0
-                    ? "#10b981"
-                    : "var(--text)",
-              }}
-            >
-              {oKpiDone}
-              <span style={{ fontSize: 13, color: "#6b7280" }}>
-                /{oKpiTotal}
-              </span>
-            </span>
-            <span className="ov-stat-desc">KPI 達成</span>
+          {/* KPI 區 */}
+          <div className="ov-stat-group">
+            <div className="ov-stat-group-label">KPI</div>
+            <div className="ov-stat-group-items">
+              {/* G-主要目標（pct_activity 類型） */}
+              <div className="ov-stat-item">
+                {gPctTotal === 0 ? (
+                  <span className="ov-stat-num" style={{ color: "#d1d5db" }}>
+                    —
+                  </span>
+                ) : (
+                  <span
+                    className="ov-stat-num"
+                    style={{
+                      color: gPctDone === gPctTotal ? "#10b981" : "var(--text)",
+                    }}
+                  >
+                    {gPctDone}
+                    <span style={{ fontSize: 13, color: "#6b7280" }}>
+                      /{gPctTotal}
+                    </span>
+                  </span>
+                )}
+                <span className="ov-stat-desc">G-主要目標</span>
+              </div>
+              {/* G-KPI達成 */}
+              <div className="ov-stat-item">
+                <span
+                  className="ov-stat-num"
+                  style={{
+                    color:
+                      oKpiDone === oKpiTotal && oKpiTotal > 0
+                        ? "#10b981"
+                        : "var(--text)",
+                  }}
+                >
+                  {oKpiDone}
+                  <span style={{ fontSize: 13, color: "#6b7280" }}>
+                    /{oKpiTotal}
+                  </span>
+                </span>
+                <span className="ov-stat-desc">G-KPI 達成</span>
+              </div>
+              {/* M-KPI達成 */}
+              <div className="ov-stat-item">
+                <span
+                  className="ov-stat-num"
+                  style={{
+                    color:
+                      mKpiDone === mKpiTotal && mKpiTotal > 0
+                        ? "#10b981"
+                        : "var(--text)",
+                  }}
+                >
+                  {mKpiDone}
+                  <span style={{ fontSize: 13, color: "#6b7280" }}>
+                    /{mKpiTotal}
+                  </span>
+                </span>
+                <span className="ov-stat-desc">M-KPI 達成</span>
+              </div>
+            </div>
           </div>
           <div className="ov-stat-divider" />
-          {(
-            [
-              {
-                key: "not-started",
-                label: "未開始",
-                count: oPlanNotStarted.length,
-                color: "#6b7280",
-              },
-              {
-                key: "attention",
-                label: "需注意",
-                count: oPlanAttention.length,
-                color: "#d97706",
-              },
-              {
-                key: "in-progress",
-                label: "進行中",
-                count: oPlanInProgress.length,
-                color: "#2563eb",
-              },
-              {
-                key: "completed",
-                label: "已完成",
-                count: oPlanCompleted.length,
-                color: "#059669",
-              },
-            ] as const
-          ).map(({ key, label, count, color }) => (
-            <div
-              key={key}
-              className={`ov-stat-item ov-stat-clickable${oExpandedStatus === key ? " active" : ""}`}
-              onClick={() =>
-                setOExpandedStatus((v) => (v === key ? null : key))
-              }
-              title={`點擊查看${label}的活動`}
-            >
-              <span className="ov-stat-num" style={{ color }}>
-                {count}
-              </span>
-              <span className="ov-stat-desc">{label}</span>
+          {/* 活動區 */}
+          <div className="ov-stat-group">
+            <div className="ov-stat-group-label">活動</div>
+            <div className="ov-stat-group-items">
+              {(
+                [
+                  {
+                    key: "not-started",
+                    label: "未開始",
+                    count: oPlanNotStarted.length,
+                    color: "#6b7280",
+                  },
+                  {
+                    key: "attention",
+                    label: "需注意",
+                    count: oPlanAttention.length,
+                    color: "#d97706",
+                  },
+                  {
+                    key: "in-progress",
+                    label: "進行中",
+                    count: oPlanInProgress.length,
+                    color: "#2563eb",
+                  },
+                  {
+                    key: "completed",
+                    label: "已完成",
+                    count: oPlanCompleted.length,
+                    color: "#059669",
+                  },
+                ] as const
+              ).map(({ key, label, count, color }) => (
+                <div
+                  key={key}
+                  className={`ov-stat-item ov-stat-clickable${oExpandedStatus === key ? " active" : ""}`}
+                  onClick={() =>
+                    setOExpandedStatus((v) => (v === key ? null : key))
+                  }
+                  title={`點擊查看${label}的活動`}
+                >
+                  <span className="ov-stat-num" style={{ color }}>
+                    {count}
+                  </span>
+                  <span className="ov-stat-desc">{label}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
         {oExpandedStatus &&
           (() => {
@@ -396,6 +444,86 @@ export default function OverviewPage({
           })()}
       </div>
 
+      {/* 行動計畫警告列：逾期 / 即將到期 */}
+      {(overdueItems.length > 0 || nearItems.length > 0) && (
+        <div className="ov-warn-bar">
+          <div className="ov-warn-bar-badges">
+            <span className="ov-warn-bar-label">行動警示</span>
+            {overdueItems.length > 0 && (
+              <button
+                className={`ov-warn-bar-btn ov-warn-bar-btn--overdue${warnExpandedType === "overdue" ? " active" : ""}`}
+                onClick={() =>
+                  setWarnExpandedType((v) =>
+                    v === "overdue" ? null : "overdue",
+                  )
+                }
+              >
+                🔴 {overdueItems.length} 已逾期
+              </button>
+            )}
+            {nearItems.length > 0 && (
+              <button
+                className={`ov-warn-bar-btn ov-warn-bar-btn--near${warnExpandedType === "warning" ? " active" : ""}`}
+                onClick={() =>
+                  setWarnExpandedType((v) =>
+                    v === "warning" ? null : "warning",
+                  )
+                }
+              >
+                ⚠️ {nearItems.length} 即將到期
+              </button>
+            )}
+            {warnExpandedType && (
+              <button
+                className="ov-warn-bar-close"
+                onClick={() => setWarnExpandedType(null)}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {warnExpandedType && (
+            <div className="ov-warn-list">
+              {(warnExpandedType === "overdue" ? overdueItems : nearItems).map(
+                (x) => (
+                  <div
+                    key={x.itemId}
+                    className="ov-warn-list-item"
+                    onClick={() =>
+                      onSelectStrategy(x.goalId, x.stratId, x.warnType)
+                    }
+                    title="點擊跳到行動計畫"
+                  >
+                    <span className="ov-warn-list-desc">
+                      {x.description || "（未命名）"}
+                    </span>
+                    <span className="ov-warn-list-meta">
+                      {x.stratTitle}
+                      {x.plannedEndDate && (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <span
+                            style={{
+                              color:
+                                warnExpandedType === "overdue"
+                                  ? "#ef4444"
+                                  : "#f59e0b",
+                            }}
+                          >
+                            {x.plannedEndDate}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="ov-legend">
         {(
           [
@@ -444,16 +572,6 @@ export default function OverviewPage({
               <ul className="org-children">
                 {data.goals.map((g: Goal) => {
                   const gs = gStats(g);
-                  const gOverdue = g.strategies.reduce(
-                    (a, s) =>
-                      a + countStrategyWarnings(s, warnDaysBefore).overdue,
-                    0,
-                  );
-                  const gNear = g.strategies.reduce(
-                    (a, s) =>
-                      a + countStrategyWarnings(s, warnDaysBefore).warning,
-                    0,
-                  );
                   return (
                     <li key={g.id}>
                       {/* G node */}
@@ -471,26 +589,12 @@ export default function OverviewPage({
                         <span className="org-title">
                           {g.title || <em>(未命名)</em>}
                         </span>
-                        {gOverdue > 0 && (
-                          <span className="org-warn-badge org-warn-overdue">
-                            🔴{gOverdue}
-                          </span>
-                        )}
-                        {gNear > 0 && (
-                          <span className="org-warn-badge org-warn-near">
-                            ⚠️{gNear}
-                          </span>
-                        )}
                       </div>
 
                       {g.strategies.length > 0 && (
                         <ul className="org-children">
                           {g.strategies.map((s: Strategy, si: number) => {
                             const ss = sStats(s);
-                            const sWarn = countStrategyWarnings(
-                              s,
-                              warnDaysBefore,
-                            );
                             return (
                               <li key={s.id}>
                                 {/* S node */}
@@ -509,16 +613,6 @@ export default function OverviewPage({
                                   <span className="org-title">
                                     {s.title || <em>(未命名)</em>}
                                   </span>
-                                  {sWarn.overdue > 0 && (
-                                    <span className="org-warn-badge org-warn-overdue">
-                                      🔴{sWarn.overdue}
-                                    </span>
-                                  )}
-                                  {sWarn.warning > 0 && (
-                                    <span className="org-warn-badge org-warn-near">
-                                      ⚠️{sWarn.warning}
-                                    </span>
-                                  )}
                                 </div>
                               </li>
                             );

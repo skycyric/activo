@@ -1,5 +1,11 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import { saveWorkspace, loadWorkspace, migrateOwnerToOwners } from "./storage";
+import {
+  saveWorkspace,
+  loadWorkspace,
+  migrateOwnerToOwners,
+  parseAndValidateJSON,
+  normalizeOneStrategy,
+} from "./storage";
 import type { WorkspaceData, Strategy, Goal } from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
@@ -316,5 +322,182 @@ describe("normalizeWorkspaceData（透過存取 cycle）", () => {
     const loaded = loadWorkspace();
     const strat = loaded!.departments[0].periods[0].ogsm.goals[0].strategies[0];
     expect(Array.isArray(strat.owners)).toBe(true);
+  });
+});
+
+// ─── parseAndValidateJSON ─────────────────────────────────────────────────────
+
+describe("parseAndValidateJSON", () => {
+  const validWorkspaceJSON = JSON.stringify(
+    makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "公司", deptO: "部門" },
+                goals: [],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const validOgsmJSON = JSON.stringify({
+    objectives: { orgO: "公司", deptO: "部門" },
+    goals: [],
+    period: "2026 H1",
+    importedAt: "2026-01-01T00:00:00.000Z",
+    overallRate: 0,
+  });
+
+  test("合法的 WorkspaceData JSON 解析並回傳", () => {
+    const result = parseAndValidateJSON(validWorkspaceJSON);
+    expect(result).toHaveProperty("departments");
+  });
+
+  test("合法的 OGSMData JSON 解析並回傳", () => {
+    const result = parseAndValidateJSON(validOgsmJSON);
+    expect(result).toHaveProperty("goals");
+    expect(result).toHaveProperty("objectives");
+  });
+
+  test("格式錯誤 JSON 語法（非合法 JSON）拋出 Error", () => {
+    expect(() => parseAndValidateJSON("{invalid json}")).toThrow(
+      "Invalid JSON file",
+    );
+  });
+
+  test("不符合任何格式的 JSON 物件拋出 Error（不支援的格式）", () => {
+    expect(() => parseAndValidateJSON('{"foo":"bar"}')).toThrow(
+      "不支援的 JSON 格式",
+    );
+  });
+
+  test("departments 欄位型別錯誤（非陣列）會拒絕並拋出 Error", () => {
+    const bad = JSON.stringify({ departments: "not-an-array", version: 1 });
+    // 'departments' 不是陣列 → 走到不支援格式分支 → 拋出
+    expect(() => parseAndValidateJSON(bad)).toThrow("不支援的 JSON 格式");
+  });
+
+  test("WorkspaceData 缺少必要欄位（version 欄位錯誤型別）後 normalize 後仍失敗 → 拋出", () => {
+    // departments 正確但 version 是字串（應為 number），Zod 應拒絕
+    const bad = JSON.stringify({
+      departments: [],
+      version: "not-a-number",
+      _migratedPhase2: true,
+      _migratedPhase3: true,
+    });
+    expect(() => parseAndValidateJSON(bad)).toThrow("工作區格式不符");
+  });
+});
+
+// ─── normalizeOneStrategy ─────────────────────────────────────────────────────
+
+describe("normalizeOneStrategy", () => {
+  test("無需遷移的策略回傳 false 且不改變資料", () => {
+    const s = makeStrategy({ owners: ["Alice"], actionPlans: [] });
+    const changed = normalizeOneStrategy(s);
+    expect(changed).toBe(false);
+    expect(s.owners).toEqual(["Alice"]);
+  });
+
+  test("owner (scalar) → owners (array) 並移除 owner 欄位", () => {
+    const s = makeStrategy({ owner: "Bob", owners: [] } as unknown as Strategy);
+    const changed = normalizeOneStrategy(s);
+    expect(changed).toBe(true);
+    expect(s.owners).toContain("Bob");
+    expect((s as unknown as Record<string, unknown>).owner).toBeUndefined();
+  });
+
+  test("owners 為 undefined → 補為空陣列", () => {
+    const s = makeStrategy({ owners: undefined as unknown as string[] });
+    const changed = normalizeOneStrategy(s);
+    expect(changed).toBe(true);
+    expect(Array.isArray(s.owners)).toBe(true);
+  });
+
+  test("plan item 舊版 date 欄位遷移到 plannedEndDate", () => {
+    const s = makeStrategy({
+      actionPlans: [
+        {
+          id: "ap1",
+          quarter: "Q1",
+          title: "Q1 計畫",
+          items: [
+            {
+              id: "item1",
+              description: "任務A",
+              completed: false,
+              date: "2026-03-01",
+            } as unknown as import("../schemas/ogsm").PlanItem,
+          ],
+        },
+      ],
+    });
+    const changed = normalizeOneStrategy(s);
+    expect(changed).toBe(true);
+    const item = s.actionPlans[0].items[0];
+    expect(item.plannedEndDate).toBe("2026-03-01");
+    expect((item as unknown as Record<string, unknown>).date).toBeUndefined();
+  });
+
+  test("plan item 舊版 endDate 欄位遷移到 plannedEndDate", () => {
+    const s = makeStrategy({
+      actionPlans: [
+        {
+          id: "ap1",
+          quarter: "Q1",
+          title: "Q1",
+          items: [
+            {
+              id: "item2",
+              description: "任務B",
+              completed: false,
+              endDate: "2026-06-30",
+            } as unknown as import("../schemas/ogsm").PlanItem,
+          ],
+        },
+      ],
+    });
+    normalizeOneStrategy(s);
+    const item = s.actionPlans[0].items[0];
+    expect(item.plannedEndDate).toBe("2026-06-30");
+    expect(
+      (item as unknown as Record<string, unknown>).endDate,
+    ).toBeUndefined();
+  });
+
+  test("plan item 若 plannedEndDate 已存在，不覆寫", () => {
+    const s = makeStrategy({
+      actionPlans: [
+        {
+          id: "ap1",
+          quarter: "Q2",
+          title: "Q2",
+          items: [
+            {
+              id: "item3",
+              description: "任務C",
+              completed: false,
+              plannedEndDate: "2026-05-01",
+              endDate: "2026-09-01",
+            } as unknown as import("../schemas/ogsm").PlanItem,
+          ],
+        },
+      ],
+    });
+    normalizeOneStrategy(s);
+    expect(s.actionPlans[0].items[0].plannedEndDate).toBe("2026-05-01");
   });
 });

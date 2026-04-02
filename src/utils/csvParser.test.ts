@@ -15,18 +15,17 @@ describe("genId", () => {
     expect(genId("str").startsWith("str_")).toBe(true);
   });
 
-  test("格式為 prefix_base36timestamp_4chars", () => {
+  test("格式為 prefix_base36timestamp_seq_hex8chars", () => {
     const id = genId("x");
     const parts = id.split("_");
-    expect(parts).toHaveLength(3);
+    // prefix _ ts _ seq _ rnd → 4 parts
+    expect(parts.length).toBeGreaterThanOrEqual(4);
     expect(parts[0]).toBe("x");
-    expect(parts[1].length).toBeGreaterThan(0); // base36 timestamp
-    expect(parts[2]).toHaveLength(4);
   });
 
-  test("連續呼叫產生唯一 id", () => {
-    const ids = new Set(Array.from({ length: 50 }, () => genId("t")));
-    expect(ids.size).toBe(50);
+  test("連續呼叫產生唯一 id（1000 次）", () => {
+    const ids = new Set(Array.from({ length: 1000 }, () => genId("t")));
+    expect(ids.size).toBe(1000);
   });
 });
 

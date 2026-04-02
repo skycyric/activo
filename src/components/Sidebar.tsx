@@ -47,7 +47,11 @@ export default function Sidebar({
   });
 
   useEffect(() => {
-    localStorage.setItem("ogsm_sidebar_width", sidebarWidth.toString());
+    try {
+      localStorage.setItem("ogsm_sidebar_width", sidebarWidth.toString());
+    } catch {
+      // best-effort; ignore quota or privacy-mode errors
+    }
   }, [sidebarWidth]);
 
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);

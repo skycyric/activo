@@ -1,7 +1,22 @@
 import type { OGSMData, Goal, Strategy, Measure, KPI } from "../schemas/ogsm";
 
+let _genIdCounter = 0;
+
 export function genId(prefix = "id"): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const ts = Date.now().toString(36);
+  const seq = (_genIdCounter++ & 0xffff).toString(36).padStart(3, "0");
+  const rnd = (() => {
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      const buf = new Uint32Array(1);
+      crypto.getRandomValues(buf);
+      return buf[0].toString(16).padStart(8, "0");
+    }
+    // Node fallback（測試環境）
+    return Math.floor(Math.random() * 0xffffffff)
+      .toString(16)
+      .padStart(8, "0");
+  })();
+  return `${prefix}_${ts}_${seq}_${rnd}`;
 }
 
 // ─── CSV Parser ────────────────────────────────────────────────────────────

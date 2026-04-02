@@ -8,12 +8,13 @@ import type {
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { countStrategyWarnings } from "../utils/planWarnings";
+import { computeGoalKpiResult } from "../utils/goalKpi";
 
 interface Props {
   goal: Goal | null;
   strategies: Strategy[];
   selectedStrategyId: string | null;
-  onSelectStrategy: (id: string) => void;
+  onSelectStrategy: (id: string, warnFilter?: "overdue" | "warning") => void;
   onAddStrategy: () => void;
   onUpdateGoal: (g: Goal) => void;
   onDeleteGoal: (id: string) => void;
@@ -28,34 +29,21 @@ function StrategyRow({
   index,
   selected,
   onClick,
+  onSelectStrategy,
   warnDaysBefore,
 }: {
   s: Strategy;
   index: number;
   selected: boolean;
   onClick: () => void;
+  onSelectStrategy: (id: string, warnFilter?: "overdue" | "warning") => void;
   warnDaysBefore: number;
 }) {
-  // Measures-based stats: count measures and count measures considered as "達標"
+  // Measures-based stats: count measures and count measures considered as "???"
   const measuresTotal = s.measures.length;
   const measuresAchieved = s.measures.filter(
     (m) => m.status === "completed",
   ).length;
-  const progressRate =
-    measuresTotal > 0
-      ? Math.round((measuresAchieved / measuresTotal) * 100)
-      : 0;
-  const effectiveRate = s.manualRate ?? progressRate;
-  const barColor =
-    effectiveRate >= 100
-      ? "#10b981"
-      : effectiveRate >= 70
-        ? "#6366f1"
-        : effectiveRate >= 40
-          ? "#f59e0b"
-          : effectiveRate > 0
-            ? "#ef4444"
-            : "#374151";
   const kpiCount = s.measures
     .flatMap((m) => m.kpis)
     .filter((k) => k.achievementRate !== null).length;
@@ -74,7 +62,6 @@ function StrategyRow({
       onKeyDown={(e) => e.key === "Enter" && onClick()}
     >
       <div className="strategy-row-left">
-        <span className="strategy-row-dot" style={{ background: barColor }} />
         <div className="strategy-row-main">
           <span className="strategy-s-label">S{index + 1}</span>
           <span className="strategy-row-title">{s.title}</span>
@@ -85,7 +72,7 @@ function StrategyRow({
               </span>
             ))}
             {kpiCount > 0 && (
-              <span className="meta-tag">📊 {kpiCount} KPI</span>
+              <span className="meta-tag">🎯 {kpiCount} KPI</span>
             )}
             {/* Measures-based summary */}
             {measuresTotal > 0 && (
@@ -96,14 +83,28 @@ function StrategyRow({
             {hasBudget && (
               <span className="meta-tag">💰 {sBudget.toLocaleString()}</span>
             )}
-            {hasDays && <span className="meta-tag">🕐 {sDays} 人/天</span>}
+            {hasDays && <span className="meta-tag">⏱ {sDays} 人天</span>}
             {warnCounts.overdue > 0 && (
-              <span className="meta-tag meta-warn-overdue">
+              <span
+                className="meta-tag meta-warn-overdue"
+                title="點擊查看逾期項目"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectStrategy(s.id, "overdue");
+                }}
+              >
                 🔴 {warnCounts.overdue}
               </span>
             )}
             {warnCounts.warning > 0 && (
-              <span className="meta-tag meta-warn-near">
+              <span
+                className="meta-tag meta-warn-near"
+                title="點擊查看即將到期項目"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectStrategy(s.id, "warning");
+                }}
+              >
                 ⚠️ {warnCounts.warning}
               </span>
             )}
@@ -187,9 +188,9 @@ export default function StrategyList({
     return (
       <div className="strategy-list strategy-list-empty">
         <div className="empty-state">
-          <div className="empty-icon">🎯</div>
-          <h2>選擇左側的目標（G）</h2>
-          <p>點選 G1、G2 或 G3 查看策略列表</p>
+          <div className="empty-icon">📋</div>
+          <h2>目前沒有任何策略</h2>
+          <p>請在左側選擇一個目標（如 G1、G2、G3）以查看策略</p>
         </div>
       </div>
     );
@@ -202,267 +203,8 @@ export default function StrategyList({
   // type="pct_activity" : % of activities (across thresholdGoalKpiIds) where
   //                       actual >= at least one threshold GoalKPI's target (OR logic)
   // type="progress"     : average actual of linked progress-type KPIs
-  const computeGoalKpi = (gk: GoalKPI) => {
-    const gkType = gk.type ?? "value";
-
-    // ── 整體達標狀況：以「活動（Measure）」為計算單位 ──────────────────────────
-    // 流程：
-    //   1. 遍歷所選來源 GoalKPI → 收集每個 Measure 被哪些來源覆蓋
-    //   2. 衝突（同一 Measure 被多個來源覆蓋）→ 查 activitySourceOverrides 決定用哪個
-    //      若未設定 override → 預設用第一個覆蓋它的來源（先選先得）
-    //   3. 判斷達標：該 Measure 底下、被選定來源連結的 KPI 達成率 >= 來源 GoalKPI 的 target
-    if (gkType === "pct_activity") {
-      const overrides = gk.activitySourceOverrides ?? {};
-      // measureMap: measureId → { measureId, measureRawText, sources: { threshGkId, threshGk, kpiIds[] }[] }
-      const measureMap = new Map<
-        string,
-        {
-          measureId: string;
-          measureRawText: string;
-          sources: {
-            threshGkId: string;
-            threshGkLabel: string;
-            threshTarget: number;
-            kpiIds: string[];
-          }[];
-        }
-      >();
-      for (const threshId of gk.thresholdGoalKpiIds ?? []) {
-        const threshGk = goalKpis.find((g) => g.id === threshId);
-        if (
-          !threshGk ||
-          threshGk.target === null ||
-          threshGk.target === undefined
-        )
-          continue;
-        for (const link of threshGk.linkedKpis) {
-          if (!measureMap.has(link.measureId)) {
-            const s = (goal.strategies ?? []).find(
-              (s) => s.id === link.strategyId,
-            );
-            const m = s?.measures.find((m) => m.id === link.measureId);
-            measureMap.set(link.measureId, {
-              measureId: link.measureId,
-              measureRawText: m?.rawText ?? "（未知活動）",
-              sources: [],
-            });
-          }
-          const entry = measureMap.get(link.measureId)!;
-          const existing = entry.sources.find(
-            (src) => src.threshGkId === threshId,
-          );
-          if (existing) {
-            existing.kpiIds.push(link.kpiId);
-          } else {
-            entry.sources.push({
-              threshGkId: threshId,
-              threshGkLabel: threshGk.label,
-              threshTarget: threshGk.target,
-              kpiIds: [link.kpiId],
-            });
-          }
-        }
-      }
-
-      const activities = Array.from(measureMap.values()).map((entry) => {
-        // 決定用哪個來源判斷：優先用 override，否則用第一個
-        const chosenSrcId =
-          overrides[entry.measureId] &&
-          entry.sources.some((s) => s.threshGkId === overrides[entry.measureId])
-            ? overrides[entry.measureId]
-            : entry.sources[0]?.threshGkId;
-        const chosen = entry.sources.find((s) => s.threshGkId === chosenSrcId);
-        const isConflict = entry.sources.length > 1;
-
-        // 計算達成率：chosen 來源底下連結的 KPI，取平均 achievementRate
-        let met = false;
-        let displayRate: number | null = null;
-        if (chosen) {
-          // 找到所有 KPI
-          const rates: number[] = [];
-          for (const threshId of gk.thresholdGoalKpiIds ?? []) {
-            const threshGk = goalKpis.find((g) => g.id === threshId);
-            if (!threshGk) continue;
-            for (const link of threshGk.linkedKpis) {
-              if (link.measureId !== entry.measureId) continue;
-              if (!chosen.kpiIds.includes(link.kpiId)) continue;
-              const s = (goal.strategies ?? []).find(
-                (s) => s.id === link.strategyId,
-              );
-              const m = s?.measures.find((m) => m.id === link.measureId);
-              const k = m?.kpis.find((k) => k.id === link.kpiId);
-              if (!k) continue;
-              const r =
-                k.achievementRate ??
-                (k.target !== null && k.target !== undefined && k.target > 0
-                  ? ((k.actual ?? 0) / k.target) * 100
-                  : null);
-              if (r !== null) rates.push(r);
-            }
-          }
-          if (rates.length > 0) {
-            displayRate = parseFloat(
-              (rates.reduce((a, b) => a + b, 0) / rates.length).toFixed(1),
-            );
-            met = displayRate >= chosen.threshTarget;
-          }
-        }
-
-        const conflictSourceNames = isConflict
-          ? entry.sources.map((s) => s.threshGkLabel).join(" vs ")
-          : null;
-
-        return {
-          measureId: entry.measureId,
-          measureRawText: entry.measureRawText,
-          chosenSrcId: chosenSrcId ?? null,
-          chosenSrcLabel: chosen?.threshGkLabel ?? null,
-          chosenTarget: chosen?.threshTarget ?? null,
-          displayRate,
-          met,
-          isConflict,
-          conflictSourceNames,
-          allSources: entry.sources,
-        };
-      });
-
-      const totalCount = activities.length;
-      const metCount = activities.filter((a) => a.met).length;
-      const actualPct =
-        totalCount > 0 ? Math.round((metCount / totalCount) * 1000) / 10 : 0;
-      const target = gk.target ?? 60;
-      const rate = target > 0 ? Math.round((actualPct / target) * 100) : null;
-      return {
-        actual: totalCount > 0 ? actualPct : null,
-        target,
-        rate: totalCount > 0 ? rate : null,
-        isRateMode: true,
-        metCount,
-        totalCount,
-        activities,
-      };
-    }
-
-    const values = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
-      const s = (goal.strategies ?? []).find((s) => s.id === link.strategyId);
-      if (!s) return [];
-      const m = s.measures.find((m) => m.id === link.measureId);
-      if (!m) return [];
-      const k = m.kpis.find((k) => k.id === link.kpiId);
-      if (!k) return [];
-      return [
-        {
-          actual: k.actual ?? 0,
-          target: k.target ?? 0,
-          achievementRate: k.achievementRate,
-        },
-      ];
-    });
-    const gTarget = gk.target ?? null;
-    const emptyActivities: {
-      measureId: string;
-      measureRawText: string;
-      chosenSrcId: string | null;
-      chosenSrcLabel: string | null;
-      chosenTarget: number | null;
-      displayRate: number | null;
-      met: boolean;
-      isConflict: boolean;
-      conflictSourceNames: string | null;
-      allSources: {
-        threshGkId: string;
-        threshGkLabel: string;
-        threshTarget: number;
-        kpiIds: string[];
-      }[];
-    }[] = [];
-    if (values.length === 0)
-      return {
-        actual: null,
-        target: gTarget,
-        rate: null,
-        isRateMode: gkType !== "value" || gk.aggregation === "AVERAGE",
-        metCount: null as number | null,
-        totalCount: 0,
-        activities: emptyActivities,
-      };
-
-    // ── 進度完成率：linked 進度型 KPI 的 actual 平均 ──────────────────────────
-    if (gkType === "progress") {
-      const sum = values.reduce((a, v) => a + v.actual, 0);
-      const avgActual = Math.round((sum / values.length) * 10) / 10;
-      const target = gTarget !== null ? gTarget : 100;
-      const rate = target > 0 ? Math.round((avgActual / target) * 100) : null;
-      return {
-        actual: avgActual,
-        target,
-        rate,
-        isRateMode: true,
-        metCount: null as number | null,
-        totalCount: values.length,
-        activities: emptyActivities,
-      };
-    }
-
-    // ── 量化值：原有 AVERAGE / SUM 邏輯 ───────────────────────────────────────
-    if (gk.aggregation === "AVERAGE") {
-      const rates = values
-        .map((v) => v.achievementRate)
-        .filter((r): r is number => r !== null && r !== undefined);
-      if (rates.length === 0) {
-        const avgActual =
-          Math.round(
-            (values.reduce((a, v) => a + v.actual, 0) / values.length) * 10,
-          ) / 10;
-        const avgTarget =
-          Math.round(
-            (values.reduce((a, v) => a + v.target, 0) / values.length) * 10,
-          ) / 10;
-        const fallbackTarget = gTarget !== null ? gTarget : avgTarget;
-        const rate =
-          fallbackTarget > 0
-            ? Math.round((avgActual / fallbackTarget) * 100)
-            : null;
-        return {
-          actual: avgActual,
-          target: fallbackTarget,
-          rate,
-          isRateMode: false,
-          metCount: null as number | null,
-          totalCount: values.length,
-          activities: emptyActivities,
-        };
-      }
-      const avgRate =
-        Math.round((rates.reduce((a, r) => a + r, 0) / rates.length) * 10) / 10;
-      const target = gTarget !== null ? gTarget : 100;
-      const rate = Math.round((avgRate / target) * 100);
-      return {
-        actual: avgRate,
-        target,
-        rate,
-        isRateMode: true,
-        metCount: null as number | null,
-        totalCount: values.length,
-        activities: emptyActivities,
-      };
-    } else {
-      const sumActual = values.reduce((a, v) => a + v.actual, 0);
-      const sumTarget = values.reduce((a, v) => a + v.target, 0);
-      const target = gTarget !== null ? gTarget : sumTarget;
-      const rate = target > 0 ? Math.round((sumActual / target) * 100) : null;
-      return {
-        actual: sumActual,
-        target,
-        rate,
-        isRateMode: false,
-        metCount: null as number | null,
-        totalCount: values.length,
-        activities: emptyActivities,
-      };
-    }
-  };
-
+  // computeGoalKpi 已抽取至 utils/goalKpi.ts（computeGoalKpiResult）
+  const computeGoalKpi = (gk: GoalKPI) => computeGoalKpiResult(gk, goal!);
   const saveKpi = () => {
     if (!kpiForm.label.trim()) return;
     const targetVal =
@@ -554,8 +296,8 @@ export default function StrategyList({
   };
 
   const deleteKpi = (id: string) => {
-    const label = goalKpis.find((gk) => gk.id === id)?.label ?? "此指標";
-    if (!window.confirm(`確定要刪除 G 層級指標「${label}」嗎？`)) return;
+    const label = goalKpis.find((gk) => gk.id === id)?.label ?? "未知 KPI";
+    if (!window.confirm(`確定要刪除 KPI「${label}」？`)) return;
     onUpdateGoal({ ...goal, goalKpis: goalKpis.filter((gk) => gk.id !== id) });
   };
 
@@ -602,7 +344,7 @@ export default function StrategyList({
     const updated = isRemoving
       ? current.filter((id) => id !== threshId)
       : [...current, threshId];
-    // 取消勾選時，清除所有指向該來源的 activitySourceOverrides
+    // ?????????????????????????activitySourceOverrides
     const cleanedOverrides = isRemoving
       ? Object.fromEntries(
           Object.entries(gk.activitySourceOverrides ?? {}).filter(
@@ -666,7 +408,7 @@ export default function StrategyList({
           <div className="g-kpi-form-row">
             <input
               className="g-kpi-input"
-              placeholder="整體達標狀況名稱"
+              placeholder="請輸入活動名稱"
               value={pctForm.label}
               onChange={(e) =>
                 setPctForm({ ...pctForm, label: e.target.value })
@@ -677,7 +419,7 @@ export default function StrategyList({
               <input
                 className="g-kpi-input g-kpi-target"
                 type="number"
-                placeholder="達標門檻 %"
+                placeholder="目標達成率 %"
                 value={pctForm.target}
                 onChange={(e) =>
                   setPctForm({ ...pctForm, target: e.target.value })
@@ -699,7 +441,7 @@ export default function StrategyList({
           <div className="g-kpi-form-row">
             <input
               className="g-kpi-input"
-              placeholder="指標名稱"
+              placeholder="KPI 名稱"
               value={kpiForm.label}
               onChange={(e) =>
                 setKpiForm({ ...kpiForm, label: e.target.value })
@@ -730,8 +472,8 @@ export default function StrategyList({
                 })
               }
             >
-              <option value="value">量化值</option>
-              <option value="progress">進度完成率</option>
+              <option value="value">數值</option>
+              <option value="progress">進度</option>
             </select>
             {kpiForm.type === "value" && (
               <select
@@ -764,7 +506,7 @@ export default function StrategyList({
                   setKpiForm({ ...kpiForm, isHeadline: e.target.checked })
                 }
               />
-              主要
+              主要 KPI
             </label>
             <button className="g-kpi-btn-save" onClick={saveKpi}>
               儲存
@@ -782,36 +524,36 @@ export default function StrategyList({
               <span className="g-kpi-name">{gk.label}</span>
               <span className="g-kpi-meta">
                 {gkType === "pct_activity"
-                  ? "整體達標狀況"
+                  ? "活動達標率"
                   : gkType === "progress"
-                    ? "進度完成率"
+                    ? "進度"
                     : gk.aggregation === "SUM"
-                      ? "加總數值"
-                      : "平均達成率"}{" "}
+                      ? "加總"
+                      : "平均"}{" "}
                 {gkType === "pct_activity"
-                  ? `· ${(gk.thresholdGoalKpiIds ?? []).length} 個來源 GoalKPI`
-                  : `· ${gk.linkedKpis.length} 個來源`}
+                  ? `🔗 ${(gk.thresholdGoalKpiIds ?? []).length} 個門檻 GoalKPI`
+                  : `🔗 ${gk.linkedKpis.length} 個連結`}
               </span>
             </div>
             <div className="g-kpi-card-right">
               <span className="g-kpi-value">
                 <span className="g-kpi-val-label">實際</span>
-                {actual !== null ? actual.toLocaleString() : "—"}
+                {actual !== null ? actual.toLocaleString() : "--"}
                 {isRateMode ? "%" : actual !== null ? ` ${gk.unit}` : ""}{" "}
                 {(gk.type ?? "value") === "pct_activity" &&
                   metCount !== null && (
                     <span style={{ fontSize: 11, color: "#6b7280" }}>
-                      （{metCount}/{totalCount}）
+                      {metCount}/{totalCount}{" "}
                     </span>
                   )}{" "}
                 <span className="g-kpi-val-sep">/</span>
                 <span className="g-kpi-val-label">目標</span>
-                {target !== null ? target.toLocaleString() : "—"}
+                {target !== null ? target.toLocaleString() : "--"}
                 {isRateMode ? "%" : ` ${gk.unit}`}
               </span>
               {gkType !== "pct_activity" && (
                 <span className="g-kpi-rate" style={{ color: kColor }}>
-                  {kRate !== null ? `${kRate}%` : "—"}
+                  {kRate !== null ? `${kRate}%` : "--"}
                 </span>
               )}
             </div>
@@ -824,7 +566,7 @@ export default function StrategyList({
                     setShowLinkPicker(null);
                   }}
                 >
-                  🎯 選取來源
+                  🔗 設定門檻
                 </button>
               ) : (
                 <button
@@ -841,9 +583,9 @@ export default function StrategyList({
                 <button
                   className="g-kpi-btn-headline"
                   onClick={() => toggleHeadline(gk.id)}
-                  title={gk.isHeadline ? "取消主要指標" : "設為主要指標"}
+                  title={gk.isHeadline ? "取消設為主要 KPI" : "設為主要 KPI"}
                 >
-                  {gk.isHeadline ? "★" : "☆"}
+                  {gk.isHeadline ? "⭐" : "--"}
                 </button>
               )}
               <button
@@ -875,13 +617,13 @@ export default function StrategyList({
                   }
                 }}
               >
-                ✎
+                編輯{" "}
               </button>
               <button
                 className="g-kpi-btn-del"
                 onClick={() => deleteKpi(gk.id)}
               >
-                🗑
+                刪除
               </button>
             </div>
           </div>
@@ -901,7 +643,7 @@ export default function StrategyList({
             </div>
           </div>
         )}
-        {/* 來源選擇器（pct_activity 專用） */}
+        {/* ?????????pct_activity ?????*/}
         {isLinkingThreshold &&
           (() => {
             const selectedIds = gk.thresholdGoalKpiIds ?? [];
@@ -910,7 +652,7 @@ export default function StrategyList({
               (g) => g.id !== gk.id && (g.type ?? "value") !== "pct_activity",
             );
 
-            // 建立 measureId → 覆蓋它的來源列表（用於偵測衝突）
+            // ??? measureId ??????????????????????????
             const measureCoverage = new Map<
               string,
               {
@@ -922,14 +664,14 @@ export default function StrategyList({
             for (const tid of selectedIds) {
               const tGk = goalKpis.find((g) => g.id === tid);
               if (!tGk) continue;
-              // 取得唯一的 measureId 集合
+              // ????????measureId ???
               const seenMeasures = new Set<string>();
               for (const link of tGk.linkedKpis) {
                 if (seenMeasures.has(link.measureId)) continue;
                 seenMeasures.add(link.measureId);
                 if (!measureCoverage.has(link.measureId))
                   measureCoverage.set(link.measureId, []);
-                // 找 rawText
+                // ??rawText
                 const s = (goal.strategies ?? []).find(
                   (s) => s.id === link.strategyId,
                 );
@@ -937,7 +679,7 @@ export default function StrategyList({
                 measureCoverage.get(link.measureId)?.push({
                   threshGkId: tid,
                   threshGkLabel: tGk.label,
-                  measureRawText: m?.rawText ?? "（未知活動）",
+                  measureRawText: m?.rawText ?? "未知度量指標",
                 });
               }
             }
@@ -964,16 +706,13 @@ export default function StrategyList({
 
             return (
               <div className="g-kpi-link-picker">
-                <div className="g-kpi-link-picker-title">
-                  選擇來源 GoalKPI（可複選）
-                </div>
+                <div className="g-kpi-link-picker-title">選取門檻 GoalKPI </div>
                 <div className="g-kpi-link-hint">
-                  選取後，系統統計其連結的活動中，有幾個達到該 GoalKPI 的目標值
+                  勾選哪些 GoalKPI 作為活動達標率的門檻來源{" "}
                 </div>
                 {availableGks.length === 0 ? (
                   <div className="g-kpi-link-empty">
-                    此目標下尚無可用的 GoalKPI（請先在「目標 KPI
-                    看板」建立指標並連結 M KPI）
+                    目前沒有可選的 GoalKPI，請先建立已連結 M KPI 的 GoalKPI{" "}
                   </div>
                 ) : (
                   availableGks.map((g) => {
@@ -993,10 +732,10 @@ export default function StrategyList({
                           目標{" "}
                           {g.target !== null && g.target !== undefined
                             ? g.target
-                            : "—"}
+                            : "--"}
                           {g.unit}
-                          {" · "}
-                          {g.linkedKpis.length} 個活動
+                          {" / "}
+                          {g.linkedKpis.length} 個已連結{" "}
                         </span>
                       </label>
                     );
@@ -1005,8 +744,8 @@ export default function StrategyList({
                 {conflictedMeasures.length > 0 && (
                   <div className="g-pct-conflict-section">
                     <div className="g-pct-conflict-title">
-                      ⚠️ 以下 {conflictedMeasures.length}{" "}
-                      個活動同時被多個來源覆蓋，請選擇要用哪個來源的目標值來判斷達標：
+                      ⚠️ 衝突 {conflictedMeasures.length} 個度量指標同時被多個
+                      GoalKPI 引用，請選擇要使用的來源{" "}
                     </div>
                     {conflictedMeasures.map(({ measureId, srcs }) => {
                       const chosenId =
@@ -1017,13 +756,13 @@ export default function StrategyList({
                       return (
                         <div key={measureId} className="g-pct-conflict-measure">
                           <div className="g-pct-conflict-measure-name">
-                            📋 {srcs[0].measureRawText}
+                            度量：{srcs[0].measureRawText}
                           </div>
                           <div className="g-pct-conflict-reason">
-                            此活動同時出現在：
+                            被多個來源引用：{" "}
                             {srcs
                               .map((s) => `「${s.threshGkLabel}」`)
-                              .join(" 和 ")}
+                              .join("、")}
                           </div>
                           <div className="g-pct-conflict-radios">
                             {srcs.map((src) => {
@@ -1047,7 +786,7 @@ export default function StrategyList({
                                     {src.threshGkLabel}
                                   </span>
                                   <span className="g-pct-conflict-radio-hint">
-                                    目標 {srcGk?.target ?? "—"}
+                                    目標 {srcGk?.target ?? "--"}
                                     {srcGk?.unit ?? "%"}
                                   </span>
                                 </label>
@@ -1062,13 +801,13 @@ export default function StrategyList({
               </div>
             );
           })()}
-        {/* M KPI 連結選擇器（value / progress 專用） */}
+        {/* M KPI ?????????value / progress ?????*/}
         {isLinking && (
           <div className="g-kpi-link-picker">
-            <div className="g-kpi-link-picker-title">選擇要納入的 M KPI</div>
+            <div className="g-kpi-link-picker-title">選擇連結的 M KPI</div>
             <input
               className="g-kpi-link-search"
-              placeholder="搜尋策略、行動計畫或 KPI 名稱…"
+              placeholder="搜尋 KPI 或度量指標"
               value={linkPickerSearch}
               onChange={(e) => setLinkPickerSearch(e.target.value)}
               autoFocus
@@ -1098,10 +837,10 @@ export default function StrategyList({
                 return (
                   <div className="g-kpi-link-empty">
                     {q
-                      ? "無符合結果"
+                      ? "找不到符合的結果"
                       : gkType === "progress"
-                        ? "此目標下尚無進度型 KPI 可連結"
-                        : "此目標下尚無 M 的 KPI 可連結"}
+                        ? "沒有可連結的進度型 KPI 度量指標"
+                        : "沒有可連結的數值型 M KPI 度量指標"}
                   </div>
                 );
               return rows.map(({ s, si, m, k }) => {
@@ -1128,18 +867,18 @@ export default function StrategyList({
                     />
                     <span className="g-kpi-link-s">S{si + 1}</span>
                     <span className="g-kpi-link-m">
-                      {m.rawText.substring(0, 20) || "（無名稱）"}
+                      {m.rawText.substring(0, 20) || ""}
                     </span>
                     <span className="g-kpi-link-k">{k.label}</span>
                     <span className="g-kpi-link-val">
-                      實
+                      實際{" "}
                       {k.actual !== null && k.actual !== undefined
                         ? k.actual.toLocaleString()
-                        : "—"}
-                      {" / 標"}
+                        : "--"}
+                      {" / "}
                       {k.target !== null && k.target !== undefined
                         ? k.target.toLocaleString()
-                        : "—"}
+                        : "--"}
                     </span>
                   </label>
                 );
@@ -1147,18 +886,16 @@ export default function StrategyList({
             })()}
           </div>
         )}
-        {/* 活動達標明細（pct_activity 專屬看板，永遠顯示） */}
+        {/* ???????????ct_activity ??????????????? */}
         {gkType === "pct_activity" && (
           <div className="g-kpi-activity-breakdown">
             {(gk.thresholdGoalKpiIds ?? []).length === 0 ? (
               <div className="g-kpi-activity-empty">
-                尚未選取來源，請點選上方 🎯 選取來源 勾選 GoalKPI
-                作為活動分析來源
+                尚未設定任何門檻 GoalKPI，請點擊上方「🔗 設定門檻」按鈕
               </div>
             ) : activities.length === 0 ? (
               <div className="g-kpi-activity-empty">
-                已選門檻，但門檻 GoalKPI 尚未連結任何 M KPI（請先在對應 GoalKPI
-                設定 🔗 連結）
+                所選的 GoalKPI 尚未連結任何 M KPI，請先為 GoalKPI 新增連結{" "}
               </div>
             ) : (
               <>
@@ -1170,9 +907,8 @@ export default function StrategyList({
                     )
                   }
                 >
-                  {showActivityBreakdown === gk.id ? "▲" : "▼"} 活動明細（
-                  {activities.filter((a) => a.met).length} ✅ /{" "}
-                  {activities.filter((a) => !a.met).length} ❌）
+                  {showActivityBreakdown === gk.id ? "▲" : "▶"} 達標{" "}
+                  {activities.filter((a) => !a.met).length} 未達標
                 </button>
                 {showActivityBreakdown === gk.id && (
                   <div className="g-kpi-activity-list">
@@ -1185,22 +921,19 @@ export default function StrategyList({
                         >
                           <span className="g-kpi-activity-icon">✅</span>
                           <span className="g-kpi-activity-text">
-                            {(a.measureRawText || "（無名稱）").substring(
-                              0,
-                              28,
-                            )}
+                            {(a.measureRawText || "").substring(0, 28)}
                           </span>
                           {a.isConflict && (
                             <span className="g-pct-src-badge">
-                              依「{a.chosenSrcLabel}」
+                              {a.chosenSrcLabel}{" "}
                             </span>
                           )}
                           <span className="g-kpi-activity-detail">
                             {a.displayRate !== null
                               ? `${a.displayRate.toFixed(1)}%`
-                              : "—"}
+                              : "--"}
                             {" / 目標 "}
-                            {a.chosenTarget ?? "—"}%
+                            {a.chosenTarget !== null ? a.chosenTarget : "--"}%
                           </span>
                         </div>
                       ))}
@@ -1213,22 +946,19 @@ export default function StrategyList({
                         >
                           <span className="g-kpi-activity-icon">❌</span>
                           <span className="g-kpi-activity-text">
-                            {(a.measureRawText || "（無名稱）").substring(
-                              0,
-                              28,
-                            )}
+                            {(a.measureRawText || "").substring(0, 28)}
                           </span>
                           {a.isConflict && (
                             <span className="g-pct-src-badge">
-                              依「{a.chosenSrcLabel}」
+                              {a.chosenSrcLabel}{" "}
                             </span>
                           )}
                           <span className="g-kpi-activity-detail">
                             {a.displayRate !== null
                               ? `${a.displayRate.toFixed(1)}%`
-                              : "—"}
+                              : "--"}
                             {" / 目標 "}
-                            {a.chosenTarget ?? "—"}%
+                            {a.chosenTarget !== null ? a.chosenTarget : "--"}%
                           </span>
                         </div>
                       ))}
@@ -1288,11 +1018,11 @@ export default function StrategyList({
                 setTitleText(goal.title);
                 setEditingGoalTitle(true);
               }}
-              title="雙擊編輯目標說明"
+              title="雙擊可編輯目標標題"
             >
               {goal.title || (
                 <span style={{ color: "#6b7280", fontStyle: "italic" }}>
-                  雙擊輸入目標說明…
+                  （尚未輸入標題）{" "}
                 </span>
               )}
             </h1>
@@ -1300,22 +1030,22 @@ export default function StrategyList({
           <button
             className="detail-del-btn"
             onClick={() => onDeleteGoal(goal.id)}
-            title="刪除目標"
+            title="刪除此目標"
             style={{ marginLeft: "auto" }}
           >
             🗑 刪除
           </button>
         </div>
 
-        {/* 整體達標狀況專屬看板（pct_activity，顯示在 KPI 看板上方） */}
+        {/* ?????????????????pct_activity?????? KPI ????????*/}
         <div className="g-pct-panel">
           <div className="g-pct-panel-header">
-            <span className="g-pct-panel-title">🎯 整體達標狀況</span>
+            <span className="g-pct-panel-title">活動達標率</span>
           </div>
           <div className="g-pct-panel-cards">
             {activityKpis.length === 0 && editingPctId !== "new" && (
               <div className="g-kpi-empty">
-                尚未設定整體達標狀況，點選下方「＋ 新增」開始
+                尚未建立活動達標率 KPI，點擊下方按鈕新增{" "}
               </div>
             )}
             {activityKpis.map(renderGkCard)}
@@ -1327,7 +1057,7 @@ export default function StrategyList({
                   setPctForm({ label: "", target: "60" });
                 }}
               >
-                ＋ 新增整體達標狀況
+                ＋ 新增活動達標率 KPI{" "}
               </button>
             )}
             {editingPctId === "new" && (
@@ -1335,7 +1065,7 @@ export default function StrategyList({
                 <div className="g-kpi-form-row">
                   <input
                     className="g-kpi-input"
-                    placeholder="名稱（如：整體活動達標狀況）"
+                    placeholder="請輸入活動達標率 KPI 名稱"
                     value={pctForm.label}
                     onChange={(e) =>
                       setPctForm({ ...pctForm, label: e.target.value })
@@ -1346,7 +1076,7 @@ export default function StrategyList({
                     <input
                       className="g-kpi-input g-kpi-target"
                       type="number"
-                      placeholder="達標 %"
+                      placeholder="目標 %"
                       value={pctForm.target}
                       onChange={(e) =>
                         setPctForm({ ...pctForm, target: e.target.value })
@@ -1355,7 +1085,7 @@ export default function StrategyList({
                     <span className="g-kpi-target-unit">%</span>
                   </div>
                   <button className="g-kpi-btn-save" onClick={savePct}>
-                    新增
+                    儲存
                   </button>
                   <button
                     className="g-kpi-btn-cancel"
@@ -1365,25 +1095,23 @@ export default function StrategyList({
                   </button>
                 </div>
                 <div className="g-pct-form-hint">
-                  建立後，點卡片上的「🎯 選取來源」，從清單中勾選 GoalKPI
-                  作為活動來源。系統會統計其中有多少個 M KPI「實際對比結果 ≥
-                  自身目標」，并計算占所選活動的 %。達到此處設定的 %
-                  門檻即為達標。
+                  此 KPI 根據設定的 GoalKPI 門檻來計算活動達標率，M KPI 度量指標
+                  需達到目標 %，活動 % 才算達標{" "}
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* G KPI 看板 */}
+        {/* G KPI ??? */}
         <div className="g-kpi-panel">
           <div className="g-kpi-panel-header">
-            <span className="g-kpi-panel-title">📊 目標 KPI 看板</span>
+            <span className="g-kpi-panel-title">目標 KPI 清單</span>
             <button
               className="g-kpi-toggle"
               onClick={() => setShowKpiPanel((v) => !v)}
             >
-              {showKpiPanel ? "收起 ▲" : "展開 ▼"}
+              {showKpiPanel ? "▲ 收起" : "▽ 展開"}
             </button>
           </div>
 
@@ -1391,7 +1119,7 @@ export default function StrategyList({
             <div
               className={`g-kpi-headline-area${showKpiPanel ? "" : " g-kpi-headline-area--collapsed"}`}
             >
-              <span className="g-kpi-headline-label">⭐ 主要指標</span>
+              <span className="g-kpi-headline-label">主要指標</span>
               {headlineKpis.map(renderGkCard)}
             </div>
           )}
@@ -1401,8 +1129,8 @@ export default function StrategyList({
               {detailKpis.length === 0 && (
                 <div className="g-kpi-empty">
                   {otherKpis.length === 0
-                    ? "尚未設定 KPI，點選下方「＋ 新增指標」開始"
-                    : "所有 KPI 已設為主要指標，可點選 ★ 解除"}
+                    ? "找不到符合的進度型 KPI 度量指標"
+                    : "尚未設定 KPI，點擊「＋新增 KPI」按鈕新增"}
                 </div>
               )}
               {detailKpis.map(renderGkCard)}
@@ -1410,7 +1138,7 @@ export default function StrategyList({
                 <div className="g-kpi-form-row">
                   <input
                     className="g-kpi-input"
-                    placeholder="指標名稱（如：整體綁定率）"
+                    placeholder="KPI 名稱"
                     value={kpiForm.label}
                     onChange={(e) =>
                       setKpiForm({ ...kpiForm, label: e.target.value })
@@ -1447,8 +1175,8 @@ export default function StrategyList({
                       })
                     }
                   >
-                    <option value="value">量化值</option>
-                    <option value="progress">進度完成率</option>
+                    <option value="value">數值</option>
+                    <option value="progress">進度</option>
                   </select>
                   {kpiForm.type === "value" && (
                     <select
@@ -1481,10 +1209,10 @@ export default function StrategyList({
                         setKpiForm({ ...kpiForm, isHeadline: e.target.checked })
                       }
                     />
-                    主要
+                    主要 KPI
                   </label>
                   <button className="g-kpi-btn-save" onClick={saveKpi}>
-                    新增
+                    儲存
                   </button>
                   <button
                     className="g-kpi-btn-cancel"
@@ -1509,7 +1237,7 @@ export default function StrategyList({
                     });
                   }}
                 >
-                  ＋ 新增指標
+                  ＋ 新增 KPI
                 </button>
               )}
             </div>
@@ -1523,7 +1251,7 @@ export default function StrategyList({
               value={filterOwner}
               onChange={(e) => onFilterOwner(e.target.value)}
             >
-              <option value="all">全部負責單位</option>
+              <option value="all">全部負責人</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.name}>
                   {t.name}
@@ -1532,7 +1260,7 @@ export default function StrategyList({
             </select>
           </div>
           <button className="sl-add-strategy" onClick={onAddStrategy}>
-            ＋ 新增策略（S）
+            ＋ 新增策略{" "}
           </button>
         </div>
       </div>
@@ -1548,7 +1276,7 @@ export default function StrategyList({
       <div className="strategy-rows">
         {strategies.length === 0 && (
           <div className="empty-state small">
-            <p>沒有符合篩選條件的策略，或尚未新增策略</p>
+            <p>目前此目標下沒有任何策略，請點擊「新增策略」按鈕開始。</p>
           </div>
         )}
         {strategies.map((s, i) => (
@@ -1558,6 +1286,7 @@ export default function StrategyList({
             index={i}
             selected={s.id === selectedStrategyId}
             onClick={() => onSelectStrategy(s.id)}
+            onSelectStrategy={onSelectStrategy}
             warnDaysBefore={warnDaysBefore}
           />
         ))}
