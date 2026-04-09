@@ -7,6 +7,7 @@ import type {
   Department,
   PeriodData,
   Team,
+  Measure,
 } from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
@@ -47,6 +48,7 @@ import StrategyList from "./components/StrategyList";
 import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
+import ActivityPage from "./components/ActivityPage";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
@@ -124,6 +126,7 @@ export default function App() {
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
+  const [showActivityPage, setShowActivityPage] = useState(false);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
   const fsSupported = isFileSystemAccessSupported();
@@ -599,6 +602,13 @@ export default function App() {
   const teams: Team[] = workspace.teams ?? [];
   const allMembers = teams.flatMap((t) => t.members);
 
+  // Stable reference: only changes when workspace.teams or activeDeptId changes
+  const deptScopedTeams = useMemo(
+    () => teams.filter((t) => !t.deptId || t.deptId === activeDeptId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workspace.teams, activeDeptId],
+  );
+
   // ─── Undo / Redo history ──────────────────────────────────────────────
   const MAX_HISTORY = 50;
   const historyRef = useRef<string[]>([JSON.stringify(getInitialWorkspace())]);
@@ -711,6 +721,17 @@ export default function App() {
       updateWorkspace({ ...workspace, teams: stamped });
     },
     [workspace, updateWorkspace],
+  );
+
+  // Dept-scoped version: merges updated teams back with other-dept teams
+  const handleUpdateTeamsForDept = useCallback(
+    (nextTeams: Team[]) => {
+      const otherDeptTeams = (workspace.teams ?? []).filter(
+        (t) => t.deptId && t.deptId !== activeDeptId,
+      );
+      handleUpdateTeams([...otherDeptTeams, ...nextTeams]);
+    },
+    [workspace.teams, activeDeptId, handleUpdateTeams],
   );
 
   const handleUpdateWarnDaysBefore = useCallback(
@@ -1042,6 +1063,195 @@ export default function App() {
       });
     },
     [data, selectedGoalId, updateData],
+  );
+
+  // ── Activity CRUD（跨部門直接操作）────────────────────────────────────────
+
+  const handleUpdateMeasureDirect = useCallback(
+    (
+      deptId: string,
+      periodId: string,
+      goalId: string,
+      stratId: string,
+      measure: Measure,
+    ) => {
+      const stamped: Measure = {
+        ...measure,
+        updatedAt: new Date().toISOString(),
+      };
+      updateWorkspace({
+        ...workspace,
+        departments: workspace.departments.map((d) =>
+          d.id !== deptId
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== periodId
+                    ? p
+                    : {
+                        ...p,
+                        ogsm: recompute({
+                          ...p.ogsm,
+                          goals: p.ogsm.goals.map((g) =>
+                            g.id !== goalId
+                              ? g
+                              : {
+                                  ...g,
+                                  strategies: g.strategies.map((s) =>
+                                    s.id !== stratId
+                                      ? s
+                                      : {
+                                          ...s,
+                                          measures: s.measures.map((m) =>
+                                            m.id !== stamped.id ? m : stamped,
+                                          ),
+                                          updatedAt: new Date().toISOString(),
+                                        },
+                                  ),
+                                },
+                          ),
+                        }),
+                      },
+                ),
+              },
+        ),
+      });
+    },
+    [workspace, updateWorkspace],
+  );
+
+  const handleDeleteMeasureDirect = useCallback(
+    (
+      deptId: string,
+      periodId: string,
+      goalId: string,
+      stratId: string,
+      measureId: string,
+    ) => {
+      if (!window.confirm("確定要刪除這個活動嗎？")) return;
+      updateWorkspace({
+        ...workspace,
+        deletedIds: [...(workspace.deletedIds ?? []), measureId],
+        departments: workspace.departments.map((d) =>
+          d.id !== deptId
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== periodId
+                    ? p
+                    : {
+                        ...p,
+                        ogsm: recompute({
+                          ...p.ogsm,
+                          goals: p.ogsm.goals.map((g) =>
+                            g.id !== goalId
+                              ? g
+                              : {
+                                  ...g,
+                                  strategies: g.strategies.map((s) =>
+                                    s.id !== stratId
+                                      ? s
+                                      : {
+                                          ...s,
+                                          measures: s.measures.filter(
+                                            (m) => m.id !== measureId,
+                                          ),
+                                          actionPlans: s.actionPlans.map(
+                                            (ap) => ({
+                                              ...ap,
+                                              items: ap.items.map((item) =>
+                                                item.linkedMeasureId ===
+                                                measureId
+                                                  ? {
+                                                      ...item,
+                                                      linkedMeasureId: null,
+                                                    }
+                                                  : item,
+                                              ),
+                                            }),
+                                          ),
+                                          updatedAt: new Date().toISOString(),
+                                        },
+                                  ),
+                                },
+                          ),
+                        }),
+                      },
+                ),
+              },
+        ),
+      });
+    },
+    [workspace, updateWorkspace],
+  );
+
+  const handleAddMeasureDirect = useCallback(
+    (
+      deptId: string,
+      periodId: string,
+      goalId: string,
+      stratId: string,
+      measure: Measure,
+    ) => {
+      updateWorkspace({
+        ...workspace,
+        departments: workspace.departments.map((d) =>
+          d.id !== deptId
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== periodId
+                    ? p
+                    : {
+                        ...p,
+                        ogsm: recompute({
+                          ...p.ogsm,
+                          goals: p.ogsm.goals.map((g) =>
+                            g.id !== goalId
+                              ? g
+                              : {
+                                  ...g,
+                                  strategies: g.strategies.map((s) =>
+                                    s.id !== stratId
+                                      ? s
+                                      : {
+                                          ...s,
+                                          measures: [...s.measures, measure],
+                                          updatedAt: new Date().toISOString(),
+                                        },
+                                  ),
+                                },
+                          ),
+                        }),
+                      },
+                ),
+              },
+        ),
+      });
+    },
+    [workspace, updateWorkspace],
+  );
+
+  const handleJumpToMeasure = useCallback(
+    (
+      deptId: string,
+      periodId: string,
+      goalId: string,
+      stratId: string,
+      measureId: string,
+    ) => {
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setActiveDeptId(deptId);
+      setActivePeriodId(periodId);
+      setSelectedGoalId(goalId);
+      setSelectedStrategyId(stratId);
+      setPendingDetailNav({ tab: "plans", measureId });
+    },
+    [],
   );
 
   const handleAddStrategy = useCallback(() => {
@@ -1470,6 +1680,7 @@ export default function App() {
           data={data}
           selectedGoalId={selectedGoalId}
           selectedStrategyId={selectedStrategyId}
+          isActivityPage={showActivityPage}
           onSwitchDept={handleSwitchDept}
           onAddDept={handleAddDept}
           onRenameDept={handleRenameDept}
@@ -1482,21 +1693,38 @@ export default function App() {
             setSelectedGoalId(id);
             setSelectedStrategyId(null);
             setShowDeptSettings(false);
+            setShowActivityPage(false);
           }}
           onSelectStrategy={setSelectedStrategyId}
           onSelectOverview={() => {
             setSelectedGoalId(null);
             setSelectedStrategyId(null);
             setShowDeptSettings(false);
+            setShowActivityPage(false);
+          }}
+          onSelectActivities={() => {
+            setShowActivityPage(true);
+            setShowDeptSettings(false);
+            setSelectedGoalId(null);
+            setSelectedStrategyId(null);
           }}
         />
         {showDeptSettings ? (
           <DeptSettingsPage
-            key={activePeriod?.id}
+            key={activeDeptId}
             data={data}
-            teams={teams}
-            onUpdateTeams={handleUpdateTeams}
+            teams={deptScopedTeams}
+            deptId={activeDeptId}
+            onUpdateTeams={handleUpdateTeamsForDept}
             onUpdateData={updateData}
+          />
+        ) : showActivityPage ? (
+          <ActivityPage
+            workspace={workspace}
+            onUpdateMeasure={handleUpdateMeasureDirect}
+            onDeleteMeasure={handleDeleteMeasureDirect}
+            onAddMeasure={handleAddMeasureDirect}
+            onJumpToMeasure={handleJumpToMeasure}
           />
         ) : selectedGoalId === null ? (
           <OverviewPage

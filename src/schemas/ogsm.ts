@@ -65,6 +65,15 @@ export const ActionPlanSchema = z.object({
   items: z.array(PlanItemSchema),
 });
 
+// ── AssistUnit ────────────────────────────────────────────────────────────────
+
+/** 協助單位：可指向部門（dept）或小組（team） */
+export const AssistUnitSchema = z.object({
+  type: z.enum(["dept", "team"]),
+  id: z.string(),
+  name: z.string(),
+});
+
 // ── Measure ───────────────────────────────────────────────────────────────────
 
 export const MeasureStatusSchema = z.enum([
@@ -86,6 +95,10 @@ export const MeasureSchema = z.object({
   personDays: z.number().optional(),
   startDate: IsoDate, // 活動起始日
   endDate: IsoDate, // 活動結束日
+  description: z.string().optional(), // 活動說明
+  assistUnits: z.array(AssistUnitSchema).optional(), // 協助單位
+  prerequisites: z.array(z.string()).optional(), // 前置依賴（Measure id[]）
+  relatedActivities: z.array(z.string()).optional(), // 關聯活動（Measure id[]）
 });
 
 // ── Strategy ──────────────────────────────────────────────────────────────────
@@ -195,6 +208,7 @@ export const TeamMemberSchema = z.object({
 export const TeamSchema = z.object({
   id: z.string(),
   name: z.string(),
+  deptId: z.string().optional(), // 所屬部門
   members: z.array(TeamMemberSchema),
   updatedAt: z.string().optional(),
 });
@@ -214,6 +228,7 @@ export const WorkspaceDataSchema = z.object({
 // 這些 type 由 schema 推導，與 src/types/ogsm.ts re-export 的保持一致
 
 export type KPI = z.infer<typeof KPISchema>;
+export type AssistUnit = z.infer<typeof AssistUnitSchema>;
 export type PlanItem = z.infer<typeof PlanItemSchema>;
 export type ActionPlan = z.infer<typeof ActionPlanSchema>;
 export type MeasureStatus = z.infer<typeof MeasureStatusSchema>;

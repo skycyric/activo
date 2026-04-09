@@ -8,6 +8,7 @@ interface Props {
   data: OGSMData;
   selectedGoalId: string | null;
   selectedStrategyId: string | null;
+  isActivityPage: boolean;
   onSwitchDept: (id: string) => void;
   onAddDept: () => void;
   onRenameDept: (id: string, name: string) => void;
@@ -24,6 +25,7 @@ interface Props {
   onSelectGoal: (id: string) => void;
   onSelectStrategy: (id: string) => void;
   onSelectOverview: () => void;
+  onSelectActivities: () => void;
 }
 
 export default function Sidebar({
@@ -33,6 +35,7 @@ export default function Sidebar({
   data,
   selectedGoalId,
   selectedStrategyId,
+  isActivityPage,
   onSwitchDept,
   onAddDept,
   onRenameDept,
@@ -44,8 +47,9 @@ export default function Sidebar({
   onSelectGoal,
   onSelectStrategy,
   onSelectOverview,
+  onSelectActivities,
 }: Props) {
-  const isOverview = selectedGoalId === null;
+  const isOverview = selectedGoalId === null && !isActivityPage;
   const activeDept = workspace.departments.find((d) => d.id === activeDeptId);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -148,6 +152,14 @@ export default function Sidebar({
 
   return (
     <aside className="sidebar" style={{ width: sidebarWidth }}>
+      {/* Activity Overview shortcut – top of sidebar */}
+      <button
+        className={`sidebar-activity-btn${isActivityPage ? " active" : ""}`}
+        onClick={onSelectActivities}
+      >
+        <span className="sidebar-activity-icon">📋</span>
+        <span className="sidebar-activity-label">活動總覽</span>
+      </button>
       {/* Department + Period selector */}
       <div className="dept-selector">
         <div className="dept-header-row">

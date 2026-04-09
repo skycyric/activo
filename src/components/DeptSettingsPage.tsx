@@ -5,6 +5,7 @@ import { genId } from "../utils/csvParser";
 interface Props {
   data: OGSMData;
   teams: Team[];
+  deptId: string;
   onUpdateTeams: (teams: Team[]) => void;
   onUpdateData: (data: OGSMData) => void;
 }
@@ -12,6 +13,7 @@ interface Props {
 export default function DeptSettingsPage({
   data,
   teams,
+  deptId,
   onUpdateTeams,
   onUpdateData,
 }: Props) {
@@ -76,6 +78,7 @@ export default function DeptSettingsPage({
     const cleaned = teamDraft
       .map((t) => ({
         ...t,
+        deptId,
         name: t.name.trim(),
         members: t.members.filter((m) => m.name.trim()),
       }))
@@ -213,6 +216,7 @@ export default function DeptSettingsPage({
                         onClick={(e) => e.stopPropagation()}
                         placeholder="團隊名稱（如：George team）"
                       />
+
                       <span className="team-member-count">
                         {team.members.length} 人
                       </span>
