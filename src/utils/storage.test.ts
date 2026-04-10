@@ -677,8 +677,7 @@ describe("migrateToActivityFirst", () => {
     });
 
     migrateToActivityFirst(ws);
-    const strat =
-      ws.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    const strat = ws.departments[0].periods[0].ogsm.goals[0].strategies[0];
     expect(strat.measures).toHaveLength(1);
   });
 
@@ -702,7 +701,9 @@ describe("migrateToActivityFirst", () => {
                   makeGoal([
                     makeStrategy({
                       id: "strat1",
-                      measures: [makeMeasure({ id: "msr99", rawText: "自動遷移活動" })],
+                      measures: [
+                        makeMeasure({ id: "msr99", rawText: "自動遷移活動" }),
+                      ],
                     }),
                   ]),
                 ],

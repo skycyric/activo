@@ -101,7 +101,11 @@ export default function ActivityPage({
       const isReadOnly = readOnlyDeptIds?.includes(dept.id) ?? false;
 
       // 建立 OGSM 上下文查找表："periodId|goalId|strategyId" → 顯示標籤
-      type OgsmCtx = { periodLabel: string; goalTitle: string; strategyTitle: string };
+      type OgsmCtx = {
+        periodLabel: string;
+        goalTitle: string;
+        strategyTitle: string;
+      };
       const ogsmCtx = new Map<string, OgsmCtx>();
       for (const period of dept.periods) {
         const periodLabel = `${period.year} ${period.halfYear}`;

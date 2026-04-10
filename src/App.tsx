@@ -8,6 +8,7 @@ import type {
   PeriodData,
   Team,
   Measure,
+  DeptActivity,
 } from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
@@ -1749,6 +1750,16 @@ export default function App() {
     });
   }, [selectedGoal, filterOwner]);
 
+  const linkedDeptActivities = useMemo((): DeptActivity[] => {
+    if (!selectedStrategyId) return [];
+    const dept = effectiveWorkspace.departments.find(
+      (d) => d.id === activeDeptId,
+    );
+    return (dept?.activities ?? []).filter(
+      (a) => a.ogsmLink?.strategyId === selectedStrategyId,
+    );
+  }, [effectiveWorkspace, activeDeptId, selectedStrategyId]);
+
   const handleUpdateStrategy = useCallback(
     (updated: Strategy) => {
       const stamped: Strategy = {
@@ -1997,6 +2008,45 @@ export default function App() {
       updateWorkspace,
       isMultiFileMode,
       deptFiles,
+      updateDeptWorkspace,
+    ],
+  );
+
+  const handleToggleExcludeFromOgsm = useCallback(
+    (activityId: string, exclude: boolean) => {
+      const patchDepts = (deps: typeof workspace.departments) =>
+        deps.map((d) =>
+          d.id !== activeDeptId
+            ? d
+            : {
+                ...d,
+                activities: (d.activities ?? []).map((a) =>
+                  a.id !== activityId ? a : { ...a, excludeFromOgsm: exclude },
+                ),
+              },
+        );
+      if (isMultiFileMode) {
+        const entry = deptFiles.find(
+          (f) => f.workspace.departments[0]?.id === activeDeptId,
+        );
+        if (!entry || entry.isReadOnly) return;
+        updateDeptWorkspace(activeDeptId, {
+          ...entry.workspace,
+          departments: patchDepts(entry.workspace.departments),
+        });
+      } else {
+        updateWorkspace({
+          ...workspace,
+          departments: patchDepts(workspace.departments),
+        });
+      }
+    },
+    [
+      activeDeptId,
+      isMultiFileMode,
+      deptFiles,
+      workspace,
+      updateWorkspace,
       updateDeptWorkspace,
     ],
   );
@@ -2839,6 +2889,8 @@ export default function App() {
                 initialWarnFilter={pendingDetailNav?.warnFilter}
                 initialMeasureId={pendingDetailNav?.measureId}
                 isReadOnly={isActiveDeptReadOnly}
+                linkedDeptActivities={linkedDeptActivities}
+                onToggleExcludeFromOgsm={handleToggleExcludeFromOgsm}
               />
             )}
           </>
