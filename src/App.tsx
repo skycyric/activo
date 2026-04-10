@@ -150,6 +150,7 @@ export default function App() {
   const [showDeptSettings, setShowDeptSettings] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
   const [showHomePage, setShowHomePage] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
   const fsSupported = isFileSystemAccessSupported();
@@ -2396,172 +2397,117 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-brand">
+        <div className="header-left">
+          <div className="header-menu-wrap">
+            <button
+              className="header-menu-btn"
+              onClick={() => setMenuOpen((v) => !v)}
+              title="主選單"
+            >
+              ☰
+            </button>
+            {menuOpen && (
+              <div
+                className="header-menu-dropdown"
+                onMouseLeave={() => setMenuOpen(false)}
+              >
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShowHomePage(true);
+                    setShowActivityPage(false);
+                    setShowDeptSettings(false);
+                  }}
+                >
+                  🏠 首頁
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShowHomePage(false);
+                    setShowActivityPage(false);
+                    setShowDeptSettings(false);
+                  }}
+                >
+                  📊 OGSM 儀表板
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShowActivityPage(true);
+                    setShowHomePage(false);
+                    setShowDeptSettings(false);
+                  }}
+                >
+                  📋 活動管理
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShowDeptSettings(true);
+                    setShowHomePage(false);
+                    setShowActivityPage(false);
+                    setSelectedGoalId(null);
+                    setSelectedStrategyId(null);
+                  }}
+                >
+                  ⚙️ 部門設定
+                </button>
+              </div>
+            )}
+          </div>
           <span className="header-logo">A</span>
           <span className="header-title">Activo</span>
-          {showHomePage || showActivityPage ? (
-            <select
-              className="header-dept-select"
-              value={activeDeptId}
-              onChange={(e) => handleSwitchDept(e.target.value)}
-            >
-              {effectiveWorkspace.departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="header-period">
-              {activeDept?.name ?? ""} · {data.period}
-            </span>
-          )}
         </div>
-        {fsSupported && !isMultiFileMode && (
-          <div
-            className={`sp-sync-badge sp-sync-${syncStatus}`}
-            onClick={syncStatus === "pending" ? handleReauthorize : undefined}
-            style={syncStatus === "pending" ? { cursor: "pointer" } : undefined}
-            title={
-              syncStatus === "pending" ? "點此授權讀取資料檔案" : undefined
-            }
+
+        <div className="header-toolbar">
+          <select
+            className="header-dept-select"
+            value={activeDeptId}
+            onChange={(e) => handleSwitchDept(e.target.value)}
           >
-            {syncStatus === "saving" && (
-              <>
-                <span className="sp-spin">⟳</span> 儲存中
-              </>
-            )}
-            {syncStatus === "saved" && "✓ 已儲存"}
-            {syncStatus === "unlinked" && "◌ 未連結"}
-            {syncStatus === "pending" && "🔐 點任意處啟用同步"}
-            {syncStatus === "error" && "✕ 寫入失敗"}
-          </div>
-        )}
-        <div className="header-actions">
-          {isActiveDeptReadOnly && (
-            <span
-              className="readonly-badge"
-              title="此部門為唯讀（OneDrive 權限不足）"
-            >
-              👁 檢視模式
-            </span>
-          )}
-          {isMultiFileMode ? (
-            <>
-              <button
-                className={
-                  deptFiles.some((f) => f.isDirty && !f.isReadOnly)
-                    ? "btn-save-dirty"
-                    : "btn-secondary"
-                }
-                onClick={() => saveDeptFile(activeDeptId)}
-                disabled={
-                  isActiveDeptReadOnly ||
-                  !(
-                    deptFiles.find(
-                      (f) => f.workspace.departments[0]?.id === activeDeptId,
-                    )?.isDirty ?? false
-                  )
-                }
-                title={
-                  isActiveDeptReadOnly ? "唯讀部門無法存檔" : "儲存目前部門"
-                }
-              >
-                {isActiveDeptReadOnly
-                  ? "👁 唯讀"
-                  : deptFiles.find(
-                        (f) => f.workspace.departments[0]?.id === activeDeptId,
-                      )?.isDirty
-                    ? "💾 存檔"
-                    : "✓ 已儲存"}
-              </button>
+            {effectiveWorkspace.departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+
+          {fsSupported &&
+            (isMultiFileMode ? (
               <button
                 className="btn-secondary"
                 onClick={handleUnlinkRootFolder}
                 title="中斷根資料夾連結"
               >
-                🗂 {deptFiles.length} 個部門已連結
+                🗂 {deptFiles.length} 個部門
               </button>
+            ) : (
               <button
                 className="btn-secondary"
-                onClick={() =>
-                  rootDirHandleRef.current &&
-                  loadRootFolderIntoState(rootDirHandleRef.current)
-                }
-                title="重新掃描根資料夾"
+                onClick={handleLinkRootFolder}
+                title="選擇 OGSM 根資料夾，自動載入每個子資料夾的部門 JSON"
               >
-                🔄 重新載入
+                🗂 連結根目錄
               </button>
-            </>
-          ) : (
-            fsSupported &&
-            (fileHandleRef.current ? (
-              <>
-                <button
-                  className={isDirty ? "btn-save-dirty" : "btn-secondary"}
-                  onClick={() => fileSaveNow(workspace)}
-                  disabled={syncStatus === "saving" || !isDirty}
-                  title={
-                    isDirty ? "有未儲存的變更，點擊儲檔" : "無變更需要儲存"
-                  }
-                >
-                  {syncStatus === "saving"
-                    ? "儲存中…"
-                    : isDirty
-                      ? "💾 存檔"
-                      : "✓ 已儲存"}
-                </button>
-                <button className="btn-secondary" onClick={handleUnlinkFile}>
-                  🔗 已連結檔案
-                </button>
-                {dirHandleRef.current ? (
-                  <button
-                    className="btn-secondary"
-                    onClick={handleUnlinkFolder}
-                    title="進行中：每 30 秒自動扫描 OneDrive 副本"
-                  >
-                    🔍 副本掃描中
-                  </button>
-                ) : (
-                  <button
-                    className="btn-secondary"
-                    onClick={handleLinkFolder}
-                    title="選擇資料檔剀在的資料夾，啟用 OneDrive 副本自動偵測"
-                  >
-                    🔍 啟用副本偵測
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                <button
-                  className="btn-secondary"
-                  onClick={handleLinkRootFolder}
-                  title="選擇 OGSM 根資料夾，自動載入每個子資料夾的部門 JSON"
-                >
-                  🗂 連結根資料夾
-                </button>
-              </>
-            ))
-          )}
+            ))}
+
           <button
             className="btn-secondary"
             onClick={() => exportWorkspaceJSON(effectiveWorkspace)}
           >
             💾 備份
           </button>
-          {!isMultiFileMode && effectiveWorkspace.departments.length > 1 && (
-            <button
-              className="btn-secondary"
-              onClick={handleSplitDepts}
-              title="將每個部門拆分為獨立 JSON 檔案下載（多部門分檔模式前置作業）"
-            >
-              📤 拆分部門
-            </button>
-          )}
+
           <label
             className="btn-secondary"
             style={{ cursor: importing ? "wait" : "pointer" }}
           >
-            {importing ? "匯入中…" : "📂 還原/匯入"}
+            {importing ? "匯入中…" : "📂 還原"}
             <input
               type="file"
               accept=".csv,.json"
@@ -2569,16 +2515,6 @@ export default function App() {
               onChange={handleImport}
             />
           </label>
-          <button
-            className={`btn-secondary${showDeptSettings ? " active" : ""}`}
-            onClick={() => {
-              setShowDeptSettings((v) => !v);
-              setSelectedGoalId(null);
-              setSelectedStrategyId(null);
-            }}
-          >
-            ⚙️ 部門設定
-          </button>
         </div>
       </header>
 
@@ -2771,72 +2707,15 @@ export default function App() {
 
       <div className="app-body">
         {!showHomePage && !showActivityPage && (
-        <Sidebar
-          workspace={effectiveWorkspace}
-          activeDeptId={activeDept?.id ?? ""}
-          activePeriodId={activePeriod?.id ?? ""}
-          data={data}
-          selectedGoalId={selectedGoalId}
-          selectedStrategyId={selectedStrategyId}
-          isActivityPage={showActivityPage}
-          isHomePage={showHomePage}
-          readOnlyDeptIds={
-            isMultiFileMode
-              ? (deptFiles
-                  .filter((f) => f.isReadOnly)
-                  .map((f) => f.workspace.departments[0]?.id)
-                  .filter(Boolean) as string[])
-              : undefined
-          }
-          onSwitchDept={handleSwitchDept}
-          onAddDept={handleAddDept}
-          showAddDeptButton={!isMultiFileMode || isAdmin}
-          onRenameDept={handleRenameDept}
-          onDeleteDept={handleDeleteDept}
-          onSwitchPeriod={handleSwitchPeriod}
-          onAddPeriod={handleAddPeriod}
-          onCopyPeriod={handleCopyPeriod}
-          onDeletePeriod={handleDeletePeriod}
-          onSelectGoal={(id) => {
-            setSelectedGoalId(id);
-            setSelectedStrategyId(null);
-            setShowDeptSettings(false);
-            setShowActivityPage(false);
-            setShowHomePage(false);
-          }}
-          onSelectStrategy={setSelectedStrategyId}
-          onSelectOverview={() => {
-            setSelectedGoalId(null);
-            setSelectedStrategyId(null);
-            setShowDeptSettings(false);
-            setShowActivityPage(false);
-            setShowHomePage(false);
-          }}
-          onSelectActivities={() => {
-            setShowActivityPage(true);
-            setShowDeptSettings(false);
-            setShowHomePage(false);
-            setSelectedGoalId(null);
-            setSelectedStrategyId(null);
-          }}
-          onSelectHome={() => {
-            setShowHomePage(true);
-            setShowActivityPage(false);
-            setShowDeptSettings(false);
-            setSelectedGoalId(null);
-            setSelectedStrategyId(null);
-          }}
-        />
-        )}
-        {showHomePage ? (
-          <HomePage
+          <Sidebar
             workspace={effectiveWorkspace}
-            activeDeptId={activeDeptId}
-            activePeriodLabel={
-              activePeriod
-                ? `${activePeriod.year} ${activePeriod.halfYear}`
-                : data.period
-            }
+            activeDeptId={activeDept?.id ?? ""}
+            activePeriodId={activePeriod?.id ?? ""}
+            data={data}
+            selectedGoalId={selectedGoalId}
+            selectedStrategyId={selectedStrategyId}
+            isActivityPage={showActivityPage}
+            isHomePage={showHomePage}
             readOnlyDeptIds={
               isMultiFileMode
                 ? (deptFiles
@@ -2845,13 +2724,49 @@ export default function App() {
                     .filter(Boolean) as string[])
                 : undefined
             }
-            onSwitchToActivities={(deptId) => {
-              if (deptId) {
-                const dept = effectiveWorkspace.departments.find(
-                  (d) => d.id === deptId,
-                );
-                if (dept) setActiveDeptId(deptId);
-              }
+            onSwitchDept={handleSwitchDept}
+            onAddDept={handleAddDept}
+            showAddDeptButton={!isMultiFileMode || isAdmin}
+            onRenameDept={handleRenameDept}
+            onDeleteDept={handleDeleteDept}
+            onSwitchPeriod={handleSwitchPeriod}
+            onAddPeriod={handleAddPeriod}
+            onCopyPeriod={handleCopyPeriod}
+            onDeletePeriod={handleDeletePeriod}
+            onSelectGoal={(id) => {
+              setSelectedGoalId(id);
+              setSelectedStrategyId(null);
+              setShowDeptSettings(false);
+              setShowActivityPage(false);
+              setShowHomePage(false);
+            }}
+            onSelectStrategy={setSelectedStrategyId}
+            onSelectOverview={() => {
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+              setShowDeptSettings(false);
+              setShowActivityPage(false);
+              setShowHomePage(false);
+            }}
+            onSelectActivities={() => {
+              setShowActivityPage(true);
+              setShowDeptSettings(false);
+              setShowHomePage(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+            onSelectHome={() => {
+              setShowHomePage(true);
+              setShowActivityPage(false);
+              setShowDeptSettings(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+          />
+        )}
+        {showHomePage ? (
+          <HomePage
+            onSwitchToActivities={() => {
               setShowActivityPage(true);
               setShowHomePage(false);
               setShowDeptSettings(false);

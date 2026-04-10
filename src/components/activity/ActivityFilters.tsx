@@ -103,10 +103,12 @@ export default function ActivityFilters({
   // Owners from visible activities — include both a.owner and a.owners[]
   const owners = Array.from(
     new Set(
-      allActivities.flatMap((a) => [
-        a.owner ?? "",
-        ...((a as { owners?: string[] }).owners ?? []),
-      ]).filter(Boolean),
+      allActivities
+        .flatMap((a) => [
+          a.owner ?? "",
+          ...((a as { owners?: string[] }).owners ?? []),
+        ])
+        .filter(Boolean),
     ),
   ).sort();
 

@@ -359,12 +359,11 @@ export function migrateToActivityFirst(ws: WorkspaceData): boolean {
             // or items with no linkedMeasureId (they belong to the whole strategy)
             const activityPlans: ActionPlan[] = strategy.actionPlans
               .map((plan) => {
-                const relevantItems = plan.items.filter(
-                  (item) =>
-                    !item.linkedMeasureId ||
-                    !stratMeasureIds.has(item.linkedMeasureId)
-                      ? !item.linkedMeasureId // no link → include for all
-                      : item.linkedMeasureId === measure.id,
+                const relevantItems = plan.items.filter((item) =>
+                  !item.linkedMeasureId ||
+                  !stratMeasureIds.has(item.linkedMeasureId)
+                    ? !item.linkedMeasureId // no link → include for all
+                    : item.linkedMeasureId === measure.id,
                 );
                 return relevantItems.length > 0
                   ? { ...plan, items: relevantItems }
@@ -383,8 +382,7 @@ export function migrateToActivityFirst(ws: WorkspaceData): boolean {
               owners:
                 strategy.owners.length > 0 ? [...strategy.owners] : undefined,
               notes: strategy.notes || undefined,
-              actionPlans:
-                activityPlans.length > 0 ? activityPlans : undefined,
+              actionPlans: activityPlans.length > 0 ? activityPlans : undefined,
             };
             dept.activities.push(activity);
             existingIds.add(measure.id);
