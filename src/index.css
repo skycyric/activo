@@ -74,8 +74,18 @@ body,
   gap: 10px;
 }
 .header-logo {
-  font-size: 20px;
-  color: var(--accent);
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 7px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: -1px;
+  flex-shrink: 0;
 }
 .header-title {
   font-size: 16px;

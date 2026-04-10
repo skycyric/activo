@@ -413,7 +413,11 @@ function fieldMergeGoal(
     if (isEmpty(lg.fullText) && !isEmpty(rg.fullText)) {
       merged.fullText = rg.fullText;
       changed = true;
-    } else if (!isEmpty(lg.fullText) && !isEmpty(rg.fullText) && winner === rg) {
+    } else if (
+      !isEmpty(lg.fullText) &&
+      !isEmpty(rg.fullText) &&
+      winner === rg
+    ) {
       merged.fullText = rg.fullText;
       changed = true;
     }

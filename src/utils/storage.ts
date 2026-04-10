@@ -332,6 +332,10 @@ export function migrateOwnerToOwners(ws: WorkspaceData): boolean {
  * 2. Strategy.measures[] 保留不動（舊 UI 仍可讀）
  * 3. 每筆 DeptActivity 帶有 ogsmLink 指回來源 Strategy
  * 4. excludeFromOgsm 預設 false（預設全部計入 OGSM）
+ * 5. owners / notes 從 Strategy 複製給每個活動
+ * 6. actionPlans 按 item.linkedMeasureId 分配：
+ *    每個 plan group 只保留屬於該活動的 items；
+ *    若 item 無 linkedMeasureId 則分配給同 strategy 所有活動
  */
 export function migrateToActivityFirst(ws: WorkspaceData): boolean {
   let changed = false;
@@ -345,8 +349,29 @@ export function migrateToActivityFirst(ws: WorkspaceData): boolean {
     for (const period of dept.periods) {
       for (const goal of period.ogsm.goals) {
         for (const strategy of goal.strategies) {
+          // Collect measure ids in this strategy for fallback (no-link items)
+          const stratMeasureIds = new Set(strategy.measures.map((m) => m.id));
+
           for (const measure of strategy.measures) {
             if (existingIds.has(measure.id)) continue;
+
+            // Distribute actionPlans: keep items that link to this measure,
+            // or items with no linkedMeasureId (they belong to the whole strategy)
+            const activityPlans: ActionPlan[] = strategy.actionPlans
+              .map((plan) => {
+                const relevantItems = plan.items.filter(
+                  (item) =>
+                    !item.linkedMeasureId ||
+                    !stratMeasureIds.has(item.linkedMeasureId)
+                      ? !item.linkedMeasureId // no link → include for all
+                      : item.linkedMeasureId === measure.id,
+                );
+                return relevantItems.length > 0
+                  ? { ...plan, items: relevantItems }
+                  : null;
+              })
+              .filter((p): p is ActionPlan => p !== null);
+
             const activity: DeptActivity = {
               ...measure,
               ogsmLink: {
@@ -355,6 +380,11 @@ export function migrateToActivityFirst(ws: WorkspaceData): boolean {
                 strategyId: strategy.id,
               },
               excludeFromOgsm: false,
+              owners:
+                strategy.owners.length > 0 ? [...strategy.owners] : undefined,
+              notes: strategy.notes || undefined,
+              actionPlans:
+                activityPlans.length > 0 ? activityPlans : undefined,
             };
             dept.activities.push(activity);
             existingIds.add(measure.id);

@@ -722,4 +722,196 @@ describe("migrateToActivityFirst", () => {
     const activities = loaded.departments[0].activities!;
     expect(activities.some((a) => a.id === "msr99")).toBe(true);
   });
+
+  test("owners 與 notes 從 Strategy 複製到每個 DeptActivity", () => {
+    const ws = makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      owners: ["王大明", "李小華"],
+                      notes: "策略備註",
+                      measures: [
+                        makeMeasure({ id: "msr1", rawText: "活動A" }),
+                        makeMeasure({ id: "msr2", rawText: "活動B" }),
+                      ],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    migrateToActivityFirst(ws);
+    const activities = ws.departments[0].activities!;
+    expect(activities).toHaveLength(2);
+    for (const a of activities) {
+      expect(a.owners).toEqual(["王大明", "李小華"]);
+      expect(a.notes).toBe("策略備註");
+    }
+  });
+
+  test("actionPlans 按 linkedMeasureId 分配：1 對 1 完整搬移", () => {
+    const ws = makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [
+                        makeMeasure({ id: "msr1", rawText: "活動A" }),
+                        makeMeasure({ id: "msr2", rawText: "活動B" }),
+                      ],
+                      actionPlans: [
+                        {
+                          id: "plan1",
+                          quarter: "Q1",
+                          title: "活動A計畫",
+                          items: [
+                            {
+                              id: "item1",
+                              description: "準備素材",
+                              completed: false,
+                              linkedMeasureId: "msr1",
+                            },
+                          ],
+                        },
+                        {
+                          id: "plan2",
+                          quarter: "Q1",
+                          title: "活動B計畫",
+                          items: [
+                            {
+                              id: "item2",
+                              description: "提案完成",
+                              completed: false,
+                              linkedMeasureId: "msr2",
+                            },
+                          ],
+                        },
+                      ],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    migrateToActivityFirst(ws);
+    const activities = ws.departments[0].activities!;
+    const a1 = activities.find((a) => a.id === "msr1")!;
+    const a2 = activities.find((a) => a.id === "msr2")!;
+
+    // 活動A 只拿到 plan1 的 item1
+    expect(a1.actionPlans).toHaveLength(1);
+    expect(a1.actionPlans![0].id).toBe("plan1");
+    expect(a1.actionPlans![0].items).toHaveLength(1);
+    expect(a1.actionPlans![0].items[0].id).toBe("item1");
+
+    // 活動B 只拿到 plan2 的 item2
+    expect(a2.actionPlans).toHaveLength(1);
+    expect(a2.actionPlans![0].id).toBe("plan2");
+    expect(a2.actionPlans![0].items[0].id).toBe("item2");
+  });
+
+  test("actionPlans 無 linkedMeasureId 的 items 複製給 strategy 內所有活動", () => {
+    const ws = makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [
+                        makeMeasure({ id: "msr1" }),
+                        makeMeasure({ id: "msr2", rawText: "活動B" }),
+                      ],
+                      actionPlans: [
+                        {
+                          id: "plan1",
+                          quarter: "Q1",
+                          title: "共用計畫",
+                          items: [
+                            {
+                              id: "item_no_link",
+                              description: "全體共用步驟",
+                              completed: false,
+                              linkedMeasureId: null,
+                            },
+                            {
+                              id: "item_msr1",
+                              description: "僅活動A步驟",
+                              completed: false,
+                              linkedMeasureId: "msr1",
+                            },
+                          ],
+                        },
+                      ],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    migrateToActivityFirst(ws);
+    const activities = ws.departments[0].activities!;
+    const a1 = activities.find((a) => a.id === "msr1")!;
+    const a2 = activities.find((a) => a.id === "msr2")!;
+
+    // 活動A：拿到共用 item + 自己的 item
+    expect(a1.actionPlans![0].items).toHaveLength(2);
+
+    // 活動B：只拿到共用 item（沒有自己的 linked item）
+    expect(a2.actionPlans![0].items).toHaveLength(1);
+    expect(a2.actionPlans![0].items[0].id).toBe("item_no_link");
+  });
 });

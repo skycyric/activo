@@ -2394,8 +2394,8 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-brand">
-          <span className="header-logo">○</span>
-          <span className="header-title">OGSM Power Tool</span>
+          <span className="header-logo">A</span>
+          <span className="header-title">Activo</span>
           <span className="header-period">
             {activeDept?.name ?? ""} · {data.period}
           </span>

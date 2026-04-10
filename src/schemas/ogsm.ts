@@ -121,10 +121,16 @@ export const OgsmLinkSchema = z.object({
  * - 繼承 Measure 所有欄位（id、rawText、kpis、status…）
  * - 新增 ogsmLink：可選，指向此活動掛在哪個 Strategy 下
  * - 新增 excludeFromOgsm：true = 使用者明確不計入 OGSM 指標
+ * - 新增 owners：主責人列表（從 Strategy.owners 遷移而來）
+ * - 新增 notes：活動備註（從 Strategy.notes 遷移而來）
+ * - 新增 actionPlans：此活動自己的行動計畫（按 linkedMeasureId 從 Strategy.actionPlans 分配）
  */
 export const DeptActivitySchema = MeasureSchema.extend({
   ogsmLink: OgsmLinkSchema.optional(),
   excludeFromOgsm: z.boolean().optional(),
+  owners: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+  actionPlans: z.array(ActionPlanSchema).optional(),
 });
 
 // ── Strategy ──────────────────────────────────────────────────────────────────
