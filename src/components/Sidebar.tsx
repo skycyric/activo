@@ -9,7 +9,9 @@ interface Props {
   selectedGoalId: string | null;
   selectedStrategyId: string | null;
   isActivityPage: boolean;
+  isHomePage?: boolean;
   readOnlyDeptIds?: string[];
+  onSelectHome: () => void;
   onSwitchDept: (id: string) => void;
   onAddDept: () => void;
   showAddDeptButton?: boolean;
@@ -38,7 +40,9 @@ export default function Sidebar({
   selectedGoalId,
   selectedStrategyId,
   isActivityPage,
+  isHomePage,
   readOnlyDeptIds,
+  onSelectHome,
   onSwitchDept,
   onAddDept,
   showAddDeptButton = true,
@@ -53,7 +57,7 @@ export default function Sidebar({
   onSelectOverview,
   onSelectActivities,
 }: Props) {
-  const isOverview = selectedGoalId === null && !isActivityPage;
+  const isOverview = selectedGoalId === null && !isActivityPage && !isHomePage;
   const activeDept = workspace.departments.find((d) => d.id === activeDeptId);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -156,7 +160,15 @@ export default function Sidebar({
 
   return (
     <aside className="sidebar" style={{ width: sidebarWidth }}>
-      {/* Activity Overview shortcut – top of sidebar */}
+      {/* Home shortcut – topmost */}
+      <button
+        className={`sidebar-activity-btn${isHomePage ? " active" : ""}`}
+        onClick={onSelectHome}
+      >
+        <span className="sidebar-activity-icon">🏠</span>
+        <span className="sidebar-activity-label">首頁</span>
+      </button>
+      {/* Activity Overview shortcut */}
       <button
         className={`sidebar-activity-btn${isActivityPage ? " active" : ""}`}
         onClick={onSelectActivities}

@@ -55,6 +55,7 @@ import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
 import ActivityPage from "./components/ActivityPage";
+import HomePage from "./components/HomePage";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
@@ -148,6 +149,7 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
+  const [showHomePage, setShowHomePage] = useState(true);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
   const fsSupported = isFileSystemAccessSupported();
@@ -2061,6 +2063,7 @@ export default function App() {
     ) => {
       setShowActivityPage(false);
       setShowDeptSettings(false);
+      setShowHomePage(false);
       setActiveDeptId(deptId);
       setActivePeriodId(periodId);
       setSelectedGoalId(goalId);
@@ -2763,6 +2766,7 @@ export default function App() {
           selectedGoalId={selectedGoalId}
           selectedStrategyId={selectedStrategyId}
           isActivityPage={showActivityPage}
+          isHomePage={showHomePage}
           readOnlyDeptIds={
             isMultiFileMode
               ? (deptFiles
@@ -2785,6 +2789,7 @@ export default function App() {
             setSelectedStrategyId(null);
             setShowDeptSettings(false);
             setShowActivityPage(false);
+            setShowHomePage(false);
           }}
           onSelectStrategy={setSelectedStrategyId}
           onSelectOverview={() => {
@@ -2792,15 +2797,62 @@ export default function App() {
             setSelectedStrategyId(null);
             setShowDeptSettings(false);
             setShowActivityPage(false);
+            setShowHomePage(false);
           }}
           onSelectActivities={() => {
             setShowActivityPage(true);
+            setShowDeptSettings(false);
+            setShowHomePage(false);
+            setSelectedGoalId(null);
+            setSelectedStrategyId(null);
+          }}
+          onSelectHome={() => {
+            setShowHomePage(true);
+            setShowActivityPage(false);
             setShowDeptSettings(false);
             setSelectedGoalId(null);
             setSelectedStrategyId(null);
           }}
         />
-        {showDeptSettings ? (
+        {showHomePage ? (
+          <HomePage
+            workspace={effectiveWorkspace}
+            readOnlyDeptIds={
+              isMultiFileMode
+                ? (deptFiles
+                    .filter((f) => f.isReadOnly)
+                    .map((f) => f.workspace.departments[0]?.id)
+                    .filter(Boolean) as string[])
+                : undefined
+            }
+            onSwitchToActivities={(deptId) => {
+              if (deptId) {
+                const dept = effectiveWorkspace.departments.find(
+                  (d) => d.id === deptId,
+                );
+                if (dept) setActiveDeptId(deptId);
+              }
+              setShowActivityPage(true);
+              setShowHomePage(false);
+              setShowDeptSettings(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+            onSwitchToOgsm={(deptId) => {
+              if (deptId) {
+                const dept = effectiveWorkspace.departments.find(
+                  (d) => d.id === deptId,
+                );
+                if (dept) setActiveDeptId(deptId);
+              }
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setShowDeptSettings(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+          />
+        ) : showDeptSettings ? (
           <DeptSettingsPage
             key={activeDeptId}
             data={data}
