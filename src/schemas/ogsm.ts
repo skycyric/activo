@@ -101,6 +101,32 @@ export const MeasureSchema = z.object({
   relatedActivities: z.array(z.string()).optional(), // 關聯活動（Measure id[]）
 });
 
+// ── OgsmLink ──────────────────────────────────────────────────────────────────
+
+/**
+ * 指向 OGSM 樹中某個 Strategy 的定位資訊。
+ * DeptActivity 透過此物件對應到某個 Goal > Strategy，
+ * 讓 OGSM 儀表板能讀取該活動的進度。
+ */
+export const OgsmLinkSchema = z.object({
+  periodId: z.string(),
+  goalId: z.string(),
+  strategyId: z.string(),
+});
+
+// ── DeptActivity ──────────────────────────────────────────────────────────────
+
+/**
+ * 部門層一等公民活動。
+ * - 繼承 Measure 所有欄位（id、rawText、kpis、status…）
+ * - 新增 ogsmLink：可選，指向此活動掛在哪個 Strategy 下
+ * - 新增 excludeFromOgsm：true = 使用者明確不計入 OGSM 指標
+ */
+export const DeptActivitySchema = MeasureSchema.extend({
+  ogsmLink: OgsmLinkSchema.optional(),
+  excludeFromOgsm: z.boolean().optional(),
+});
+
 // ── Strategy ──────────────────────────────────────────────────────────────────
 
 export const StrategySchema = z.object({
@@ -198,6 +224,8 @@ export const DepartmentSchema = z.object({
   id: z.string(),
   name: z.string(),
   periods: z.array(PeriodDataSchema),
+  /** 部門直屬活動清單（activity-first 架構的核心） */
+  activities: z.array(DeptActivitySchema).optional(),
 });
 
 export const TeamMemberSchema = z.object({
@@ -221,6 +249,8 @@ export const WorkspaceDataSchema = z.object({
   teams: z.array(TeamSchema).optional(),
   _migratedPhase2: z.boolean().optional(),
   _migratedPhase3: z.boolean().optional(),
+  /** true = 已執行 activity-first 遷移，dept.activities[] 為主要資料來源 */
+  _migratedActivityFirst: z.boolean().optional(),
   warnDaysBefore: z.number().optional(),
 });
 
@@ -233,6 +263,8 @@ export type PlanItem = z.infer<typeof PlanItemSchema>;
 export type ActionPlan = z.infer<typeof ActionPlanSchema>;
 export type MeasureStatus = z.infer<typeof MeasureStatusSchema>;
 export type Measure = z.infer<typeof MeasureSchema>;
+export type OgsmLink = z.infer<typeof OgsmLinkSchema>;
+export type DeptActivity = z.infer<typeof DeptActivitySchema>;
 export type GoalKpiLink = z.infer<typeof GoalKpiLinkSchema>;
 export type GoalKPI = z.infer<typeof GoalKPISchema>;
 export type Strategy = Omit<z.infer<typeof StrategySchema>, "owner"> & {
