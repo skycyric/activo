@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import type { WorkspaceData, Measure } from "../schemas/ogsm";
+import type { WorkspaceData, Measure, DeptActivity } from "../schemas/ogsm";
 import ActivityFilters, {
   type ActivityFilterState,
   EMPTY_ACTIVITY_FILTERS,
@@ -11,14 +11,20 @@ import ActivityGantt from "./activity/ActivityGantt";
 import ActivityCalendar from "./activity/ActivityCalendar";
 import ActivityAddModal from "./activity/ActivityAddModal";
 
-export interface ActivityWithContext extends Measure {
+export interface ActivityWithContext extends DeptActivity {
   deptId: string;
   deptName: string;
+  /** 來自 ogsmLink.periodId，或空字串（standalone 活動）*/
   periodId: string;
+  /** 來自 OGSM 期間標籤，如「2026 H1」；standalone 活動為空字串 */
   periodLabel: string;
+  /** 來自 ogsmLink.goalId，或空字串 */
   goalId: string;
+  /** 目標標題字串；standalone 活動為空字串 */
   goalTitle: string;
+  /** 來自 ogsmLink.strategyId，或空字串 */
   strategyId: string;
+  /** 策略標題字串；standalone 活動為空字串 */
   strategyTitle: string;
   isReadOnly: boolean;
 }
@@ -87,28 +93,69 @@ export default function ActivityPage({
     if (id !== null) setView("table");
   }, []);
 
-  // Flatten all activities from all depts + periods
+  // Flatten all activities from all depts
+  // Phase 3: 優先讀取 dept.activities[]（activity-first），遷移前 fallback 舊 OGSM 遍歷
   const allActivities = useMemo<ActivityWithContext[]>(() => {
     const result: ActivityWithContext[] = [];
     for (const dept of workspace.departments) {
       const isReadOnly = readOnlyDeptIds?.includes(dept.id) ?? false;
+
+      // 建立 OGSM 上下文查找表："periodId|goalId|strategyId" → 顯示標籤
+      type OgsmCtx = { periodLabel: string; goalTitle: string; strategyTitle: string };
+      const ogsmCtx = new Map<string, OgsmCtx>();
       for (const period of dept.periods) {
         const periodLabel = `${period.year} ${period.halfYear}`;
         for (const goal of period.ogsm.goals) {
           for (const strategy of goal.strategies) {
-            for (const measure of strategy.measures) {
-              result.push({
-                ...measure,
-                deptId: dept.id,
-                deptName: dept.name,
-                periodId: period.id,
-                periodLabel,
-                goalId: goal.id,
-                goalTitle: goal.title,
-                strategyId: strategy.id,
-                strategyTitle: strategy.title,
-                isReadOnly,
-              });
+            ogsmCtx.set(`${period.id}|${goal.id}|${strategy.id}`, {
+              periodLabel,
+              goalTitle: goal.title,
+              strategyTitle: strategy.title,
+            });
+          }
+        }
+      }
+
+      if (dept.activities && dept.activities.length > 0) {
+        // ─ Activity-first 路徑（遷移後）────────────────────────────────
+        for (const activity of dept.activities) {
+          const link = activity.ogsmLink;
+          const ctx = link
+            ? ogsmCtx.get(`${link.periodId}|${link.goalId}|${link.strategyId}`)
+            : undefined;
+          result.push({
+            ...activity,
+            deptId: dept.id,
+            deptName: dept.name,
+            isReadOnly,
+            periodId: link?.periodId ?? "",
+            periodLabel: ctx?.periodLabel ?? "",
+            goalId: link?.goalId ?? "",
+            goalTitle: ctx?.goalTitle ?? "",
+            strategyId: link?.strategyId ?? "",
+            strategyTitle: ctx?.strategyTitle ?? "",
+          });
+        }
+      } else {
+        // ─ Fallback：遷移前舊 OGSM 遍歷路徑──────────────────────────────
+        for (const period of dept.periods) {
+          const periodLabel = `${period.year} ${period.halfYear}`;
+          for (const goal of period.ogsm.goals) {
+            for (const strategy of goal.strategies) {
+              for (const measure of strategy.measures) {
+                result.push({
+                  ...measure,
+                  deptId: dept.id,
+                  deptName: dept.name,
+                  periodId: period.id,
+                  periodLabel,
+                  goalId: goal.id,
+                  goalTitle: goal.title,
+                  strategyId: strategy.id,
+                  strategyTitle: strategy.title,
+                  isReadOnly,
+                });
+              }
             }
           }
         }
