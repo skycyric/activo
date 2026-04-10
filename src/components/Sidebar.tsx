@@ -9,8 +9,10 @@ interface Props {
   selectedGoalId: string | null;
   selectedStrategyId: string | null;
   isActivityPage: boolean;
+  readOnlyDeptIds?: string[];
   onSwitchDept: (id: string) => void;
   onAddDept: () => void;
+  showAddDeptButton?: boolean;
   onRenameDept: (id: string, name: string) => void;
   onDeleteDept: (id: string) => void;
   onSwitchPeriod: (id: string) => void;
@@ -36,8 +38,10 @@ export default function Sidebar({
   selectedGoalId,
   selectedStrategyId,
   isActivityPage,
+  readOnlyDeptIds,
   onSwitchDept,
   onAddDept,
+  showAddDeptButton = true,
   onRenameDept,
   onDeleteDept,
   onSwitchPeriod,
@@ -183,7 +187,7 @@ export default function Sidebar({
             >
               {workspace.departments.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name}
+                  {readOnlyDeptIds?.includes(d.id) ? `👁 ${d.name}` : d.name}
                 </option>
               ))}
             </select>
@@ -198,13 +202,15 @@ export default function Sidebar({
             >
               {"✏️"}
             </button>
-            <button
-              className="dept-action-btn"
-              title={"新增部門"}
-              onClick={onAddDept}
-            >
-              {"＋"}
-            </button>
+            {showAddDeptButton && (
+              <button
+                className="dept-action-btn"
+                title={"新增部門"}
+                onClick={onAddDept}
+              >
+                {"＋"}
+              </button>
+            )}
             {workspace.departments.length > 1 && (
               <button
                 className="dept-action-btn dept-action-del"

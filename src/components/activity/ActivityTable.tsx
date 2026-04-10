@@ -370,21 +370,23 @@ export default function ActivityTable({
                     >
                       🔗
                     </button>
-                    <button
-                      className="act-action-btn act-del-btn"
-                      title="刪除活動"
-                      onClick={() =>
-                        onDeleteMeasure(
-                          act.deptId,
-                          act.periodId,
-                          act.goalId,
-                          act.strategyId,
-                          act.id,
-                        )
-                      }
-                    >
-                      🗑
-                    </button>
+                    {!act.isReadOnly && (
+                      <button
+                        className="act-action-btn act-del-btn"
+                        title="刪除活動"
+                        onClick={() =>
+                          onDeleteMeasure(
+                            act.deptId,
+                            act.periodId,
+                            act.goalId,
+                            act.strategyId,
+                            act.id,
+                          )
+                        }
+                      >
+                        🗑
+                      </button>
+                    )}
                   </td>
                 </tr>
 

@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import type { WorkspaceData, Measure } from "../schemas/ogsm";
 import ActivityFilters, {
   type ActivityFilterState,
+  EMPTY_ACTIVITY_FILTERS,
 } from "./activity/ActivityFilters";
 import ActivityTable from "./activity/ActivityTable";
 import ActivityKanban from "./activity/ActivityKanban";
@@ -19,18 +20,12 @@ export interface ActivityWithContext extends Measure {
   goalTitle: string;
   strategyId: string;
   strategyTitle: string;
+  isReadOnly: boolean;
 }
 
 type ActivityView = "table" | "kanban" | "gantt" | "cards" | "calendar";
 
-const EMPTY_FILTERS: ActivityFilterState = {
-  deptId: "",
-  periodId: "",
-  goalId: "",
-  status: "",
-  owner: "",
-  keyword: "",
-};
+const EMPTY_FILTERS = EMPTY_ACTIVITY_FILTERS;
 
 const VIEWS: { id: ActivityView; label: string; icon: string }[] = [
   { id: "table", label: "列表", icon: "☰" },
@@ -42,6 +37,7 @@ const VIEWS: { id: ActivityView; label: string; icon: string }[] = [
 
 interface Props {
   workspace: WorkspaceData;
+  readOnlyDeptIds?: string[];
   onUpdateMeasure: (
     deptId: string,
     periodId: string,
@@ -74,6 +70,7 @@ interface Props {
 
 export default function ActivityPage({
   workspace,
+  readOnlyDeptIds,
   onUpdateMeasure,
   onDeleteMeasure,
   onAddMeasure,
@@ -94,6 +91,7 @@ export default function ActivityPage({
   const allActivities = useMemo<ActivityWithContext[]>(() => {
     const result: ActivityWithContext[] = [];
     for (const dept of workspace.departments) {
+      const isReadOnly = readOnlyDeptIds?.includes(dept.id) ?? false;
       for (const period of dept.periods) {
         const periodLabel = `${period.year} ${period.halfYear}`;
         for (const goal of period.ogsm.goals) {
@@ -109,6 +107,7 @@ export default function ActivityPage({
                 goalTitle: goal.title,
                 strategyId: strategy.id,
                 strategyTitle: strategy.title,
+                isReadOnly,
               });
             }
           }
@@ -116,16 +115,27 @@ export default function ActivityPage({
       }
     }
     return result;
-  }, [workspace]);
+  }, [workspace, readOnlyDeptIds]);
 
   // Apply filters
   const filtered = useMemo<ActivityWithContext[]>(() => {
     return allActivities.filter((a) => {
       if (filters.deptId && a.deptId !== filters.deptId) return false;
-      if (filters.periodId && a.periodId !== filters.periodId) return false;
-      if (filters.goalId && a.goalId !== filters.goalId) return false;
-      if (filters.status && a.status !== filters.status) return false;
+      if (
+        filters.teamId &&
+        !a.assistUnits?.some(
+          (u) => u.type === "team" && u.id === filters.teamId,
+        )
+      )
+        return false;
       if (filters.owner && a.owner !== filters.owner) return false;
+      if (filters.goalId && a.goalId !== filters.goalId) return false;
+      if (filters.strategyId && a.strategyId !== filters.strategyId)
+        return false;
+      if (filters.status && a.status !== filters.status) return false;
+      if (filters.startFrom && a.startDate && a.startDate < filters.startFrom)
+        return false;
+      if (filters.endTo && a.endDate && a.endDate > filters.endTo) return false;
       if (filters.keyword) {
         const kw = filters.keyword.toLowerCase();
         const haystack = [

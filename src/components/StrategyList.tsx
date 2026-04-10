@@ -22,6 +22,7 @@ interface Props {
   onFilterOwner: (v: string) => void;
   teams: Team[];
   warnDaysBefore: number;
+  isReadOnly?: boolean;
 }
 
 function StrategyRow({
@@ -127,6 +128,7 @@ export default function StrategyList({
   onFilterOwner,
   teams,
   warnDaysBefore,
+  isReadOnly = false,
 }: Props) {
   const [editingGoalTitle, setEditingGoalTitle] = useState(false);
   const [titleText, setTitleText] = useState("");
@@ -558,28 +560,29 @@ export default function StrategyList({
               )}
             </div>
             <div className="g-kpi-card-actions">
-              {gkType === "pct_activity" ? (
-                <button
-                  className="g-kpi-btn-link"
-                  onClick={() => {
-                    setShowThresholdPicker(isLinkingThreshold ? null : gk.id);
-                    setShowLinkPicker(null);
-                  }}
-                >
-                  🔗 設定門檻
-                </button>
-              ) : (
-                <button
-                  className="g-kpi-btn-link"
-                  onClick={() => {
-                    setShowLinkPicker(isLinking ? null : gk.id);
-                    setLinkPickerSearch("");
-                  }}
-                >
-                  🔗 連結
-                </button>
-              )}
-              {gkType !== "pct_activity" && (
+              {!isReadOnly &&
+                (gkType === "pct_activity" ? (
+                  <button
+                    className="g-kpi-btn-link"
+                    onClick={() => {
+                      setShowThresholdPicker(isLinkingThreshold ? null : gk.id);
+                      setShowLinkPicker(null);
+                    }}
+                  >
+                    🔗 設定門檻
+                  </button>
+                ) : (
+                  <button
+                    className="g-kpi-btn-link"
+                    onClick={() => {
+                      setShowLinkPicker(isLinking ? null : gk.id);
+                      setLinkPickerSearch("");
+                    }}
+                  >
+                    🔗 連結
+                  </button>
+                ))}
+              {!isReadOnly && gkType !== "pct_activity" && (
                 <button
                   className="g-kpi-btn-headline"
                   onClick={() => toggleHeadline(gk.id)}
@@ -588,43 +591,47 @@ export default function StrategyList({
                   {gk.isHeadline ? "⭐" : "--"}
                 </button>
               )}
-              <button
-                className="g-kpi-btn-edit"
-                onClick={() => {
-                  if (gkType === "pct_activity") {
-                    setEditingPctId(gk.id);
-                    setPctForm({
-                      label: gk.label,
-                      target:
-                        gk.target !== null && gk.target !== undefined
-                          ? String(gk.target)
-                          : "60",
-                    });
-                  } else {
-                    setEditingKpiId(gk.id);
-                    setKpiForm({
-                      label: gk.label,
-                      unit: gk.unit,
-                      target:
-                        gk.target !== null && gk.target !== undefined
-                          ? String(gk.target)
-                          : "",
-                      aggregation: gk.aggregation,
-                      type: gk.type ?? "value",
-                      isHeadline: gk.isHeadline ?? false,
-                      thresholdGoalKpiIds: gk.thresholdGoalKpiIds ?? [],
-                    });
-                  }
-                }}
-              >
-                編輯{" "}
-              </button>
-              <button
-                className="g-kpi-btn-del"
-                onClick={() => deleteKpi(gk.id)}
-              >
-                刪除
-              </button>
+              {!isReadOnly && (
+                <button
+                  className="g-kpi-btn-edit"
+                  onClick={() => {
+                    if (gkType === "pct_activity") {
+                      setEditingPctId(gk.id);
+                      setPctForm({
+                        label: gk.label,
+                        target:
+                          gk.target !== null && gk.target !== undefined
+                            ? String(gk.target)
+                            : "60",
+                      });
+                    } else {
+                      setEditingKpiId(gk.id);
+                      setKpiForm({
+                        label: gk.label,
+                        unit: gk.unit,
+                        target:
+                          gk.target !== null && gk.target !== undefined
+                            ? String(gk.target)
+                            : "",
+                        aggregation: gk.aggregation,
+                        type: gk.type ?? "value",
+                        isHeadline: gk.isHeadline ?? false,
+                        thresholdGoalKpiIds: gk.thresholdGoalKpiIds ?? [],
+                      });
+                    }
+                  }}
+                >
+                  編輯{" "}
+                </button>
+              )}
+              {!isReadOnly && (
+                <button
+                  className="g-kpi-btn-del"
+                  onClick={() => deleteKpi(gk.id)}
+                >
+                  刪除
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1015,6 +1022,7 @@ export default function StrategyList({
             <h1
               className="goal-header-title"
               onDoubleClick={() => {
+                if (isReadOnly) return;
                 setTitleText(goal.title);
                 setEditingGoalTitle(true);
               }}
@@ -1027,14 +1035,16 @@ export default function StrategyList({
               )}
             </h1>
           )}
-          <button
-            className="detail-del-btn"
-            onClick={() => onDeleteGoal(goal.id)}
-            title="刪除此目標"
-            style={{ marginLeft: "auto" }}
-          >
-            🗑 刪除
-          </button>
+          {!isReadOnly && (
+            <button
+              className="detail-del-btn"
+              onClick={() => onDeleteGoal(goal.id)}
+              title="刪除此目標"
+              style={{ marginLeft: "auto" }}
+            >
+              🗑 刪除
+            </button>
+          )}
         </div>
 
         {/* ?????????????????pct_activity?????? KPI ????????*/}
@@ -1049,7 +1059,7 @@ export default function StrategyList({
               </div>
             )}
             {activityKpis.map(renderGkCard)}
-            {editingPctId !== "new" && (
+            {!isReadOnly && editingPctId !== "new" && (
               <button
                 className="g-kpi-toggle g-pct-add-btn"
                 onClick={() => {
@@ -1222,23 +1232,25 @@ export default function StrategyList({
                   </button>
                 </div>
               ) : (
-                <button
-                  className="g-kpi-btn-add"
-                  onClick={() => {
-                    setEditingKpiId("new");
-                    setKpiForm({
-                      label: "",
-                      unit: "%",
-                      target: "",
-                      aggregation: "SUM",
-                      type: "value",
-                      isHeadline: false,
-                      thresholdGoalKpiIds: [],
-                    });
-                  }}
-                >
-                  ＋ 新增 KPI
-                </button>
+                !isReadOnly && (
+                  <button
+                    className="g-kpi-btn-add"
+                    onClick={() => {
+                      setEditingKpiId("new");
+                      setKpiForm({
+                        label: "",
+                        unit: "%",
+                        target: "",
+                        aggregation: "SUM",
+                        type: "value",
+                        isHeadline: false,
+                        thresholdGoalKpiIds: [],
+                      });
+                    }}
+                  >
+                    ＋ 新增 KPI
+                  </button>
+                )
               )}
             </div>
           )}
@@ -1259,9 +1271,11 @@ export default function StrategyList({
               ))}
             </select>
           </div>
-          <button className="sl-add-strategy" onClick={onAddStrategy}>
-            ＋ 新增策略{" "}
-          </button>
+          {!isReadOnly && (
+            <button className="sl-add-strategy" onClick={onAddStrategy}>
+              ＋ 新增策略{" "}
+            </button>
+          )}
         </div>
       </div>
 

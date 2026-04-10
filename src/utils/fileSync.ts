@@ -278,3 +278,140 @@ export async function scanForConflictCopies(
   }
   return results;
 }
+
+// ── Multi-dept file mode ──────────────────────────────────────────────────
+
+const ROOT_HANDLE_KEY = "rootDir2";
+
+async function saveRootHandleInternal(
+  handle: FileSystemDirectoryHandle,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).put(handle, ROOT_HANDLE_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadRootHandleInternal(): Promise<FileSystemDirectoryHandle | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).get(ROOT_HANDLE_KEY);
+    req.onsuccess = () =>
+      resolve((req.result as FileSystemDirectoryHandle) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Persist the root directory handle to IndexedDB. */
+export async function saveRootHandle(
+  handle: FileSystemDirectoryHandle,
+): Promise<void> {
+  return saveRootHandleInternal(handle);
+}
+
+/**
+ * Load the root handle on page load (no user gesture).
+ * Returns the handle if read permission is already granted, else null.
+ */
+export async function loadRootHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const handle = await loadRootHandleInternal();
+    if (!handle) return null;
+    // Check at least read permission
+    const state = await handle.queryPermission({ mode: "read" });
+    return state === "granted" ? handle : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove the root handle from IndexedDB. */
+export async function clearRootHandle(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(ROOT_HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Show a directory picker for the root OGSM folder.
+ * Requests readwrite so the app can later request readwrite per subfolder.
+ * Saves handle to IndexedDB and returns it; returns null on cancel.
+ */
+export async function pickRootFolder(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const handle = await showDirectoryPicker({ mode: "readwrite" });
+    await saveRootHandleInternal(handle as FileSystemDirectoryHandle);
+    return handle as FileSystemDirectoryHandle;
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === "AbortError") return null;
+    throw e;
+  }
+}
+
+/**
+ * Scan direct sub-folders of rootHandle for a single .json file each.
+ * Skips sub-folders that have no .json (e.g. the app's own html folder).
+ * Returns entries sorted by sub-folder name.
+ */
+export async function scanDeptJsons(
+  rootHandle: FileSystemDirectoryHandle,
+): Promise<
+  {
+    subfolderName: string;
+    handle: FileSystemFileHandle;
+    subDirHandle: FileSystemDirectoryHandle;
+  }[]
+> {
+  const results: {
+    subfolderName: string;
+    handle: FileSystemFileHandle;
+    subDirHandle: FileSystemDirectoryHandle;
+  }[] = [];
+
+  for await (const [subName, subEntry] of rootHandle.entries()) {
+    if (subEntry.kind !== "directory") continue;
+    const subDir = subEntry as FileSystemDirectoryHandle;
+    // Find first .json in this sub-folder
+    for await (const [fileName, fileEntry] of subDir.entries()) {
+      if (fileEntry.kind !== "file") continue;
+      if (!fileName.toLowerCase().endsWith(".json")) continue;
+      results.push({
+        subfolderName: subName,
+        handle: fileEntry as FileSystemFileHandle,
+        subDirHandle: subDir,
+      });
+      break; // only one json per subfolder
+    }
+  }
+
+  results.sort((a, b) => a.subfolderName.localeCompare(b.subfolderName));
+  return results;
+}
+
+/**
+ * Probe whether a FileSystemFileHandle is writable without actually writing.
+ * Attempts createWritable(); if it throws (NotAllowedError / SecurityError) → read-only.
+ */
+export async function probeWritable(
+  handle: FileSystemFileHandle,
+): Promise<boolean> {
+  try {
+    const writable = await handle.createWritable();
+    await writable.abort();
+    return true;
+  } catch {
+    return false;
+  }
+}

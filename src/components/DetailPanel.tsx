@@ -24,6 +24,7 @@ interface Props {
   initialTab?: "measure" | "plans" | "notes";
   initialWarnFilter?: "overdue" | "warning" | null;
   initialMeasureId?: string;
+  isReadOnly?: boolean;
 }
 
 function InlineEdit({
@@ -32,12 +33,14 @@ function InlineEdit({
   className = "",
   placeholder = "點擊編輯…",
   multiline = false,
+  disabled = false,
 }: {
   value: string;
   onSave: (v: string) => void;
   className?: string;
   placeholder?: string;
   multiline?: boolean;
+  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -61,11 +64,12 @@ function InlineEdit({
       <span
         className={`inline-edit-view ${className}`}
         onDoubleClick={() => {
+          if (disabled) return;
           cancelledRef.current = false;
           setDraft(value);
           setEditing(true);
         }}
-        title="雙擊編輯"
+        title={disabled ? "唯讀" : "雙擊編輯"}
       >
         {value || (
           <span style={{ color: "#4b5563", fontStyle: "italic" }}>
@@ -115,12 +119,14 @@ function KpiCard({
   onDelete,
   linkedTotal,
   linkedDone,
+  isReadOnly = false,
 }: {
   kpi: KPI;
   onUpdate: (k: KPI) => void;
   onDelete: () => void;
   linkedTotal?: number;
   linkedDone?: number;
+  isReadOnly?: boolean;
 }) {
   const isProgress = kpi.kpiType === "progress";
   const isGrowth = kpi.kpiType === "growth";
@@ -553,9 +559,11 @@ function KpiCard({
           )}
         </div>
       </div>
-      <button className="kpi-delete-btn" onClick={onDelete} title="刪除 KPI">
-        🗑
-      </button>
+      {!isReadOnly && (
+        <button className="kpi-delete-btn" onClick={onDelete} title="刪除 KPI">
+          🗑
+        </button>
+      )}
     </div>
   );
 }
@@ -631,6 +639,7 @@ export default function DetailPanel({
   initialTab,
   initialWarnFilter,
   initialMeasureId,
+  isReadOnly = false,
 }: Props) {
   const [tab, setTab] = useState<"measure" | "plans" | "notes">(
     initialMeasureId ? "plans" : (initialTab ?? "measure"),
@@ -1232,6 +1241,7 @@ export default function DetailPanel({
             onSave={(v) => onUpdate({ ...strategy, title: v })}
             className="detail-title-edit"
             placeholder="策略名稱"
+            disabled={isReadOnly}
           />
           <div
             style={{
@@ -1245,13 +1255,15 @@ export default function DetailPanel({
             <button className="detail-close" onClick={onClose}>
               ✕
             </button>
-            <button
-              className="detail-del-btn"
-              onClick={onDelete}
-              title="刪除策略"
-            >
-              🗑 刪除
-            </button>
+            {!isReadOnly && (
+              <button
+                className="detail-del-btn"
+                onClick={onDelete}
+                title="刪除策略"
+              >
+                🗑 刪除
+              </button>
+            )}
           </div>
         </div>
 
@@ -1261,43 +1273,47 @@ export default function DetailPanel({
               {ownersList.map((name) => (
                 <span key={name} className="owner-chip">
                   {name}
-                  <button
-                    className="owner-chip-remove"
-                    onClick={() => removeOwner(name)}
-                    title="移除"
-                  >
-                    ×
-                  </button>
+                  {!isReadOnly && (
+                    <button
+                      className="owner-chip-remove"
+                      onClick={() => removeOwner(name)}
+                      title="移除"
+                    >
+                      ×
+                    </button>
+                  )}
                 </span>
               ))}
-              {teams.filter((t) => !ownersList.includes(t.name)).length > 0 && (
-                <div className="owner-add-wrap">
-                  <button
-                    className="owner-add-btn"
-                    onClick={() => setOwnerDropOpen((v) => !v)}
-                  >
-                    ＋ 負責單位
-                  </button>
-                  {ownerDropOpen && (
-                    <div className="owner-dropdown">
-                      {teams
-                        .filter((t) => !ownersList.includes(t.name))
-                        .map((t) => (
-                          <button
-                            key={t.id}
-                            className="owner-dropdown-item"
-                            onClick={() => {
-                              setOwners([...ownersList, t.name]);
-                              setOwnerDropOpen(false);
-                            }}
-                          >
-                            {t.name}
-                          </button>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {!isReadOnly &&
+                teams.filter((t) => !ownersList.includes(t.name)).length >
+                  0 && (
+                  <div className="owner-add-wrap">
+                    <button
+                      className="owner-add-btn"
+                      onClick={() => setOwnerDropOpen((v) => !v)}
+                    >
+                      ＋ 負責單位
+                    </button>
+                    {ownerDropOpen && (
+                      <div className="owner-dropdown">
+                        {teams
+                          .filter((t) => !ownersList.includes(t.name))
+                          .map((t) => (
+                            <button
+                              key={t.id}
+                              className="owner-dropdown-item"
+                              onClick={() => {
+                                setOwners([...ownersList, t.name]);
+                                setOwnerDropOpen(false);
+                              }}
+                            >
+                              {t.name}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               {ownersList.length === 0 && (
                 <span className="owner-placeholder">選擇負責單位…</span>
               )}
@@ -1308,6 +1324,7 @@ export default function DetailPanel({
               onSave={(v) => onUpdate({ ...strategy, owners: v ? [v] : [] })}
               className="owner-chip owner-edit"
               placeholder="負責單位"
+              disabled={isReadOnly}
             />
           )}
         </div>
@@ -1507,11 +1524,13 @@ export default function DetailPanel({
                           }
                           className="plan-title-edit"
                           placeholder="活動名稱/專案名稱"
+                          disabled={isReadOnly}
                         />
                         {allMembers.length > 0 ? (
                           <select
                             className="owner-select"
                             value={m.owner ?? ""}
+                            disabled={isReadOnly}
                             onChange={(e) =>
                               onUpdate({
                                 ...strategy,
@@ -1547,6 +1566,7 @@ export default function DetailPanel({
                             }
                             className="owner-chip owner-edit"
                             placeholder="主責者"
+                            disabled={isReadOnly}
                           />
                         )}
                         <label className="measure-date-label">
@@ -1633,100 +1653,106 @@ export default function DetailPanel({
                             gap: 8,
                           }}
                         >
-                          <button
-                            className="detail-add-btn"
-                            onClick={() => copyMeasure(m.id)}
-                            title="複製此活動"
-                            style={{ padding: "6px 10px" }}
-                          >
-                            📋 複製
-                          </button>
-                          <div style={{ position: "relative" }}>
+                          {!isReadOnly && (
                             <button
                               className="detail-add-btn"
+                              onClick={() => copyMeasure(m.id)}
+                              title="複製此活動"
                               style={{ padding: "6px 10px" }}
-                              onClick={() =>
-                                setKpiDropdownMsrId(
-                                  kpiDropdownMsrId === m.id ? null : m.id,
-                                )
-                              }
                             >
-                              + 新增 KPI ▾
+                              📋 複製
                             </button>
-                            {kpiDropdownMsrId === m.id && (
-                              <>
-                                {/* 點擊外部關閉 */}
-                                <div
-                                  style={{
-                                    position: "fixed",
-                                    inset: 0,
-                                    zIndex: 99,
-                                  }}
-                                  onClick={() => setKpiDropdownMsrId(null)}
-                                />
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: "calc(100% + 4px)",
-                                    right: 0,
-                                    zIndex: 100,
-                                    background: "#fff",
-                                    border: "1px solid #e5e7eb",
-                                    borderRadius: 8,
-                                    boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-                                    minWidth: 130,
-                                    overflow: "hidden",
-                                  }}
-                                >
-                                  {(
-                                    [
-                                      ["value", "📐 量化型"],
-                                      ["progress", "📊 進度型"],
-                                      ["growth", "📈 成長型"],
-                                      ["target_rate", "🎯 目標率型"],
-                                    ] as const
-                                  ).map(([type, label]) => (
-                                    <button
-                                      key={type}
-                                      style={{
-                                        display: "block",
-                                        width: "100%",
-                                        padding: "9px 14px",
-                                        textAlign: "left",
-                                        background: "none",
-                                        border: "none",
-                                        fontSize: 13,
-                                        cursor: "pointer",
-                                        color: "#374151",
-                                      }}
-                                      onMouseEnter={(e) =>
-                                        ((
-                                          e.currentTarget as HTMLButtonElement
-                                        ).style.background = "#f3f4f6")
-                                      }
-                                      onMouseLeave={(e) =>
-                                        ((
-                                          e.currentTarget as HTMLButtonElement
-                                        ).style.background = "none")
-                                      }
-                                      onClick={() => {
-                                        addKpiToMeasure(m.id, type);
-                                      }}
-                                    >
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          <button
-                            className="plan-del-btn"
-                            onClick={() => deleteMeasure(m.id)}
-                            title="刪除活動"
-                          >
-                            ✕
-                          </button>
+                          )}
+                          {!isReadOnly && (
+                            <div style={{ position: "relative" }}>
+                              <button
+                                className="detail-add-btn"
+                                style={{ padding: "6px 10px" }}
+                                onClick={() =>
+                                  setKpiDropdownMsrId(
+                                    kpiDropdownMsrId === m.id ? null : m.id,
+                                  )
+                                }
+                              >
+                                + 新增 KPI ▾
+                              </button>
+                              {kpiDropdownMsrId === m.id && (
+                                <>
+                                  {/* 點擊外部關閉 */}
+                                  <div
+                                    style={{
+                                      position: "fixed",
+                                      inset: 0,
+                                      zIndex: 99,
+                                    }}
+                                    onClick={() => setKpiDropdownMsrId(null)}
+                                  />
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "calc(100% + 4px)",
+                                      right: 0,
+                                      zIndex: 100,
+                                      background: "#fff",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 8,
+                                      boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+                                      minWidth: 130,
+                                      overflow: "hidden",
+                                    }}
+                                  >
+                                    {(
+                                      [
+                                        ["value", "📐 量化型"],
+                                        ["progress", "📊 進度型"],
+                                        ["growth", "📈 成長型"],
+                                        ["target_rate", "🎯 目標率型"],
+                                      ] as const
+                                    ).map(([type, label]) => (
+                                      <button
+                                        key={type}
+                                        style={{
+                                          display: "block",
+                                          width: "100%",
+                                          padding: "9px 14px",
+                                          textAlign: "left",
+                                          background: "none",
+                                          border: "none",
+                                          fontSize: 13,
+                                          cursor: "pointer",
+                                          color: "#374151",
+                                        }}
+                                        onMouseEnter={(e) =>
+                                          ((
+                                            e.currentTarget as HTMLButtonElement
+                                          ).style.background = "#f3f4f6")
+                                        }
+                                        onMouseLeave={(e) =>
+                                          ((
+                                            e.currentTarget as HTMLButtonElement
+                                          ).style.background = "none")
+                                        }
+                                        onClick={() => {
+                                          addKpiToMeasure(m.id, type);
+                                        }}
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          {!isReadOnly && (
+                            <button
+                              className="plan-del-btn"
+                              onClick={() => deleteMeasure(m.id)}
+                              title="刪除活動"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </div>
                       </div>
                       {!collapsed && (
@@ -1750,6 +1776,7 @@ export default function DetailPanel({
                                     updateKPI(m.id, k.id, updated)
                                   }
                                   onDelete={() => deleteKPI(m.id, k.id)}
+                                  isReadOnly={isReadOnly}
                                 />
                               );
                             })}
@@ -1766,9 +1793,11 @@ export default function DetailPanel({
                 })}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button className="detail-add-btn" onClick={() => addMeasure()}>
-                + 新增活動（於所選季度）
-              </button>
+              {!isReadOnly && (
+                <button className="detail-add-btn" onClick={() => addMeasure()}>
+                  + 新增活動（於所選季度）
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -2007,12 +2036,14 @@ export default function DetailPanel({
                             })}
                           </tbody>
                         </table>
-                        <button
-                          className="plan-add-item"
-                          onClick={() => addChecklistItemToMeasure(m.id)}
-                        >
-                          + 新增項目
-                        </button>
+                        {!isReadOnly && (
+                          <button
+                            className="plan-add-item"
+                            onClick={() => addChecklistItemToMeasure(m.id)}
+                          >
+                            + 新增項目
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2126,6 +2157,7 @@ export default function DetailPanel({
               onSave={(v) => onUpdate({ ...strategy, notes: v })}
               className="notes-textarea"
               placeholder="在此記錄備注、決策或補充說明…"
+              disabled={isReadOnly}
             />
           </div>
         )}

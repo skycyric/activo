@@ -21,6 +21,7 @@ interface Props {
   onSelectMeasure: (goalId: string, stratId: string, measureId: string) => void;
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
+  isReadOnly?: boolean;
 }
 
 //  stat types
@@ -119,6 +120,7 @@ export default function OverviewPage({
   onSelectMeasure,
   onEditObjective,
   onAddGoal,
+  isReadOnly = false,
 }: Props) {
   const [editingO, setEditingO] = useState(false);
   const [oText, setOText] = useState("");
@@ -268,10 +270,11 @@ export default function OverviewPage({
               <div
                 className="ov-objective-text"
                 onDoubleClick={() => {
+                  if (isReadOnly) return;
                   setOText(data.objectives?.deptO ?? "");
                   setEditingO(true);
                 }}
-                title="雙擊編輯"
+                title={isReadOnly ? "唯讀模式" : "雙擊編輯"}
               >
                 {data.objectives?.deptO || (
                   <span style={{ color: "#6b7280", fontStyle: "italic" }}>
@@ -554,9 +557,11 @@ export default function OverviewPage({
       </div>
 
       <div className="ov-actions">
-        <button className="ov-add-goal" onClick={onAddGoal}>
-          ＋ 新增目標（G）
-        </button>
+        {!isReadOnly && (
+          <button className="ov-add-goal" onClick={onAddGoal}>
+            ＋ 新增目標（G）
+          </button>
+        )}
       </div>
 
       {/*  Org-chart Tree  */}

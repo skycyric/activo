@@ -21,6 +21,7 @@ import type {
   WorkspaceData,
   Goal,
   Strategy,
+  Measure,
   Team,
   Department,
   PeriodData,
@@ -123,22 +124,8 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
           : "(自動計算)",
     });
   }
-  if (JSON.stringify(ls.measures) !== JSON.stringify(rs.measures)) {
-    diffs.push({
-      field: "measures",
-      label: "衡量指標",
-      localVal: fmt(ls.measures, "measures"),
-      remoteVal: fmt(rs.measures, "measures"),
-    });
-  }
-  if (JSON.stringify(ls.actionPlans) !== JSON.stringify(rs.actionPlans)) {
-    diffs.push({
-      field: "actionPlans",
-      label: "行動計畫",
-      localVal: fmt(ls.actionPlans, "actionPlans"),
-      remoteVal: fmt(rs.actionPlans, "actionPlans"),
-    });
-  }
+  // 注意：measures 和 actionPlans 不在此處做衝突偵測，
+  // mergeMeasures 會以 Measure id + updatedAt 進行細粒度合併，不需要人工介入。
   return diffs;
 }
 
@@ -282,6 +269,38 @@ function newerOf<T extends { updatedAt?: string }>(a: T, b: T): T {
   return a.updatedAt >= b.updatedAt ? a : b;
 }
 
+// Measure 層級合併：逐筆 by id，newerOf per measure
+// 無論哪一方的 Strategy metadata 取勝，雙方各自修改的 Measure 都會被保留
+function mergeMeasures(
+  local: Measure[],
+  remote: Measure[],
+  deleted: Set<string>,
+): { measures: Measure[]; count: number } {
+  const filtered = local.filter((m) => !deleted.has(m.id));
+  const map = new Map<string, Measure>(filtered.map((m) => [m.id, m]));
+  let count = local.length - filtered.length;
+
+  for (const rm of remote) {
+    if (deleted.has(rm.id)) {
+      if (map.delete(rm.id)) count++;
+      continue;
+    }
+    const lm = map.get(rm.id);
+    if (!lm) {
+      map.set(rm.id, rm);
+      count++;
+    } else {
+      const winner = newerOf(lm, rm);
+      if (winner !== lm) {
+        map.set(rm.id, winner);
+        count++;
+      }
+    }
+  }
+
+  return { measures: Array.from(map.values()), count };
+}
+
 // array merges
 
 function mergeStrategies(
@@ -304,18 +323,33 @@ function mergeStrategies(
       map.set(rs.id, rs);
       count++;
     } else {
+      // 先進行 Measure 層級合併（細粒度 by id + updatedAt）
+      // 不管 Strategy metadata 哪方勝出，雙方各自修改的 Measure 都會完整保留
+      const { measures: mergedMeasures, count: mc } = mergeMeasures(
+        ls.measures,
+        rs.measures,
+        deleted,
+      );
+
+      // Strategy metadata（title / notes / owners / manualRate / actionPlans）
+      // 仍以 newerOf 或使用者選擇決定
       const res = resolutions?.[rs.id];
+      let metaWinner: Strategy;
+      let metaChanged = false;
       if (res === "local") {
-        // keep ls
+        metaWinner = ls;
       } else if (res === "remote") {
-        map.set(rs.id, rs);
-        count++;
+        metaWinner = rs;
+        metaChanged = true;
       } else {
-        const winner = newerOf(ls, rs);
-        if (winner !== ls) {
-          map.set(rs.id, winner);
-          count++;
-        }
+        metaWinner = newerOf(ls, rs);
+        metaChanged = metaWinner !== ls;
+      }
+
+      if (metaChanged || mc > 0) {
+        map.set(rs.id, { ...metaWinner, measures: mergedMeasures });
+        if (metaChanged) count++;
+        count += mc;
       }
     }
   }
