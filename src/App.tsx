@@ -30,10 +30,7 @@ import {
   readDataFile,
   readDataFileMeta,
   writeDataFile,
-  clearDataFile,
-  pickDataFolder,
   peekDataFolder,
-  clearDataFolder,
   scanForConflictCopies,
   pickRootFolder,
   loadRootHandle,
@@ -56,6 +53,20 @@ import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
 import ActivityPage from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
@@ -150,7 +161,6 @@ export default function App() {
   const [showDeptSettings, setShowDeptSettings] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
   const [showHomePage, setShowHomePage] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
   const fsSupported = isFileSystemAccessSupported();
@@ -562,39 +572,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace, fileSaveNow, applyHandle]);
 
-  const handleUnlinkFile = useCallback(async () => {
-    fileHandleRef.current = null;
-    await clearDataFile();
-    setSyncStatus("unlinked");
-    setSyncError("");
-    if (pendingClickHandlerRef.current) {
-      document.removeEventListener("click", pendingClickHandlerRef.current);
-      pendingClickHandlerRef.current = null;
-    }
-  }, []);
-
-  const handleLinkFolder = useCallback(async () => {
-    const dir = await pickDataFolder();
-    if (!dir) return;
-    dirHandleRef.current = dir;
-    // 立刻扫描一次
-    const handle = fileHandleRef.current;
-    if (handle) {
-      try {
-        const copies = await scanForConflictCopies(dir, handle.name);
-        setConflictCopies(copies);
-      } catch {
-        // best-effort
-      }
-    }
-  }, []);
-
-  const handleUnlinkFolder = useCallback(async () => {
-    dirHandleRef.current = null;
-    setConflictCopies([]);
-    await clearDataFolder();
-  }, []);
-
   // ─── Multi-file mode handlers ─────────────────────────────────────────
   const handleLinkRootFolder = useCallback(async () => {
     const rootHandle = await pickRootFolder();
@@ -802,23 +779,6 @@ export default function App() {
   const handleDismissCopy = useCallback((name: string) => {
     setConflictCopies((prev) => prev.filter((c) => c.name !== name));
   }, []);
-
-  // Badge click when status is "pending": manual retry with user gesture
-  const handleReauthorize = useCallback(async () => {
-    if (authInProgressRef.current) return;
-    authInProgressRef.current = true;
-    // Remove the auto-listener to avoid double-firing
-    if (pendingClickHandlerRef.current) {
-      document.removeEventListener("click", pendingClickHandlerRef.current);
-      pendingClickHandlerRef.current = null;
-    }
-    try {
-      const handle = await authorizeDataFile();
-      if (handle) await applyHandle(handle);
-    } finally {
-      authInProgressRef.current = false;
-    }
-  }, [applyHandle]);
 
   // Conflict resolution handlers
   const handleConflictChange = useCallback(
@@ -2273,42 +2233,6 @@ export default function App() {
     ],
   );
 
-  // ── Phase 0: Split current workspace into per-dept JSON downloads ────────
-  const handleSplitDepts = useCallback(() => {
-    if (workspace.departments.length < 2) {
-      alert("目前只有一個部門，不需要拆分。");
-      return;
-    }
-    if (
-      !window.confirm(
-        `確定要將 ${workspace.departments.length} 個部門拆分為獨立 JSON 並下載嗎？\n請將每個檔案放到對應的子資料夾（OGSM/[部門名稱]/）。`,
-      )
-    )
-      return;
-    const allTeams = workspace.teams ?? [];
-    workspace.departments.forEach((dept) => {
-      const deptTeams = allTeams.filter(
-        (t) => !t.deptId || t.deptId === dept.id,
-      );
-      const deptWs: WorkspaceData = {
-        departments: [dept],
-        version: 1,
-        savedAt: new Date().toISOString(),
-        teams: deptTeams.length > 0 ? deptTeams : undefined,
-        warnDaysBefore: workspace.warnDaysBefore,
-      };
-      const blob = new Blob([JSON.stringify(deptWs, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${dept.name}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-  }, [workspace]);
-
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2398,84 +2322,71 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-left">
-          <div className="header-menu-wrap">
-            <button
-              className="header-menu-btn"
-              onClick={() => setMenuOpen((v) => !v)}
-              title="主選單"
-            >
-              ☰
-            </button>
-            {menuOpen && (
-              <div
-                className="header-menu-dropdown"
-                onMouseLeave={() => setMenuOpen(false)}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="header-menu-btn" title="主選單">
+                ☰
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem
+                onClick={() => {
+                  setShowHomePage(true);
+                  setShowActivityPage(false);
+                  setShowDeptSettings(false);
+                }}
               >
-                <button
-                  className="header-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowHomePage(true);
-                    setShowActivityPage(false);
-                    setShowDeptSettings(false);
-                  }}
-                >
-                  🏠 首頁
-                </button>
-                <button
-                  className="header-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowHomePage(false);
-                    setShowActivityPage(false);
-                    setShowDeptSettings(false);
-                  }}
-                >
-                  📊 OGSM 儀表板
-                </button>
-                <button
-                  className="header-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowActivityPage(true);
-                    setShowHomePage(false);
-                    setShowDeptSettings(false);
-                  }}
-                >
-                  📋 活動管理
-                </button>
-                <button
-                  className="header-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowDeptSettings(true);
-                    setShowHomePage(false);
-                    setShowActivityPage(false);
-                    setSelectedGoalId(null);
-                    setSelectedStrategyId(null);
-                  }}
-                >
-                  ⚙️ 部門設定
-                </button>
-              </div>
-            )}
-          </div>
+                🏠 首頁
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setShowDeptSettings(false);
+                }}
+              >
+                📊 OGSM 儀表板
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setShowActivityPage(true);
+                  setShowHomePage(false);
+                  setShowDeptSettings(false);
+                }}
+              >
+                📋 活動管理
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  setShowDeptSettings(true);
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setSelectedGoalId(null);
+                  setSelectedStrategyId(null);
+                }}
+              >
+                ⚙️ 部門設定
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <span className="header-logo">A</span>
           <span className="header-title">Activo</span>
         </div>
 
         <div className="header-toolbar">
-          <select
-            className="header-dept-select"
-            value={activeDeptId}
-            onChange={(e) => handleSwitchDept(e.target.value)}
-          >
-            {effectiveWorkspace.departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          <Select value={activeDeptId} onValueChange={handleSwitchDept}>
+            <SelectTrigger className="h-8 w-[160px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {effectiveWorkspace.departments.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {fsSupported &&
             (isMultiFileMode ? (
