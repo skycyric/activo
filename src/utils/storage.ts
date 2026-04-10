@@ -6,6 +6,7 @@ import {
   type Strategy,
   type ActionPlan,
   type PlanItem,
+  type DeptActivity,
   WorkspaceDataSchema,
   OGSMDataSchema,
 } from "../schemas/ogsm";
@@ -322,6 +323,50 @@ export function migrateOwnerToOwners(ws: WorkspaceData): boolean {
   return changed;
 }
 
+/**
+ * activity-first 遷移：將每個 Strategy.measures[] 中的活動提升為
+ * Department.activities[] 的一等公民，並在活動上附加 ogsmLink 定位資訊。
+ *
+ * 遷移規則：
+ * 1. 遇到 ID 已存在於 dept.activities 的活動 → 跳過（冪等）
+ * 2. Strategy.measures[] 保留不動（舊 UI 仍可讀）
+ * 3. 每筆 DeptActivity 帶有 ogsmLink 指回來源 Strategy
+ * 4. excludeFromOgsm 預設 false（預設全部計入 OGSM）
+ */
+export function migrateToActivityFirst(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    if (!dept.activities) {
+      dept.activities = [];
+      changed = true;
+    }
+    const existingIds = new Set(dept.activities.map((a) => a.id));
+
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          for (const measure of strategy.measures) {
+            if (existingIds.has(measure.id)) continue;
+            const activity: DeptActivity = {
+              ...measure,
+              ogsmLink: {
+                periodId: period.id,
+                goalId: goal.id,
+                strategyId: strategy.id,
+              },
+              excludeFromOgsm: false,
+            };
+            dept.activities.push(activity);
+            existingIds.add(measure.id);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return changed;
+}
+
 function normalizeWorkspaceData(ws: WorkspaceData): boolean {
   let changed = false;
   // One-time heavy migrations — gated by _migratedPhase2 so they run only once
@@ -344,6 +389,11 @@ function normalizeWorkspaceData(ws: WorkspaceData): boolean {
   if (!ws._migratedPhase3) {
     if (migrateOwnerToOwners(ws)) changed = true;
     ws._migratedPhase3 = true;
+    changed = true;
+  }
+  if (!ws._migratedActivityFirst) {
+    if (migrateToActivityFirst(ws)) changed = true;
+    ws._migratedActivityFirst = true;
     changed = true;
   }
   // Always-run invariant: ensure owners is always an array regardless of migration state.

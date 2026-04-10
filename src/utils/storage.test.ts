@@ -3,10 +3,11 @@ import {
   saveWorkspace,
   loadWorkspace,
   migrateOwnerToOwners,
+  migrateToActivityFirst,
   parseAndValidateJSON,
   normalizeOneStrategy,
 } from "./storage";
-import type { WorkspaceData, Strategy, Goal } from "../schemas/ogsm";
+import type { WorkspaceData, Strategy, Goal, Measure } from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
 
@@ -499,5 +500,225 @@ describe("normalizeOneStrategy", () => {
     });
     normalizeOneStrategy(s);
     expect(s.actionPlans[0].items[0].plannedEndDate).toBe("2026-05-01");
+  });
+});
+
+// ─── migrateToActivityFirst ───────────────────────────────────────────────────
+
+function makeMeasure(overrides: Partial<Measure> = {}): Measure {
+  return {
+    id: "msr1",
+    rawText: "活動A",
+    kpis: [],
+    status: "not-started",
+    ...overrides,
+  };
+}
+
+describe("migrateToActivityFirst", () => {
+  test("measures 被提升到 dept.activities，並附加 ogsmLink", () => {
+    const ws = makeWorkspace({
+      _migratedActivityFirst: false,
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "period1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [makeMeasure({ id: "msr1", rawText: "活動A" })],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const changed = migrateToActivityFirst(ws);
+    const activities = ws.departments[0].activities!;
+
+    expect(changed).toBe(true);
+    expect(activities).toHaveLength(1);
+    expect(activities[0].id).toBe("msr1");
+    expect(activities[0].rawText).toBe("活動A");
+    expect(activities[0].ogsmLink).toEqual({
+      periodId: "period1",
+      goalId: "g1",
+      strategyId: "strat1",
+    });
+    expect(activities[0].excludeFromOgsm).toBe(false);
+  });
+
+  test("冪等性：同 ID 的活動不重複加入 dept.activities", () => {
+    const existingActivity = {
+      ...makeMeasure({ id: "msr1" }),
+      ogsmLink: { periodId: "period1", goalId: "g1", strategyId: "strat1" },
+      excludeFromOgsm: false as boolean,
+    };
+    const ws = makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          activities: [existingActivity],
+          periods: [
+            {
+              id: "period1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [makeMeasure({ id: "msr1" })],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    migrateToActivityFirst(ws);
+    expect(ws.departments[0].activities!).toHaveLength(1);
+  });
+
+  test("多個 strategy 的 measures 都被提升", () => {
+    const ws = makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [makeMeasure({ id: "msr1" })],
+                    }),
+                    makeStrategy({
+                      id: "strat2",
+                      measures: [makeMeasure({ id: "msr2", rawText: "活動B" })],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    migrateToActivityFirst(ws);
+    const ids = ws.departments[0].activities!.map((a) => a.id);
+    expect(ids).toContain("msr1");
+    expect(ids).toContain("msr2");
+  });
+
+  test("strategy.measures[] 在遷移後保持不動（不被刪除）", () => {
+    const ws = makeWorkspace({
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [makeMeasure({ id: "msr1" })],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    migrateToActivityFirst(ws);
+    const strat =
+      ws.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(strat.measures).toHaveLength(1);
+  });
+
+  test("_migratedActivityFirst 旗標讓 loadWorkspace 自動執行遷移", () => {
+    const rawWs = makeWorkspace({
+      _migratedPhase2: true,
+      _migratedPhase3: true,
+      _migratedActivityFirst: false,
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([
+                    makeStrategy({
+                      id: "strat1",
+                      measures: [makeMeasure({ id: "msr99", rawText: "自動遷移活動" })],
+                    }),
+                  ]),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    localStorage.setItem("ogsm_workspace_v1", JSON.stringify(rawWs));
+    const loaded = loadWorkspace()!;
+    expect(loaded._migratedActivityFirst).toBe(true);
+    const activities = loaded.departments[0].activities!;
+    expect(activities.some((a) => a.id === "msr99")).toBe(true);
   });
 });
