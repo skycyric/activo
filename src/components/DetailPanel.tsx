@@ -8,6 +8,7 @@ import type {
   TeamMember,
   ActionPlan,
   PlanItem,
+  DeptActivity,
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { getPlanItemWarning } from "../utils/planWarnings";
@@ -25,6 +26,13 @@ interface Props {
   initialWarnFilter?: "overdue" | "warning" | null;
   initialMeasureId?: string;
   isReadOnly?: boolean;
+  /**
+   * dept.activities[] 中 ogsmLink.strategyId === strategy.id 的活動清單。
+   * 用於顯示「計入 OGSM」toggle；未提供時 toggle 不顯示。
+   */
+  linkedDeptActivities?: DeptActivity[];
+  /** 切換活動是否計入 OGSM 指標 */
+  onToggleExcludeFromOgsm?: (activityId: string, exclude: boolean) => void;
 }
 
 function InlineEdit({
@@ -640,6 +648,8 @@ export default function DetailPanel({
   initialWarnFilter,
   initialMeasureId,
   isReadOnly = false,
+  linkedDeptActivities,
+  onToggleExcludeFromOgsm,
 }: Props) {
   const [tab, setTab] = useState<"measure" | "plans" | "notes">(
     initialMeasureId ? "plans" : (initialTab ?? "measure"),
@@ -1481,10 +1491,15 @@ export default function DetailPanel({
                 })
                 .map((m) => {
                   const collapsed = !!measureCollapsed[m.id];
+                  // Phase 4: 找出對應的部門活動（用於 excludeFromOgsm toggle）
+                  const linkedDeptActivity = linkedDeptActivities?.find(
+                    (a) => a.id === m.id,
+                  );
+                  const isExcluded = linkedDeptActivity?.excludeFromOgsm === true;
                   return (
                     <div
                       key={m.id}
-                      className="measure-block"
+                      className={`measure-block${isExcluded ? " measure-block--excluded" : ""}`}
                       style={{ marginBottom: 12 }}
                     >
                       <div
@@ -1646,6 +1661,26 @@ export default function DetailPanel({
                           <option value="in-progress">進行中</option>
                           <option value="completed">已完成</option>
                         </select>
+                        {/* Phase 4: 計入 OGSM toggle（僅當部門活動存在時顯示） */}
+                        {linkedDeptActivity && (
+                          <label
+                            className="measure-ogsm-toggle"
+                            title={isExcluded ? "此活動不計入 OGSM 指標（點擊恢復）" : "此活動計入 OGSM 指標（點擊排除）"}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!isExcluded}
+                              disabled={isReadOnly}
+                              onChange={(e) =>
+                                onToggleExcludeFromOgsm?.(m.id, !e.target.checked)
+                              }
+                            />
+                            <span className={isExcluded ? "ogsm-toggle-label--excluded" : ""}>
+                              計入OGSM
+                            </span>
+                          </label>
+                        )}
                         <div
                           style={{
                             marginLeft: "auto",
