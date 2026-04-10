@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, Fragment } from "react";
 import type {
   Measure,
   MeasureStatus,
@@ -46,6 +46,8 @@ interface Props {
   workspace: WorkspaceData;
   expandedId: string | null;
   onSetExpandedId: (id: string | null) => void;
+  /** 目前套用中的 owner 篩選值；空字串代表未篩選 */
+  ownerFilter: string;
   onUpdateMeasure: (
     deptId: string,
     periodId: string,
@@ -80,6 +82,7 @@ export default function ActivityTable({
   workspace,
   expandedId,
   onSetExpandedId,
+  ownerFilter,
   onUpdateMeasure,
   onDeleteMeasure,
   onJumpToMeasure,
@@ -89,7 +92,10 @@ export default function ActivityTable({
     dir: "asc",
   });
   const [editState, setEditState] = useState<EditState | null>(null);
+  const [leavingIds, setLeavingIds] = useState<Set<string>>(new Set());
   const nameInputRef = useRef<HTMLInputElement>(null);
+  // Frozen sort snapshot — kept while an edit is open so rows don't jump
+  const frozenSortRef = useRef<ActivityWithContext[] | null>(null);
 
   // owner 名稱 → 所屬團隊名稱
   const lookupTeam = (owner: string | undefined): string => {
@@ -108,12 +114,15 @@ export default function ActivityTable({
     );
   };
 
-  const sorted = [...activities].sort((a, b) => {
+  const freshSorted = [...activities].sort((a, b) => {
     const dir = sort.dir === "asc" ? 1 : -1;
     const va = (a[sort.field] ?? "") as string;
     const vb = (b[sort.field] ?? "") as string;
     return va.localeCompare(vb, "zh-TW") * dir;
   });
+  // Freeze sort order while editing; resume on close
+  if (editState === null) frozenSortRef.current = freshSorted;
+  const sorted = frozenSortRef.current ?? freshSorted;
 
   const updateStatus = (act: ActivityWithContext, status: MeasureStatus) => {
     onUpdateMeasure(act.deptId, act.periodId, act.goalId, act.strategyId, {
@@ -148,11 +157,14 @@ export default function ActivityTable({
 
   const commitEdit = (act: ActivityWithContext) => {
     if (!editState) return;
+    const newOwner = editState.owner.trim();
+    // If owner filter is active and new owner won't match → schedule fade-out
+    const willLeaveFilter = ownerFilter !== "" && newOwner !== ownerFilter;
     onUpdateMeasure(act.deptId, act.periodId, act.goalId, act.strategyId, {
       ...act,
       rawText: editState.rawText.trim() || act.rawText,
       description: editState.description.trim() || undefined,
-      owner: editState.owner.trim() || undefined,
+      owner: newOwner || undefined,
       startDate: editState.startDate || undefined,
       endDate: editState.endDate || undefined,
       assistUnits: editState.assistUnits.length
@@ -166,6 +178,16 @@ export default function ActivityTable({
         : undefined,
       updatedAt: new Date().toISOString(),
     });
+    if (willLeaveFilter) {
+      setLeavingIds((prev) => new Set([...prev, act.id]));
+      setTimeout(() => {
+        setLeavingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(act.id);
+          return next;
+        });
+      }, 420);
+    }
     closeEdit();
   };
 
@@ -238,6 +260,7 @@ export default function ActivityTable({
         <tbody>
           {sorted.map((act) => {
             const isExpanded = expandedId === act.id;
+            const isLeaving = leavingIds.has(act.id);
             const si =
               STATUS_INFO[act.status ?? "not-started"] ??
               STATUS_INFO["not-started"];
@@ -250,10 +273,9 @@ export default function ActivityTable({
             });
 
             return (
-              <>
+              <Fragment key={act.id}>
                 <tr
-                  key={act.id}
-                  className={`act-row${isExpanded ? " expanded" : ""}`}
+                  className={`act-row${isExpanded ? " expanded" : ""}${isLeaving ? " act-row--leaving" : ""}`}
                 >
                   {/* 行動計劃名稱 */}
                   <td className="act-td act-td-name">
@@ -683,7 +705,7 @@ export default function ActivityTable({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>

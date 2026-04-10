@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { WorkspaceData, DeptActivity, Measure } from "../schemas/ogsm";
+import type { WorkspaceData, DeptActivity } from "../schemas/ogsm";
 
 interface Props {
   workspace: WorkspaceData;
@@ -10,7 +10,9 @@ interface Props {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getAllActivitiesForDept(dept: WorkspaceData["departments"][number]): DeptActivity[] {
+function getAllActivitiesForDept(
+  dept: WorkspaceData["departments"][number],
+): DeptActivity[] {
   // Primary: dept.activities[]
   if (dept.activities && dept.activities.length > 0) {
     return dept.activities;
@@ -62,8 +64,12 @@ export default function HomePage({
     return workspace.departments.map((dept) => {
       const activities = getAllActivitiesForDept(dept);
       const total = activities.length;
-      const completed = activities.filter((a) => a.status === "completed").length;
-      const inProgress = activities.filter((a) => a.status === "in-progress").length;
+      const completed = activities.filter(
+        (a) => a.status === "completed",
+      ).length;
+      const inProgress = activities.filter(
+        (a) => a.status === "in-progress",
+      ).length;
       const overdue = activities.filter((a) => {
         const end = parseDate(a.endDate);
         return end && end < today && a.status !== "completed";
@@ -71,10 +77,7 @@ export default function HomePage({
       const dueSoon = activities.filter((a) => {
         const end = parseDate(a.endDate);
         return (
-          end &&
-          end >= today &&
-          end <= weekEnd &&
-          a.status !== "completed"
+          end && end >= today && end <= weekEnd && a.status !== "completed"
         );
       }).length;
 
@@ -111,6 +114,15 @@ export default function HomePage({
     return { totalInProgress, totalDueSoon, totalOverdue, totalCompleted };
   }, [deptRows]);
 
+  // ── Read persisted owner filter (for recent list only; stats always show all) ──
+  const activeOwnerFilter = useMemo(() => {
+    try {
+      return localStorage.getItem("activo_filter_owner") ?? "";
+    } catch {
+      return "";
+    }
+  }, []);
+
   // ── Recent activities (max 8, sorted by endDate asc) ─────────────────────
   interface RecentItem {
     activity: DeptActivity;
@@ -128,20 +140,27 @@ export default function HomePage({
       for (const a of activities) {
         const end = parseDate(a.endDate);
         if (!end) continue;
+        // Apply owner filter: check a.owner and a.owners[]
+        if (activeOwnerFilter) {
+          const ownerList: string[] = [
+            a.owner ?? "",
+            ...((a as { owners?: string[] }).owners ?? []),
+          ];
+          if (!ownerList.includes(activeOwnerFilter)) continue;
+        }
         items.push({
           activity: a,
           deptId: dept.id,
           deptName: dept.name,
           endDate: end,
           isOverdue: end < today && a.status !== "completed",
-          isDueSoon:
-            end >= today && end <= weekEnd && a.status !== "completed",
+          isDueSoon: end >= today && end <= weekEnd && a.status !== "completed",
         });
       }
     }
     items.sort((a, b) => a.endDate.getTime() - b.endDate.getTime());
     return items.slice(0, 8);
-  }, [workspace, today, weekEnd]);
+  }, [workspace, today, weekEnd, activeOwnerFilter]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -154,7 +173,8 @@ export default function HomePage({
       <div className="home-header">
         <h1 className="home-title">總覽</h1>
         <p className="home-subtitle">
-          {workspace.departments.length} 個部門・{deptRows.reduce((s, r) => s + r.total, 0)} 個活動
+          {workspace.departments.length} 個部門・
+          {deptRows.reduce((s, r) => s + r.total, 0)} 個活動
         </p>
       </div>
 
@@ -237,7 +257,14 @@ export default function HomePage({
       {/* ── 近期活動 ── */}
       {recentActivities.length > 0 && (
         <section className="home-section">
-          <h2 className="home-section-title">近期活動（依到期日排序）</h2>
+        <h2 className="home-section-title">
+          近期活動（依到期日排序）
+          {activeOwnerFilter && (
+            <span className="home-owner-filter-note">
+              · 篩選：{activeOwnerFilter}
+            </span>
+          )}
+        </h2>
           <div className="home-recent-list">
             {recentActivities.map((item) => {
               let statusIcon = "·";
@@ -254,7 +281,8 @@ export default function HomePage({
               }
 
               const owners: string[] =
-                (item.activity as DeptActivity & { owners?: string[] }).owners ?? [];
+                (item.activity as DeptActivity & { owners?: string[] })
+                  .owners ?? [];
               const ownerLabel =
                 owners.length > 0
                   ? owners.slice(0, 2).join("・") +

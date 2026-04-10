@@ -6432,7 +6432,9 @@ body,
   border-radius: 8px;
   padding: 12px 16px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .home-dept-row:hover {
@@ -6600,6 +6602,33 @@ body,
   color: var(--text2);
   padding: 12px 0;
   margin: 0;
+}
+
+.home-owner-filter-note {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
+/* act-row--leaving: fade + slide-out when activity no longer matches filter */
+@keyframes act-leave {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+.act-row--leaving,
+.act-row--leaving + .act-expand-row {
+  animation: act-leave 0.4s ease forwards;
+  pointer-events: none;
 }
 .gantt-label-dept {
   font-size: 10px;

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { WorkspaceData, Measure, DeptActivity } from "../schemas/ogsm";
 import ActivityFilters, {
   type ActivityFilterState,
@@ -84,8 +84,30 @@ export default function ActivityPage({
 }: Props) {
   const [view, setView] = useState<ActivityView>("table");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [filters, setFilters] = useState<ActivityFilterState>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<ActivityFilterState>(() => ({
+    ...EMPTY_FILTERS,
+    owner: (() => {
+      try {
+        return localStorage.getItem("activo_filter_owner") ?? "";
+      } catch {
+        return "";
+      }
+    })(),
+  }));
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Persist owner filter to localStorage
+  useEffect(() => {
+    try {
+      if (filters.owner) {
+        localStorage.setItem("activo_filter_owner", filters.owner);
+      } else {
+        localStorage.removeItem("activo_filter_owner");
+      }
+    } catch {
+      // best-effort
+    }
+  }, [filters.owner]);
 
   // When a chip/card is clicked from non-table views, jump to table + expand
   const handleSetExpandedId = useCallback((id: string | null) => {
@@ -179,7 +201,13 @@ export default function ActivityPage({
         )
       )
         return false;
-      if (filters.owner && a.owner !== filters.owner) return false;
+      if (filters.owner) {
+        const ownerList: string[] = [
+          a.owner ?? "",
+          ...((a as { owners?: string[] }).owners ?? []),
+        ];
+        if (!ownerList.includes(filters.owner)) return false;
+      }
       if (filters.goalId && a.goalId !== filters.goalId) return false;
       if (filters.strategyId && a.strategyId !== filters.strategyId)
         return false;
@@ -261,6 +289,7 @@ export default function ActivityPage({
             workspace={workspace}
             expandedId={expandedId}
             onSetExpandedId={handleSetExpandedId}
+            ownerFilter={filters.owner}
             onUpdateMeasure={onUpdateMeasure}
             onDeleteMeasure={onDeleteMeasure}
             onJumpToMeasure={onJumpToMeasure}

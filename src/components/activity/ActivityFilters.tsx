@@ -100,9 +100,14 @@ export default function ActivityFilters({
   }
   const strategies = Array.from(stratMap.values());
 
-  // Owners from visible activities
+  // Owners from visible activities — include both a.owner and a.owners[]
   const owners = Array.from(
-    new Set(allActivities.map((a) => a.owner ?? "").filter(Boolean)),
+    new Set(
+      allActivities.flatMap((a) => [
+        a.owner ?? "",
+        ...((a as { owners?: string[] }).owners ?? []),
+      ]).filter(Boolean),
+    ),
   ).sort();
 
   const hasFilter = Object.values(filters).some((v) => v !== "");
