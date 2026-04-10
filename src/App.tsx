@@ -2399,9 +2399,21 @@ export default function App() {
         <div className="header-brand">
           <span className="header-logo">A</span>
           <span className="header-title">Activo</span>
-          <span className="header-period">
-            {activeDept?.name ?? ""} · {data.period}
-          </span>
+          {showHomePage || showActivityPage ? (
+            <select
+              className="header-dept-select"
+              value={activeDeptId}
+              onChange={(e) => handleSwitchDept(e.target.value)}
+            >
+              {effectiveWorkspace.departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="header-period">
+              {activeDept?.name ?? ""} · {data.period}
+            </span>
+          )}
         </div>
         {fsSupported && !isMultiFileMode && (
           <div
@@ -2758,6 +2770,7 @@ export default function App() {
       )}
 
       <div className="app-body">
+        {!showHomePage && !showActivityPage && (
         <Sidebar
           workspace={effectiveWorkspace}
           activeDeptId={activeDept?.id ?? ""}
@@ -2814,9 +2827,16 @@ export default function App() {
             setSelectedStrategyId(null);
           }}
         />
+        )}
         {showHomePage ? (
           <HomePage
             workspace={effectiveWorkspace}
+            activeDeptId={activeDeptId}
+            activePeriodLabel={
+              activePeriod
+                ? `${activePeriod.year} ${activePeriod.halfYear}`
+                : data.period
+            }
             readOnlyDeptIds={
               isMultiFileMode
                 ? (deptFiles
@@ -2838,16 +2858,17 @@ export default function App() {
               setSelectedGoalId(null);
               setSelectedStrategyId(null);
             }}
-            onSwitchToOgsm={(deptId) => {
-              if (deptId) {
-                const dept = effectiveWorkspace.departments.find(
-                  (d) => d.id === deptId,
-                );
-                if (dept) setActiveDeptId(deptId);
-              }
+            onSwitchToOgsm={() => {
               setShowHomePage(false);
               setShowActivityPage(false);
               setShowDeptSettings(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+            onSwitchToDeptSettings={() => {
+              setShowDeptSettings(true);
+              setShowHomePage(false);
+              setShowActivityPage(false);
               setSelectedGoalId(null);
               setSelectedStrategyId(null);
             }}
