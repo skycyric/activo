@@ -1495,7 +1495,8 @@ export default function DetailPanel({
                   const linkedDeptActivity = linkedDeptActivities?.find(
                     (a) => a.id === m.id,
                   );
-                  const isExcluded = linkedDeptActivity?.excludeFromOgsm === true;
+                  const isExcluded =
+                    linkedDeptActivity?.excludeFromOgsm === true;
                   return (
                     <div
                       key={m.id}
@@ -1665,7 +1666,11 @@ export default function DetailPanel({
                         {linkedDeptActivity && (
                           <label
                             className="measure-ogsm-toggle"
-                            title={isExcluded ? "此活動不計入 OGSM 指標（點擊恢復）" : "此活動計入 OGSM 指標（點擊排除）"}
+                            title={
+                              isExcluded
+                                ? "此活動不計入 OGSM 指標（點擊恢復）"
+                                : "此活動計入 OGSM 指標（點擊排除）"
+                            }
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
@@ -1673,10 +1678,17 @@ export default function DetailPanel({
                               checked={!isExcluded}
                               disabled={isReadOnly}
                               onChange={(e) =>
-                                onToggleExcludeFromOgsm?.(m.id, !e.target.checked)
+                                onToggleExcludeFromOgsm?.(
+                                  m.id,
+                                  !e.target.checked,
+                                )
                               }
                             />
-                            <span className={isExcluded ? "ogsm-toggle-label--excluded" : ""}>
+                            <span
+                              className={
+                                isExcluded ? "ogsm-toggle-label--excluded" : ""
+                              }
+                            >
                               計入OGSM
                             </span>
                           </label>

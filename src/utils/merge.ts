@@ -93,7 +93,10 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
     ["notes", "備註"],
   ];
   for (const [f, label] of fields) {
-    if (String(ls[f] ?? "") !== String(rs[f] ?? "")) {
+    const lv = String(ls[f] ?? "");
+    const rv = String(rs[f] ?? "");
+    // 只有雙方都有值且不同，才視為真實衝突；一方為空代表「未填寫」，由合併函數自動選非空方
+    if (lv !== rv && !isEmpty(ls[f]) && !isEmpty(rs[f])) {
       diffs.push({
         field: f,
         label,
@@ -102,15 +105,25 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
       });
     }
   }
-  if (JSON.stringify(ls.owners ?? []) !== JSON.stringify(rs.owners ?? [])) {
+  const lOwners = ls.owners ?? [];
+  const rOwners = rs.owners ?? [];
+  if (
+    JSON.stringify(lOwners) !== JSON.stringify(rOwners) &&
+    !isEmpty(lOwners) &&
+    !isEmpty(rOwners)
+  ) {
     diffs.push({
       field: "owners",
       label: "負責人",
-      localVal: fmt(ls.owners ?? [], "owners"),
-      remoteVal: fmt(rs.owners ?? [], "owners"),
+      localVal: fmt(lOwners, "owners"),
+      remoteVal: fmt(rOwners, "owners"),
     });
   }
-  if (ls.manualRate !== rs.manualRate) {
+  if (
+    ls.manualRate !== rs.manualRate &&
+    !isEmpty(ls.manualRate) &&
+    !isEmpty(rs.manualRate)
+  ) {
     diffs.push({
       field: "manualRate",
       label: "完成率",
@@ -131,7 +144,7 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
 
 function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
   const diffs: FieldDiff[] = [];
-  if (lg.title !== rg.title) {
+  if (lg.title !== rg.title && !isEmpty(lg.title) && !isEmpty(rg.title)) {
     diffs.push({
       field: "title",
       label: "目標名稱",
@@ -139,7 +152,11 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
       remoteVal: fmt(rg.title),
     });
   }
-  if (lg.fullText !== rg.fullText) {
+  if (
+    (lg.fullText ?? "") !== (rg.fullText ?? "") &&
+    !isEmpty(lg.fullText) &&
+    !isEmpty(rg.fullText)
+  ) {
     diffs.push({
       field: "fullText",
       label: "目標說明",
@@ -152,7 +169,7 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
 
 function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
   const diffs: FieldDiff[] = [];
-  if (lt.name !== rt.name) {
+  if (lt.name !== rt.name && !isEmpty(lt.name) && !isEmpty(rt.name)) {
     diffs.push({
       field: "name",
       label: "團隊名稱",
@@ -160,12 +177,18 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
       remoteVal: fmt(rt.name),
     });
   }
-  if (JSON.stringify(lt.members) !== JSON.stringify(rt.members)) {
+  const lMembers = lt.members ?? [];
+  const rMembers = rt.members ?? [];
+  if (
+    JSON.stringify(lMembers) !== JSON.stringify(rMembers) &&
+    !isEmpty(lMembers) &&
+    !isEmpty(rMembers)
+  ) {
     diffs.push({
       field: "members",
       label: "成員",
-      localVal: fmt(lt.members, "members"),
-      remoteVal: fmt(rt.members, "members"),
+      localVal: fmt(lMembers, "members"),
+      remoteVal: fmt(rMembers, "members"),
     });
   }
   return diffs;
@@ -269,6 +292,178 @@ function newerOf<T extends { updatedAt?: string }>(a: T, b: T): T {
   return a.updatedAt >= b.updatedAt ? a : b;
 }
 
+/**
+ * 空值判斷：null / undefined / "" / 空白字串 / 空陣列 → 視為「未填寫」。
+ * 0 與 false 不視為空值（是使用者明確設定的值）。
+ */
+function isEmpty(val: unknown): boolean {
+  if (val === null || val === undefined) return true;
+  if (typeof val === "string") return val.trim() === "";
+  if (Array.isArray(val)) return val.length === 0;
+  return false;
+}
+
+/**
+ * Strategy 欄位級別合併（Field-Level Merge）。
+ * 規則：
+ *   - 一方空值、另一方有值  → 自動採非空方（不計入衝突）
+ *   - 雙方皆有值且不同       → Last-Write-Wins（updatedAt 較新者優先）
+ *   - 雙方值相同             → 無變化
+ * updatedAt 取兩者最大值，確保合併結果代表最新已知狀態。
+ */
+function fieldMergeStrategy(
+  ls: Strategy,
+  rs: Strategy,
+): { merged: Strategy; changed: boolean } {
+  const winner = newerOf(ls, rs);
+  const merged: Strategy = { ...ls };
+  let changed = false;
+
+  // title
+  if ((ls.title ?? "") !== (rs.title ?? "")) {
+    if (isEmpty(ls.title) && !isEmpty(rs.title)) {
+      merged.title = rs.title;
+      changed = true;
+    } else if (!isEmpty(ls.title) && !isEmpty(rs.title) && winner === rs) {
+      merged.title = rs.title;
+      changed = true;
+    }
+  }
+
+  // notes
+  if ((ls.notes ?? "") !== (rs.notes ?? "")) {
+    if (isEmpty(ls.notes) && !isEmpty(rs.notes)) {
+      merged.notes = rs.notes;
+      changed = true;
+    } else if (!isEmpty(ls.notes) && !isEmpty(rs.notes) && winner === rs) {
+      merged.notes = rs.notes;
+      changed = true;
+    }
+  }
+
+  // owners：空陣列視為「未指定」
+  const lOwners = ls.owners ?? [];
+  const rOwners = rs.owners ?? [];
+  if (JSON.stringify(lOwners) !== JSON.stringify(rOwners)) {
+    if (isEmpty(lOwners) && !isEmpty(rOwners)) {
+      merged.owners = rOwners;
+      changed = true;
+    } else if (!isEmpty(lOwners) && !isEmpty(rOwners) && winner === rs) {
+      merged.owners = rOwners;
+      changed = true;
+    }
+  }
+
+  // manualRate：null 視為「使用自動計算」
+  if (ls.manualRate !== rs.manualRate) {
+    if (isEmpty(ls.manualRate) && !isEmpty(rs.manualRate)) {
+      merged.manualRate = rs.manualRate;
+      changed = true;
+    } else if (
+      !isEmpty(ls.manualRate) &&
+      !isEmpty(rs.manualRate) &&
+      winner === rs
+    ) {
+      merged.manualRate = rs.manualRate;
+      changed = true;
+    }
+  }
+
+  // actionPlans：空陣列視為「尚未建立」，有資料則以 LWW 決定
+  const lAP = ls.actionPlans ?? [];
+  const rAP = rs.actionPlans ?? [];
+  if (JSON.stringify(lAP) !== JSON.stringify(rAP)) {
+    if (isEmpty(lAP) && !isEmpty(rAP)) {
+      merged.actionPlans = rAP;
+      changed = true;
+    } else if (!isEmpty(lAP) && !isEmpty(rAP) && winner === rs) {
+      merged.actionPlans = rAP;
+      changed = true;
+    }
+  }
+
+  // updatedAt：取兩者最大值
+  if (rs.updatedAt && (!ls.updatedAt || rs.updatedAt > ls.updatedAt)) {
+    merged.updatedAt = rs.updatedAt;
+  }
+
+  return { merged, changed };
+}
+
+/** Goal 欄位級別合併，同 fieldMergeStrategy 邏輯。 */
+function fieldMergeGoal(
+  lg: Goal,
+  rg: Goal,
+): { merged: Goal; changed: boolean } {
+  const winner = newerOf(lg, rg);
+  const merged: Goal = { ...lg };
+  let changed = false;
+
+  if ((lg.title ?? "") !== (rg.title ?? "")) {
+    if (isEmpty(lg.title) && !isEmpty(rg.title)) {
+      merged.title = rg.title;
+      changed = true;
+    } else if (!isEmpty(lg.title) && !isEmpty(rg.title) && winner === rg) {
+      merged.title = rg.title;
+      changed = true;
+    }
+  }
+
+  if ((lg.fullText ?? "") !== (rg.fullText ?? "")) {
+    if (isEmpty(lg.fullText) && !isEmpty(rg.fullText)) {
+      merged.fullText = rg.fullText;
+      changed = true;
+    } else if (!isEmpty(lg.fullText) && !isEmpty(rg.fullText) && winner === rg) {
+      merged.fullText = rg.fullText;
+      changed = true;
+    }
+  }
+
+  if (rg.updatedAt && (!lg.updatedAt || rg.updatedAt > lg.updatedAt)) {
+    merged.updatedAt = rg.updatedAt;
+  }
+
+  return { merged, changed };
+}
+
+/** Team 欄位級別合併，同 fieldMergeStrategy 邏輯。 */
+function fieldMergeTeam(
+  lt: Team,
+  rt: Team,
+): { merged: Team; changed: boolean } {
+  const winner = newerOf(lt, rt);
+  const merged: Team = { ...lt };
+  let changed = false;
+
+  if ((lt.name ?? "") !== (rt.name ?? "")) {
+    if (isEmpty(lt.name) && !isEmpty(rt.name)) {
+      merged.name = rt.name;
+      changed = true;
+    } else if (!isEmpty(lt.name) && !isEmpty(rt.name) && winner === rt) {
+      merged.name = rt.name;
+      changed = true;
+    }
+  }
+
+  const lMembers = lt.members ?? [];
+  const rMembers = rt.members ?? [];
+  if (JSON.stringify(lMembers) !== JSON.stringify(rMembers)) {
+    if (isEmpty(lMembers) && !isEmpty(rMembers)) {
+      merged.members = rMembers;
+      changed = true;
+    } else if (!isEmpty(lMembers) && !isEmpty(rMembers) && winner === rt) {
+      merged.members = rMembers;
+      changed = true;
+    }
+  }
+
+  if (rt.updatedAt && (!lt.updatedAt || rt.updatedAt > lt.updatedAt)) {
+    merged.updatedAt = rt.updatedAt;
+  }
+
+  return { merged, changed };
+}
+
 // Measure 層級合併：逐筆 by id，newerOf per measure
 // 無論哪一方的 Strategy metadata 取勝，雙方各自修改的 Measure 都會被保留
 function mergeMeasures(
@@ -332,22 +527,23 @@ function mergeStrategies(
       );
 
       // Strategy metadata（title / notes / owners / manualRate / actionPlans）
-      // 仍以 newerOf 或使用者選擇決定
+      // 欄位級別合併：空値自動採非空方，雙方皆有値則 LWW；使用者手動解決時採整體覆蓋
       const res = resolutions?.[rs.id];
-      let metaWinner: Strategy;
+      let mergedStratMeta: Strategy;
       let metaChanged = false;
       if (res === "local") {
-        metaWinner = ls;
+        mergedStratMeta = ls;
       } else if (res === "remote") {
-        metaWinner = rs;
+        mergedStratMeta = rs;
         metaChanged = true;
       } else {
-        metaWinner = newerOf(ls, rs);
-        metaChanged = metaWinner !== ls;
+        const fm = fieldMergeStrategy(ls, rs);
+        mergedStratMeta = fm.merged;
+        metaChanged = fm.changed;
       }
 
       if (metaChanged || mc > 0) {
-        map.set(rs.id, { ...metaWinner, measures: mergedMeasures });
+        map.set(rs.id, { ...mergedStratMeta, measures: mergedMeasures });
         if (metaChanged) count++;
         count += mc;
       }
@@ -384,19 +580,23 @@ function mergeGoals(
         resolutions,
       );
       const res = resolutions?.[rg.id];
-      let metaWinner: Goal;
+      let mergedGoalMeta: Goal;
+      let metaIsChanged = false;
       if (res === "local") {
-        metaWinner = lg;
+        mergedGoalMeta = lg;
       } else if (res === "remote") {
-        metaWinner = rg;
+        mergedGoalMeta = rg;
+        metaIsChanged = true;
         count++;
       } else {
-        metaWinner = newerOf(lg, rg);
-        if (metaWinner !== lg) count++;
+        const fm = fieldMergeGoal(lg, rg);
+        mergedGoalMeta = fm.merged;
+        metaIsChanged = fm.changed;
+        if (metaIsChanged) count++;
       }
-      const changed = sc > 0 || metaWinner !== lg;
+      const changed = sc > 0 || metaIsChanged;
       if (changed) {
-        map.set(rg.id, { ...metaWinner, strategies });
+        map.set(rg.id, { ...mergedGoalMeta, strategies });
         count += sc;
       }
     }
@@ -432,9 +632,9 @@ function mergeTeams(
         map.set(rt.id, rt);
         count++;
       } else {
-        const winner = newerOf(lt, rt);
-        if (winner !== lt) {
-          map.set(rt.id, winner);
+        const fm = fieldMergeTeam(lt, rt);
+        if (fm.changed) {
+          map.set(rt.id, fm.merged);
           count++;
         }
       }

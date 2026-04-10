@@ -435,3 +435,229 @@ describe("detectConflicts — owners 欄位", () => {
     expect(ownersDiff?.remoteVal).toBe("李小華");
   });
 });
+
+// ─── 欄位級別合併（Field-Level Merge）────────────────────────────────────────
+
+describe("欄位級別合併 — detectConflicts 不通報空值差異", () => {
+  test("一方 title 為空 → 不通報衝突（可自動合併）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ title: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端填寫的策略名稱",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("一方 notes 為空 → 不通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "本地備註",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ notes: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("一方 owners 為空陣列 → 不通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ owners: [], updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          owners: ["王大明"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("一方 manualRate 為 null → 不通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ manualRate: 80, updatedAt: "2026-01-02T00:00:00.000Z" }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("雙方 title 皆非空且不同 → 仍通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "本地版本",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端版本",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(1);
+  });
+});
+
+describe("欄位級別合併 — mergeWorkspaces 自動填補空欄位", () => {
+  test("本地 title 為空 → 自動採用遠端 title", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ title: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端填寫的策略名稱",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.title).toBe("遠端填寫的策略名稱");
+  });
+
+  test("遠端 notes 為空 → 保留本地 notes", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "本地備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ notes: "", updatedAt: "2026-01-02T00:00:00.000Z" }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.notes).toBe("本地備註");
+  });
+
+  test("本地 owners 為空陣列 → 自動採用遠端 owners", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ owners: [], updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          owners: ["王大明", "李小華"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.owners).toEqual(["王大明", "李小華"]);
+  });
+
+  test("本地 manualRate 為 null → 自動採用遠端設定的完成率", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ manualRate: 75, updatedAt: "2026-01-02T00:00:00.000Z" }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.manualRate).toBe(75);
+  });
+
+  test("本地有值、遠端空值 → 保留本地值（不被空值覆蓋）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "本地策略名稱",
+          notes: "本地備註",
+          owners: ["王大明"],
+          manualRate: 60,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "",
+          notes: "",
+          owners: [],
+          manualRate: null,
+          updatedAt: "2026-01-03T00:00:00.000Z", // 遠端較新，但欄位皆為空
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.title).toBe("本地策略名稱");
+    expect(s.notes).toBe("本地備註");
+    expect(s.owners).toEqual(["王大明"]);
+    expect(s.manualRate).toBe(60);
+  });
+
+  test("雙方皆有不同值 → LWW 決定（遠端較新則採遠端）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "本地版本",
+          owners: ["王大明"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端版本",
+          owners: ["李小華"],
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.title).toBe("遠端版本");
+    expect(s.owners).toEqual(["李小華"]);
+  });
+});
