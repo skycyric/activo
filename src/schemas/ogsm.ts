@@ -105,8 +105,7 @@ export const MeasureSchema = z.object({
 
 /**
  * 指向 OGSM 樹中某個 Strategy 的定位資訊。
- * DeptActivity 透過此物件對應到某個 Goal > Strategy，
- * 讓 OGSM 儀表板能讀取該活動的進度。
+ * @deprecated 使用 DashboardLink (type="ogsm") 取代
  */
 export const OgsmLinkSchema = z.object({
   periodId: z.string(),
@@ -114,23 +113,68 @@ export const OgsmLinkSchema = z.object({
   strategyId: z.string(),
 });
 
+// ── DashboardLink ─────────────────────────────────────────────────────────────
+
+/**
+ * 活動與某個儀表板的連結（多對多）。
+ * type = "ogsm" → 帶 periodId / goalId / strategyId。
+ * 未來可擴充其他 type（okr、roadmap 等），只需加各自欄位。
+ */
+export const DashboardLinkSchema = z.object({
+  id: z.string(),
+  /** 儀表板類型，目前支援 "ogsm"，設計為可延伸字串 */
+  type: z.string(),
+  // ── OGSM 專屬欄位 ──────────────────────────────────────────────────────────
+  periodId: z.string().optional(),
+  goalId: z.string().optional(),
+  strategyId: z.string().optional(),
+  /** true = 本活動不計入此連結儀表板的指標計算 */
+  exclude: z.boolean().default(false),
+});
+
+// ── ActivityPlanItem ──────────────────────────────────────────────────────────
+
+/**
+ * 活動層的平坦行動計畫項目（不再透過 ActionPlan 包裹）。
+ * quarter 直接掛在項目上，取代原先 ActionPlan.quarter 的層級。
+ */
+export const ActivityPlanItemSchema = PlanItemSchema.extend({
+  /** 所屬季度，e.g. "Q1" / "Q2" */
+  quarter: z.string().optional(),
+});
+
 // ── DeptActivity ──────────────────────────────────────────────────────────────
 
 /**
- * 部門層一等公民活動。
- * - 繼承 Measure 所有欄位（id、rawText、kpis、status…）
- * - 新增 ogsmLink：可選，指向此活動掛在哪個 Strategy 下
- * - 新增 excludeFromOgsm：true = 使用者明確不計入 OGSM 指標
- * - 新增 owners：主責人列表（從 Strategy.owners 遷移而來）
- * - 新增 notes：活動備註（從 Strategy.notes 遷移而來）
- * - 新增 actionPlans：此活動自己的行動計畫（按 linkedMeasureId 從 Strategy.actionPlans 分配）
+ * 部門層一等公民活動（Activity-First 架構核心資料實體）。
+ * 繼承 Measure 所有欄位（id、rawText、kpis、status…）。
+ *
+ * 正式欄位（V3）：
+ * - dashboardLinks：活動掛載的儀表板連結（OGSM / 未來 OKR…）
+ * - tags：自由標籤
+ * - planItems：平坦化行動計畫項目
+ *
+ * 已棄用欄位（保留供 migration 讀取，勿直接寫入）：
+ * - ogsmLink / excludeFromOgsm / actionPlans
  */
 export const DeptActivitySchema = MeasureSchema.extend({
+  // ── V3 正式欄位 ────────────────────────────────────────────────────────────
+  /** 儀表板連結列表（取代 ogsmLink + excludeFromOgsm） */
+  dashboardLinks: z.array(DashboardLinkSchema).optional(),
+  /** 自由標籤，如「Q1重點」「跨部門」 */
+  tags: z.array(z.string()).optional(),
+  /** 平坦行動計畫項目（取代 actionPlans 巢狀結構） */
+  planItems: z.array(ActivityPlanItemSchema).optional(),
+  // ── 已棄用欄位（migration 讀取用，勿直接寫入）──────────────────────────────
+  /** @deprecated 使用 dashboardLinks 取代 */
   ogsmLink: OgsmLinkSchema.optional(),
+  /** @deprecated 使用 dashboardLinks[].exclude 取代 */
   excludeFromOgsm: z.boolean().optional(),
+  /** @deprecated 使用 planItems 取代 */
+  actionPlans: z.array(ActionPlanSchema).optional(),
+  // ── 其他維持欄位 ───────────────────────────────────────────────────────────
   owners: z.array(z.string()).optional(),
   notes: z.string().optional(),
-  actionPlans: z.array(ActionPlanSchema).optional(),
 });
 
 // ── Strategy ──────────────────────────────────────────────────────────────────
@@ -257,6 +301,8 @@ export const WorkspaceDataSchema = z.object({
   _migratedPhase3: z.boolean().optional(),
   /** true = 已執行 activity-first 遷移，dept.activities[] 為主要資料來源 */
   _migratedActivityFirst: z.boolean().optional(),
+  /** true = 已執行 V3 遷移：ogsmLink→dashboardLinks, actionPlans→planItems */
+  _migratedV3: z.boolean().optional(),
   warnDaysBefore: z.number().optional(),
 });
 
@@ -270,6 +316,8 @@ export type ActionPlan = z.infer<typeof ActionPlanSchema>;
 export type MeasureStatus = z.infer<typeof MeasureStatusSchema>;
 export type Measure = z.infer<typeof MeasureSchema>;
 export type OgsmLink = z.infer<typeof OgsmLinkSchema>;
+export type DashboardLink = z.infer<typeof DashboardLinkSchema>;
+export type ActivityPlanItem = z.infer<typeof ActivityPlanItemSchema>;
 export type DeptActivity = z.infer<typeof DeptActivitySchema>;
 export type GoalKpiLink = z.infer<typeof GoalKpiLinkSchema>;
 export type GoalKPI = z.infer<typeof GoalKPISchema>;

@@ -3,13 +3,7 @@ import type { ActivityWithContext } from "../ActivityPage";
 
 interface Props {
   activities: ActivityWithContext[];
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -36,7 +30,7 @@ function firstWeekday(year: number, month: number): number {
 
 export default function ActivityCalendar({
   activities,
-  onJumpToMeasure,
+  onJumpToActivity,
 }: Props) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -142,15 +136,7 @@ export default function ActivityCalendar({
                       background: STATUS_COLOR[act.status ?? "not-started"],
                     }}
                     title={`${act.rawText}\n${act.startDate} → ${act.endDate}`}
-                    onClick={() =>
-                      onJumpToMeasure(
-                        act.deptId,
-                        act.periodId,
-                        act.goalId,
-                        act.strategyId,
-                        act.id,
-                      )
-                    }
+                    onClick={() => onJumpToActivity(act.deptId, act.id)}
                   >
                     {act.rawText}
                   </button>

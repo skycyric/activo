@@ -1,24 +1,12 @@
-import type { Measure, MeasureStatus } from "../../schemas/ogsm";
+import type { DeptActivity, MeasureStatus } from "../../schemas/ogsm";
 import type { ActivityWithContext } from "../ActivityPage";
 import ActivityCard from "./ActivityCard";
 
 interface Props {
   activities: ActivityWithContext[];
   allActivities: ActivityWithContext[];
-  onUpdateMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measure: Measure,
-  ) => void;
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 const COLUMNS: { status: MeasureStatus; label: string; cls: string }[] = [
@@ -31,8 +19,8 @@ const COLUMNS: { status: MeasureStatus; label: string; cls: string }[] = [
 export default function ActivityKanban({
   activities,
   allActivities,
-  onUpdateMeasure,
-  onJumpToMeasure,
+  onUpdateActivity,
+  onJumpToActivity,
 }: Props) {
   const byStatus = (status: MeasureStatus) =>
     activities.filter((a) => (a.status ?? "not-started") === status);
@@ -65,8 +53,8 @@ export default function ActivityKanban({
                     key={act.id}
                     act={act}
                     allActivities={allActivities}
-                    onUpdateMeasure={onUpdateMeasure}
-                    onJumpToMeasure={onJumpToMeasure}
+                    onUpdateActivity={onUpdateActivity}
+                    onJumpToActivity={onJumpToActivity}
                   />
                 ))
               )}

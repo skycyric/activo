@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import type { WorkspaceData, Measure, DeptActivity } from "../schemas/ogsm";
+import type { WorkspaceData, DeptActivity } from "../schemas/ogsm";
 import ActivityFilters, {
   type ActivityFilterState,
   EMPTY_ACTIVITY_FILTERS,
@@ -44,43 +44,19 @@ const VIEWS: { id: ActivityView; label: string; icon: string }[] = [
 interface Props {
   workspace: WorkspaceData;
   readOnlyDeptIds?: string[];
-  onUpdateMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measure: Measure,
-  ) => void;
-  onDeleteMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
-  onAddMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measure: Measure,
-  ) => void;
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
+  onDeleteActivity: (deptId: string, activityId: string) => void;
+  onAddActivity: (deptId: string, activity: DeptActivity) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 export default function ActivityPage({
   workspace,
   readOnlyDeptIds,
-  onUpdateMeasure,
-  onDeleteMeasure,
-  onAddMeasure,
-  onJumpToMeasure,
+  onUpdateActivity,
+  onDeleteActivity,
+  onAddActivity,
+  onJumpToActivity,
 }: Props) {
   const [view, setView] = useState<ActivityView>("table");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -145,7 +121,7 @@ export default function ActivityPage({
       if (dept.activities && dept.activities.length > 0) {
         // ─ Activity-first 路徑（遷移後）────────────────────────────────
         for (const activity of dept.activities) {
-          const link = activity.ogsmLink;
+          const link = activity.dashboardLinks?.find((l) => l.type === "ogsm");
           const ctx = link
             ? ogsmCtx.get(`${link.periodId}|${link.goalId}|${link.strategyId}`)
             : undefined;
@@ -290,38 +266,38 @@ export default function ActivityPage({
             expandedId={expandedId}
             onSetExpandedId={handleSetExpandedId}
             ownerFilter={filters.owner}
-            onUpdateMeasure={onUpdateMeasure}
-            onDeleteMeasure={onDeleteMeasure}
-            onJumpToMeasure={onJumpToMeasure}
+            onUpdateActivity={onUpdateActivity}
+            onDeleteActivity={onDeleteActivity}
+            onJumpToActivity={onJumpToActivity}
           />
         )}
         {view === "kanban" && (
           <ActivityKanban
             activities={filtered}
             allActivities={allActivities}
-            onUpdateMeasure={onUpdateMeasure}
-            onJumpToMeasure={onJumpToMeasure}
+            onUpdateActivity={onUpdateActivity}
+            onJumpToActivity={onJumpToActivity}
           />
         )}
         {view === "gantt" && (
           <ActivityGantt
             activities={filtered}
             allActivities={allActivities}
-            onJumpToMeasure={onJumpToMeasure}
+            onJumpToActivity={onJumpToActivity}
           />
         )}
         {view === "cards" && (
           <ActivityCardGrid
             activities={filtered}
             allActivities={allActivities}
-            onUpdateMeasure={onUpdateMeasure}
-            onJumpToMeasure={onJumpToMeasure}
+            onUpdateActivity={onUpdateActivity}
+            onJumpToActivity={onJumpToActivity}
           />
         )}
         {view === "calendar" && (
           <ActivityCalendar
             activities={filtered}
-            onJumpToMeasure={onJumpToMeasure}
+            onJumpToActivity={onJumpToActivity}
           />
         )}
       </div>
@@ -330,7 +306,7 @@ export default function ActivityPage({
       {showAddModal && (
         <ActivityAddModal
           workspace={workspace}
-          onAdd={onAddMeasure}
+          onAdd={onAddActivity}
           onClose={() => setShowAddModal(false)}
         />
       )}

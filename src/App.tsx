@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type {
   OGSMData,
   Strategy,
@@ -7,7 +7,6 @@ import type {
   Department,
   PeriodData,
   Team,
-  Measure,
   DeptActivity,
 } from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
@@ -53,20 +52,6 @@ import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
 import ActivityPage from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./components/ui/dropdown-menu";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
@@ -161,6 +146,8 @@ export default function App() {
   const [showDeptSettings, setShowDeptSettings] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
   const [showHomePage, setShowHomePage] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
   const fsSupported = isFileSystemAccessSupported();
@@ -368,6 +355,18 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── 點擊外部關閉主選單 ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
 
   // ─── 同步 refs 供 polling interval 讀取（避免 stale closure）────────
   useEffect(() => {
@@ -1073,8 +1072,6 @@ export default function App() {
   const teams: Team[] = isMultiFileMode
     ? deptFiles.flatMap((f) => f.workspace.teams ?? [])
     : (workspace.teams ?? []);
-  const allMembers = teams.flatMap((t) => t.members);
-
   // Stable reference: only changes when workspace.teams or activeDeptId changes
   const deptScopedTeams = useMemo(
     () => teams.filter((t) => !t.deptId || t.deptId === activeDeptId),
@@ -1719,7 +1716,10 @@ export default function App() {
       (d) => d.id === activeDeptId,
     );
     return (dept?.activities ?? []).filter(
-      (a) => a.ogsmLink?.strategyId === selectedStrategyId,
+      (a) =>
+        a.dashboardLinks?.some(
+          (l) => l.type === "ogsm" && l.strategyId === selectedStrategyId,
+        ) ?? false,
     );
   }, [effectiveWorkspace, activeDeptId, selectedStrategyId]);
 
@@ -1748,16 +1748,11 @@ export default function App() {
 
   // ── Activity CRUD（跨部門直接操作）────────────────────────────────────────
 
-  const handleUpdateMeasureDirect = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measure: Measure,
-    ) => {
-      const stamped: Measure = {
-        ...measure,
+  /** V3 flat handler：直接 patch dept.activities[]，無需 periodId/goalId/stratId */
+  const handleUpdateDeptActivity = useCallback(
+    (deptId: string, activity: DeptActivity) => {
+      const stamped: DeptActivity = {
+        ...activity,
         updatedAt: new Date().toISOString(),
       };
       const patchDepts = (deps: typeof workspace.departments) =>
@@ -1766,33 +1761,8 @@ export default function App() {
             ? d
             : {
                 ...d,
-                periods: d.periods.map((p) =>
-                  p.id !== periodId
-                    ? p
-                    : {
-                        ...p,
-                        ogsm: recompute({
-                          ...p.ogsm,
-                          goals: p.ogsm.goals.map((g) =>
-                            g.id !== goalId
-                              ? g
-                              : {
-                                  ...g,
-                                  strategies: g.strategies.map((s) =>
-                                    s.id !== stratId
-                                      ? s
-                                      : {
-                                          ...s,
-                                          measures: s.measures.map((m) =>
-                                            m.id !== stamped.id ? m : stamped,
-                                          ),
-                                          updatedAt: new Date().toISOString(),
-                                        },
-                                  ),
-                                },
-                          ),
-                        }),
-                      },
+                activities: (d.activities ?? []).map((a) =>
+                  a.id !== stamped.id ? a : stamped,
                 ),
               },
         );
@@ -1821,14 +1791,9 @@ export default function App() {
     ],
   );
 
-  const handleDeleteMeasureDirect = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measureId: string,
-    ) => {
+  /** V3 flat handler：從 dept.activities[] 刪除並 tombstone */
+  const handleDeleteDeptActivity = useCallback(
+    (deptId: string, activityId: string) => {
       if (!window.confirm("確定要刪除這個活動嗎？")) return;
       const patchDepts = (deps: typeof workspace.departments) =>
         deps.map((d) =>
@@ -1836,47 +1801,8 @@ export default function App() {
             ? d
             : {
                 ...d,
-                periods: d.periods.map((p) =>
-                  p.id !== periodId
-                    ? p
-                    : {
-                        ...p,
-                        ogsm: recompute({
-                          ...p.ogsm,
-                          goals: p.ogsm.goals.map((g) =>
-                            g.id !== goalId
-                              ? g
-                              : {
-                                  ...g,
-                                  strategies: g.strategies.map((s) =>
-                                    s.id !== stratId
-                                      ? s
-                                      : {
-                                          ...s,
-                                          measures: s.measures.filter(
-                                            (m) => m.id !== measureId,
-                                          ),
-                                          actionPlans: s.actionPlans.map(
-                                            (ap) => ({
-                                              ...ap,
-                                              items: ap.items.map((item) =>
-                                                item.linkedMeasureId ===
-                                                measureId
-                                                  ? {
-                                                      ...item,
-                                                      linkedMeasureId: null,
-                                                    }
-                                                  : item,
-                                              ),
-                                            }),
-                                          ),
-                                          updatedAt: new Date().toISOString(),
-                                        },
-                                  ),
-                                },
-                          ),
-                        }),
-                      },
+                activities: (d.activities ?? []).filter(
+                  (a) => a.id !== activityId,
                 ),
               },
         );
@@ -1885,16 +1811,15 @@ export default function App() {
           (f) => f.workspace.departments[0]?.id === deptId,
         );
         if (!entry || entry.isReadOnly) return;
-        const existingDeleted = entry.workspace.deletedIds ?? [];
         updateDeptWorkspace(deptId, {
           ...entry.workspace,
-          deletedIds: [...existingDeleted, measureId],
+          deletedIds: [...(entry.workspace.deletedIds ?? []), activityId],
           departments: patchDepts(entry.workspace.departments),
         });
       } else {
         updateWorkspace({
           ...workspace,
-          deletedIds: [...(workspace.deletedIds ?? []), measureId],
+          deletedIds: [...(workspace.deletedIds ?? []), activityId],
           departments: patchDepts(workspace.departments),
         });
       }
@@ -1908,47 +1833,14 @@ export default function App() {
     ],
   );
 
-  const handleAddMeasureDirect = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measure: Measure,
-    ) => {
+  /** V3 flat handler：push 新活動到 dept.activities[] */
+  const handleAddDeptActivity = useCallback(
+    (deptId: string, activity: DeptActivity) => {
       const patchDepts = (deps: typeof workspace.departments) =>
         deps.map((d) =>
           d.id !== deptId
             ? d
-            : {
-                ...d,
-                periods: d.periods.map((p) =>
-                  p.id !== periodId
-                    ? p
-                    : {
-                        ...p,
-                        ogsm: recompute({
-                          ...p.ogsm,
-                          goals: p.ogsm.goals.map((g) =>
-                            g.id !== goalId
-                              ? g
-                              : {
-                                  ...g,
-                                  strategies: g.strategies.map((s) =>
-                                    s.id !== stratId
-                                      ? s
-                                      : {
-                                          ...s,
-                                          measures: [...s.measures, measure],
-                                          updatedAt: new Date().toISOString(),
-                                        },
-                                  ),
-                                },
-                          ),
-                        }),
-                      },
-                ),
-              },
+            : { ...d, activities: [...(d.activities ?? []), activity] },
         );
       if (isMultiFileMode) {
         const entry = deptFiles.find(
@@ -1975,8 +1867,30 @@ export default function App() {
     ],
   );
 
+  /** V3 jump handler：由 activityId 查出 OGSM link 後導覽到 DetailPanel */
+  const handleJumpToActivity = useCallback(
+    (deptId: string, activityId: string) => {
+      const dept = effectiveWorkspace.departments.find((d) => d.id === deptId);
+      const activity = dept?.activities?.find((a) => a.id === activityId);
+      const ogsmLink = activity?.dashboardLinks?.find((l) => l.type === "ogsm");
+      if (!ogsmLink?.periodId || !ogsmLink.goalId || !ogsmLink.strategyId) {
+        // standalone 活動：僅切換到活動頁面（已在活動頁面時不做任何事）
+        return;
+      }
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowHomePage(false);
+      setActiveDeptId(deptId);
+      setActivePeriodId(ogsmLink.periodId);
+      setSelectedGoalId(ogsmLink.goalId);
+      setSelectedStrategyId(ogsmLink.strategyId);
+      setPendingDetailNav({ tab: "plans", measureId: activityId });
+    },
+    [effectiveWorkspace],
+  );
+
   const handleToggleExcludeFromOgsm = useCallback(
-    (activityId: string, exclude: boolean) => {
+    (activityId: string, exclude: boolean, strategyId: string) => {
       const patchDepts = (deps: typeof workspace.departments) =>
         deps.map((d) =>
           d.id !== activeDeptId
@@ -1984,7 +1898,16 @@ export default function App() {
             : {
                 ...d,
                 activities: (d.activities ?? []).map((a) =>
-                  a.id !== activityId ? a : { ...a, excludeFromOgsm: exclude },
+                  a.id !== activityId
+                    ? a
+                    : {
+                        ...a,
+                        dashboardLinks: (a.dashboardLinks ?? []).map((l) =>
+                          l.type === "ogsm" && l.strategyId === strategyId
+                            ? { ...l, exclude }
+                            : l,
+                        ),
+                      },
                 ),
               },
         );
@@ -2012,26 +1935,6 @@ export default function App() {
       updateWorkspace,
       updateDeptWorkspace,
     ],
-  );
-
-  const handleJumpToMeasure = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measureId: string,
-    ) => {
-      setShowActivityPage(false);
-      setShowDeptSettings(false);
-      setShowHomePage(false);
-      setActiveDeptId(deptId);
-      setActivePeriodId(periodId);
-      setSelectedGoalId(goalId);
-      setSelectedStrategyId(stratId);
-      setPendingDetailNav({ tab: "plans", measureId });
-    },
-    [],
   );
 
   const handleAddStrategy = useCallback(() => {
@@ -2322,71 +2225,81 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-left">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="header-menu-btn" title="主選單">
-                ☰
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuItem
-                onClick={() => {
-                  setShowHomePage(true);
-                  setShowActivityPage(false);
-                  setShowDeptSettings(false);
-                }}
-              >
-                🏠 首頁
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  setShowHomePage(false);
-                  setShowActivityPage(false);
-                  setShowDeptSettings(false);
-                }}
-              >
-                📊 OGSM 儀表板
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  setShowActivityPage(true);
-                  setShowHomePage(false);
-                  setShowDeptSettings(false);
-                }}
-              >
-                📋 活動管理
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => {
-                  setShowDeptSettings(true);
-                  setShowHomePage(false);
-                  setShowActivityPage(false);
-                  setSelectedGoalId(null);
-                  setSelectedStrategyId(null);
-                }}
-              >
-                ⚙️ 部門設定
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="header-menu-wrap" ref={menuRef}>
+            <button
+              className="header-menu-btn"
+              title="主選單"
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              ☰
+            </button>
+            {menuOpen && (
+              <div className="header-menu-dropdown">
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setShowHomePage(true);
+                    setShowActivityPage(false);
+                    setShowDeptSettings(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  🏠 首頁
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setShowHomePage(false);
+                    setShowActivityPage(false);
+                    setShowDeptSettings(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  📊 OGSM 儀表板
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setShowActivityPage(true);
+                    setShowHomePage(false);
+                    setShowDeptSettings(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  📋 活動管理
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setShowDeptSettings(true);
+                    setShowHomePage(false);
+                    setShowActivityPage(false);
+                    setSelectedGoalId(null);
+                    setSelectedStrategyId(null);
+                    setMenuOpen(false);
+                  }}
+                >
+                  ⚙️ 部門設定
+                </button>
+              </div>
+            )}
+          </div>
           <span className="header-logo">A</span>
           <span className="header-title">Activo</span>
         </div>
 
         <div className="header-toolbar">
-          <Select value={activeDeptId} onValueChange={handleSwitchDept}>
-            <SelectTrigger className="h-8 w-[160px] text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {effectiveWorkspace.departments.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select
+            className="header-dept-select"
+            value={activeDeptId}
+            onChange={(e) => handleSwitchDept(e.target.value)}
+          >
+            {effectiveWorkspace.departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
 
           {fsSupported &&
             (isMultiFileMode ? (
@@ -2617,7 +2530,7 @@ export default function App() {
       )}
 
       <div className="app-body">
-        {!showHomePage && !showActivityPage && (
+        {!showHomePage && !showActivityPage && !showDeptSettings && (
           <Sidebar
             workspace={effectiveWorkspace}
             activeDeptId={activeDept?.id ?? ""}
@@ -2719,10 +2632,10 @@ export default function App() {
                     .filter(Boolean) as string[])
                 : undefined
             }
-            onUpdateMeasure={handleUpdateMeasureDirect}
-            onDeleteMeasure={handleDeleteMeasureDirect}
-            onAddMeasure={handleAddMeasureDirect}
-            onJumpToMeasure={handleJumpToMeasure}
+            onUpdateActivity={handleUpdateDeptActivity}
+            onDeleteActivity={handleDeleteDeptActivity}
+            onAddActivity={handleAddDeptActivity}
+            onJumpToActivity={handleJumpToActivity}
           />
         ) : selectedGoalId === null ? (
           <OverviewPage
@@ -2781,7 +2694,6 @@ export default function App() {
                 onUpdate={handleUpdateStrategy}
                 onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
                 teams={teams}
-                allMembers={allMembers}
                 warnDaysBefore={workspace.warnDaysBefore ?? 7}
                 onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
                 initialTab={pendingDetailNav?.tab}
@@ -2790,6 +2702,11 @@ export default function App() {
                 isReadOnly={isActiveDeptReadOnly}
                 linkedDeptActivities={linkedDeptActivities}
                 onToggleExcludeFromOgsm={handleToggleExcludeFromOgsm}
+                onNavigateToActivityPage={() => {
+                  setShowActivityPage(true);
+                  setShowDeptSettings(false);
+                  setShowHomePage(false);
+                }}
               />
             )}
           </>

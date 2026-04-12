@@ -1,4 +1,4 @@
-import type { Measure, MeasureStatus } from "../../schemas/ogsm";
+import type { DeptActivity, MeasureStatus } from "../../schemas/ogsm";
 import type { ActivityWithContext } from "../ActivityPage";
 
 const STATUS_INFO: Record<string, { label: string; cls: string }> = {
@@ -18,20 +18,8 @@ const ALL_STATUSES: MeasureStatus[] = [
 interface Props {
   act: ActivityWithContext;
   allActivities: ActivityWithContext[];
-  onUpdateMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measure: Measure,
-  ) => void;
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 function isOverdue(endDate: string | undefined): boolean {
@@ -42,8 +30,8 @@ function isOverdue(endDate: string | undefined): boolean {
 export default function ActivityCard({
   act,
   allActivities,
-  onUpdateMeasure,
-  onJumpToMeasure,
+  onUpdateActivity,
+  onJumpToActivity,
 }: Props) {
   const si =
     STATUS_INFO[act.status ?? "not-started"] ?? STATUS_INFO["not-started"];
@@ -56,7 +44,7 @@ export default function ActivityCard({
   const overdue = isOverdue(act.endDate) && act.status !== "completed";
 
   const updateStatus = (status: MeasureStatus) => {
-    onUpdateMeasure(act.deptId, act.periodId, act.goalId, act.strategyId, {
+    onUpdateActivity(act.deptId, {
       ...act,
       status,
       updatedAt: new Date().toISOString(),
@@ -66,15 +54,7 @@ export default function ActivityCard({
   return (
     <div
       className="act-card"
-      onClick={() =>
-        onJumpToMeasure(
-          act.deptId,
-          act.periodId,
-          act.goalId,
-          act.strategyId,
-          act.id,
-        )
-      }
+      onClick={() => onJumpToActivity(act.deptId, act.id)}
       title="點擊前往行動計劃"
     >
       {/* Name row */}

@@ -324,6 +324,75 @@ export function migrateOwnerToOwners(ws: WorkspaceData): boolean {
 }
 
 /**
+ * V3 遷移：
+ * 1. ogsmLink → dashboardLinks[{ type:"ogsm", ...ogsmLink, exclude }]
+ * 2. actionPlans 平坦化 → planItems（每 item 加 quarter）
+ * 3. 清除己棄用欄位：ogsmLink / excludeFromOgsm / actionPlans
+ * 4. 若 dept.activities 已有資料，清空 strategy.measures[]
+ */
+export function migrateToV3(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      // 1. ogsmLink → dashboardLinks
+      if (
+        activity.ogsmLink &&
+        (!activity.dashboardLinks || activity.dashboardLinks.length === 0)
+      ) {
+        activity.dashboardLinks = [
+          {
+            id: genId("dlink"),
+            type: "ogsm",
+            periodId: activity.ogsmLink.periodId,
+            goalId: activity.ogsmLink.goalId,
+            strategyId: activity.ogsmLink.strategyId,
+            exclude: activity.excludeFromOgsm ?? false,
+          },
+        ];
+        changed = true;
+      }
+      if (activity.ogsmLink !== undefined) {
+        activity.ogsmLink = undefined;
+        changed = true;
+      }
+      if (activity.excludeFromOgsm !== undefined) {
+        activity.excludeFromOgsm = undefined;
+        changed = true;
+      }
+      // 2. actionPlans 平坦化 → planItems
+      if (
+        activity.actionPlans &&
+        activity.actionPlans.length > 0 &&
+        !activity.planItems
+      ) {
+        activity.planItems = activity.actionPlans.flatMap((ap) =>
+          ap.items.map((item) => ({ ...item, quarter: ap.quarter })),
+        );
+        changed = true;
+      }
+      if (activity.actionPlans !== undefined) {
+        activity.actionPlans = undefined;
+        changed = true;
+      }
+    }
+    // 3. 清空 strategy.measures[] （活動已遷移處）
+    if (dept.activities && dept.activities.length > 0) {
+      for (const period of dept.periods) {
+        for (const goal of period.ogsm.goals) {
+          for (const strategy of goal.strategies) {
+            if (strategy.measures.length > 0) {
+              strategy.measures = [];
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+/**
  * activity-first 遷移：將每個 Strategy.measures[] 中的活動提升為
  * Department.activities[] 的一等公民，並在活動上附加 ogsmLink 定位資訊。
  *
@@ -373,16 +442,28 @@ export function migrateToActivityFirst(ws: WorkspaceData): boolean {
 
             const activity: DeptActivity = {
               ...measure,
-              ogsmLink: {
-                periodId: period.id,
-                goalId: goal.id,
-                strategyId: strategy.id,
-              },
-              excludeFromOgsm: false,
+              dashboardLinks: [
+                {
+                  id: genId("dlink"),
+                  type: "ogsm",
+                  periodId: period.id,
+                  goalId: goal.id,
+                  strategyId: strategy.id,
+                  exclude: false,
+                },
+              ],
               owners:
                 strategy.owners.length > 0 ? [...strategy.owners] : undefined,
               notes: strategy.notes || undefined,
-              actionPlans: activityPlans.length > 0 ? activityPlans : undefined,
+              planItems:
+                activityPlans.length > 0
+                  ? activityPlans.flatMap((ap) =>
+                      ap.items.map((item) => ({
+                        ...item,
+                        quarter: ap.quarter,
+                      })),
+                    )
+                  : undefined,
             };
             dept.activities.push(activity);
             existingIds.add(measure.id);
@@ -422,6 +503,11 @@ function normalizeWorkspaceData(ws: WorkspaceData): boolean {
   if (!ws._migratedActivityFirst) {
     if (migrateToActivityFirst(ws)) changed = true;
     ws._migratedActivityFirst = true;
+    changed = true;
+  }
+  if (!ws._migratedV3) {
+    if (migrateToV3(ws)) changed = true;
+    ws._migratedV3 = true;
     changed = true;
   }
   // Always-run invariant: ensure owners is always an array regardless of migration state.

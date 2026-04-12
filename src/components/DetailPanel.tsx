@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import type {
   Strategy,
-  KPI,
   Measure,
-  MeasureStatus,
   Team,
-  TeamMember,
   ActionPlan,
   PlanItem,
   DeptActivity,
@@ -19,7 +16,6 @@ interface Props {
   onUpdate: (s: Strategy) => void;
   onDelete: () => void;
   teams: Team[];
-  allMembers: TeamMember[];
   warnDaysBefore: number;
   onUpdateWarnDaysBefore: (n: number) => void;
   initialTab?: "measure" | "plans" | "notes";
@@ -32,7 +28,13 @@ interface Props {
    */
   linkedDeptActivities?: DeptActivity[];
   /** 切換活動是否計入 OGSM 指標 */
-  onToggleExcludeFromOgsm?: (activityId: string, exclude: boolean) => void;
+  onToggleExcludeFromOgsm?: (
+    activityId: string,
+    exclude: boolean,
+    strategyId: string,
+  ) => void;
+  /** 導覽到活動頁面（從 M tab 的「前往活動頁面」按鈕觸發） */
+  onNavigateToActivityPage?: () => void;
 }
 
 function InlineEdit({
@@ -119,465 +121,6 @@ function InlineEdit({
   );
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  kpi,
-  onUpdate,
-  onDelete,
-  linkedTotal,
-  linkedDone,
-  isReadOnly = false,
-}: {
-  kpi: KPI;
-  onUpdate: (k: KPI) => void;
-  onDelete: () => void;
-  linkedTotal?: number;
-  linkedDone?: number;
-  isReadOnly?: boolean;
-}) {
-  const isProgress = kpi.kpiType === "progress";
-  const isGrowth = kpi.kpiType === "growth";
-  const isTargetRate = kpi.kpiType === "target_rate";
-  const hasActual = kpi.actual !== null && kpi.actual !== undefined;
-
-  // 成長型：計算成長率
-  const growthRate =
-    isGrowth &&
-    kpi.baseValue != null &&
-    kpi.currentValue != null &&
-    kpi.baseValue !== 0
-      ? ((kpi.currentValue - kpi.baseValue) / kpi.baseValue) * 100
-      : null;
-  const hasGrowthTarget = isGrowth && kpi.targetGrowthRate != null;
-
-  // 圓環顯示值
-  const rawRate = isGrowth
-    ? hasGrowthTarget && growthRate !== null
-      ? (growthRate / kpi.targetGrowthRate!) * 100
-      : null
-    : isTargetRate
-      ? hasActual
-        ? kpi.targetRate != null &&
-          kpi.targetRate !== 0 &&
-          kpi.achievementRate != null
-          ? (kpi.achievementRate / kpi.targetRate) * 100
-          : kpi.achievementRate
-        : null
-      : isProgress
-        ? hasActual
-          ? kpi.actual
-          : null
-        : hasActual
-          ? kpi.achievementRate
-          : null;
-  const rate = rawRate ?? 0;
-  const rateIsNull = rawRate === null || rawRate === undefined;
-  const size = 72;
-  const r = (size - 6) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (Math.min(rate, 100) / 100) * circ;
-  const color =
-    rate >= 100
-      ? "#10b981"
-      : rate >= 70
-        ? "#6366f1"
-        : rate >= 40
-          ? "#f59e0b"
-          : rate > 0
-            ? "#ef4444"
-            : "#4b5563";
-
-  return (
-    <div className="kpi-card">
-      {/* 成長型且無目標成長率：不顯示圓環，改顯示成長率數字 */}
-      {isGrowth && !hasGrowthTarget ? (
-        <div
-          style={{
-            width: 72,
-            height: 72,
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 2,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-              color:
-                growthRate === null
-                  ? "#4b5563"
-                  : growthRate >= 0
-                    ? "#10b981"
-                    : "#ef4444",
-            }}
-          >
-            {growthRate === null
-              ? "—"
-              : `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}%`}
-          </span>
-          <span style={{ fontSize: 9, color: "#9ca3af" }}>成長率</span>
-        </div>
-      ) : (
-        <svg width={size} height={size} style={{ flexShrink: 0 }}>
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke="#e5e7eb"
-            strokeWidth={5}
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth={5}
-            strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round"
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
-            style={{ transition: "stroke-dasharray 0.8s ease" }}
-          />
-          <text
-            x={size / 2}
-            y={size / 2 + 5}
-            textAnchor="middle"
-            fill={color}
-            fontSize={11}
-            fontWeight="800"
-          >
-            {rateIsNull ? "—" : `${Math.round(rate)}%`}
-          </text>
-        </svg>
-      )}
-      <div className="kpi-card-info" style={{ flex: 1 }}>
-        <InlineEdit
-          value={kpi.label}
-          onSave={(v) => onUpdate({ ...kpi, label: v })}
-          className="kpi-label-edit"
-          placeholder="KPI 名稱"
-        />
-        {/* 類型標籤：唯讀，建立時已定，不可切換 */}
-        <span
-          style={{
-            display: "inline-block",
-            fontSize: 10,
-            padding: "1px 7px",
-            marginBottom: 4,
-            borderRadius: 10,
-            border: `1px solid ${isProgress ? "#a78bfa" : isGrowth ? "#6ee7b7" : "#d1d5db"}`,
-            background: isProgress
-              ? "#f5f3ff"
-              : isGrowth
-                ? "#ecfdf5"
-                : "#f9fafb",
-            color: isProgress ? "#7c3aed" : isGrowth ? "#059669" : "#6b7280",
-          }}
-        >
-          {isProgress ? "進度型" : isGrowth ? "成長型" : "量化型"}
-        </span>
-        {typeof linkedTotal !== "undefined" && linkedTotal > 0 && (
-          <div style={{ fontSize: 10, color: "var(--text)", marginBottom: 6 }}>
-            關聯項目：{linkedDone}/{linkedTotal} 項
-          </div>
-        )}
-        <div className="kpi-inputs">
-          {isGrowth ? (
-            /* 成長型：基期值、現值、目標成長率（選填）、成長率（唯讀） */
-            <>
-              <label className="kpi-field">
-                基期值
-                <input
-                  type="number"
-                  value={kpi.baseValue ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const baseValue =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    const cur = kpi.currentValue ?? null;
-                    const gr =
-                      baseValue != null && cur != null && baseValue !== 0
-                        ? ((cur - baseValue) / baseValue) * 100
-                        : null;
-                    const rate =
-                      gr !== null &&
-                      kpi.targetGrowthRate != null &&
-                      kpi.targetGrowthRate !== 0
-                        ? (gr / kpi.targetGrowthRate) * 100
-                        : null;
-                    onUpdate({ ...kpi, baseValue, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                現值
-                <input
-                  type="number"
-                  value={kpi.currentValue ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const currentValue =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    const base = kpi.baseValue ?? null;
-                    const gr =
-                      base != null && currentValue != null && base !== 0
-                        ? ((currentValue - base) / base) * 100
-                        : null;
-                    const rate =
-                      gr !== null &&
-                      kpi.targetGrowthRate != null &&
-                      kpi.targetGrowthRate !== 0
-                        ? (gr / kpi.targetGrowthRate) * 100
-                        : null;
-                    onUpdate({ ...kpi, currentValue, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                目標成長率
-                <input
-                  type="number"
-                  value={kpi.targetGrowthRate ?? ""}
-                  placeholder="選填"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const targetGrowthRate =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    const rate =
-                      growthRate !== null &&
-                      targetGrowthRate != null &&
-                      targetGrowthRate !== 0
-                        ? (growthRate / targetGrowthRate) * 100
-                        : null;
-                    onUpdate({
-                      ...kpi,
-                      targetGrowthRate,
-                      achievementRate: rate,
-                    });
-                  }}
-                />
-                %
-              </label>
-              <label className="kpi-field">
-                成長率
-                <span
-                  className="kpi-num-input"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    background: "#f3f4f6",
-                    cursor: "default",
-                    color:
-                      growthRate === null
-                        ? "#4b5563"
-                        : growthRate >= 0
-                          ? "#059669"
-                          : "#ef4444",
-                    fontWeight: 700,
-                  }}
-                >
-                  {growthRate === null
-                    ? "—"
-                    : `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}`}
-                </span>
-                %
-              </label>
-            </>
-          ) : isTargetRate ? (
-            /* 目標率型：目標、實際、單位（同量化型）＋ 目標率輸入 */
-            <>
-              <label className="kpi-field">
-                達成率
-                <span
-                  className="kpi-num-input"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    background: "#f3f4f6",
-                    cursor: "default",
-                  }}
-                >
-                  {hasActual && kpi.achievementRate != null
-                    ? kpi.achievementRate.toFixed(1)
-                    : "—"}
-                </span>
-                %
-              </label>
-              <label className="kpi-field">
-                目標率
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.targetRate ?? ""}
-                  placeholder="選填"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const targetRate =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    onUpdate({ ...kpi, targetRate });
-                  }}
-                />
-                %
-              </label>
-              <label className="kpi-field">
-                目標值
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.target ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const target =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (target !== null && target > 0 && kpi.actual !== null)
-                      rate = (kpi.actual / target) * 100;
-                    onUpdate({ ...kpi, target, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                實際值
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.actual ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const actual =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (
-                      actual !== null &&
-                      kpi.target !== null &&
-                      kpi.target > 0
-                    )
-                      rate = (actual / kpi.target) * 100;
-                    onUpdate({ ...kpi, actual, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                單位
-                <input
-                  type="text"
-                  value={kpi.unit}
-                  placeholder="人/筆…"
-                  className="kpi-num-input"
-                  style={{ width: 44 }}
-                  onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
-                />
-              </label>
-            </>
-          ) : (
-            /* 量化型 / 進度型：原有欄位 */
-            <>
-              <label className="kpi-field">
-                {isProgress ? "進度" : "達成率"}
-                <span
-                  className="kpi-num-input"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    background: "#f3f4f6",
-                    cursor: "default",
-                  }}
-                >
-                  {hasActual && kpi.achievementRate != null
-                    ? Math.round(kpi.achievementRate)
-                    : "—"}
-                </span>
-                %
-              </label>
-              <label className="kpi-field">
-                目標
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.target ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  readOnly={isProgress}
-                  style={
-                    isProgress
-                      ? { background: "#f3f4f6", cursor: "default" }
-                      : undefined
-                  }
-                  onChange={(e) => {
-                    const target =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (target !== null && target > 0 && kpi.actual !== null)
-                      rate = (kpi.actual / target) * 100;
-                    else if (
-                      kpi.actual !== null &&
-                      (target === null || target === 0)
-                    )
-                      rate = 0;
-                    onUpdate({ ...kpi, target, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                實際
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.actual ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const actual =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (
-                      actual !== null &&
-                      kpi.target !== null &&
-                      kpi.target > 0
-                    )
-                      rate = (actual / kpi.target) * 100;
-                    onUpdate({ ...kpi, actual, achievementRate: rate });
-                  }}
-                />
-              </label>
-              {!isProgress && (
-                <label className="kpi-field">
-                  單位
-                  <input
-                    type="text"
-                    value={kpi.unit}
-                    placeholder="人/筆…"
-                    className="kpi-num-input"
-                    style={{ width: 44 }}
-                    onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
-                  />
-                </label>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      {!isReadOnly && (
-        <button className="kpi-delete-btn" onClick={onDelete} title="刪除 KPI">
-          🗑
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ─── Helper Functions ─────────────────────────────────────────────────────────
-
 /**
  * Parse date string and return {month, day}
  */
@@ -641,7 +184,6 @@ export default function DetailPanel({
   onUpdate,
   onDelete,
   teams,
-  allMembers,
   warnDaysBefore,
   onUpdateWarnDaysBefore,
   initialTab,
@@ -650,6 +192,7 @@ export default function DetailPanel({
   isReadOnly = false,
   linkedDeptActivities,
   onToggleExcludeFromOgsm,
+  onNavigateToActivityPage,
 }: Props) {
   const [tab, setTab] = useState<"measure" | "plans" | "notes">(
     initialMeasureId ? "plans" : (initialTab ?? "measure"),
@@ -743,37 +286,6 @@ export default function DetailPanel({
     },
     [panelWidth],
   );
-
-  // KPI helpers
-  const updateKPI = (msrId: string, kpiId: string, updated: KPI) => {
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((m) =>
-        m.id !== msrId
-          ? m
-          : {
-              ...m,
-              kpis: m.kpis.map((k) => (k.id === kpiId ? updated : k)),
-            },
-      ),
-    });
-  };
-  const deleteKPI = (msrId: string, kpiId: string) => {
-    const kpiLabel =
-      strategy.measures
-        .find((m) => m.id === msrId)
-        ?.kpis.find((k) => k.id === kpiId)?.label ?? "此 KPI";
-    if (!window.confirm(`確定要刪除「${kpiLabel}」嗎？`)) return;
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((m) =>
-        m.id !== msrId
-          ? m
-          : { ...m, kpis: m.kpis.filter((k) => k.id !== kpiId) },
-      ),
-    });
-  };
-  // addKPI removed — KPIs should be added under a specific Measure via UI
 
   // ─── Action Plan helpers ──────────────────────────────────────────────────────
 
@@ -1022,160 +534,12 @@ export default function DetailPanel({
     preferred && quarters.includes(preferred) ? preferred : "Q1",
   );
 
-  // Drag & drop for measures (move or copy)
-  const dragMsrId = useRef<string | null>(null);
-  const onMeasureDragStart = (e: React.DragEvent, msrId: string) => {
-    const copy = e.ctrlKey || e.metaKey; // Ctrl/Cmd to copy
-    e.dataTransfer.setData(
-      "application/ogsm-measure",
-      `${msrId}|${copy ? "copy" : "move"}`,
-    );
-    e.dataTransfer.effectAllowed = copy ? "copy" : "move";
-    dragMsrId.current = msrId;
-  };
-  const onMeasureDragEnd = () => {
-    dragMsrId.current = null;
-  };
-  const onMeasureDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-  const onMeasureDrop = (e: React.DragEvent, targetQuarter: string) => {
-    e.preventDefault();
-    const payload = e.dataTransfer.getData("application/ogsm-measure");
-    if (!payload) return;
-    const [msrId, mode] = payload.split("|");
-    const src = strategy.measures.find((m) => m.id === msrId);
-    if (!src) return;
-    if (mode === "copy") {
-      const copy: Measure = {
-        ...src,
-        id: genId("msr"),
-        quarter: targetQuarter,
-        status: "not-started",
-        kpis: src.kpis.map((k) => ({
-          ...k,
-          id: genId("kpi"),
-          actual: null,
-          achievementRate: null,
-          currentValue: null,
-        })),
-      };
-      onUpdate({ ...strategy, measures: [...strategy.measures, copy] });
-    } else {
-      onUpdate({
-        ...strategy,
-        measures: strategy.measures.map((m) =>
-          m.id === msrId ? { ...m, quarter: targetQuarter } : m,
-        ),
-      });
-    }
-  };
-
-  const copyMeasure = (msrId: string) => {
-    const src = strategy.measures.find((m) => m.id === msrId);
-    if (!src) return;
-    const copy: Measure = {
-      ...src,
-      id: genId("msr"),
-      status: "not-started",
-      kpis: src.kpis.map((k) => ({
-        ...k,
-        id: genId("kpi"),
-        actual: null,
-        achievementRate: null,
-        currentValue: null,
-      })),
-    };
-    onUpdate({ ...strategy, measures: [...strategy.measures, copy] });
-  };
-
-  // Measure helpers (活動/項目)
   // Owner helpers
   const ownersList = strategy.owners;
   const setOwners = (names: string[]) =>
     onUpdate({ ...strategy, owners: names });
   const removeOwner = (name: string) =>
     setOwners(ownersList.filter((n) => n !== name));
-
-  const addMeasure = (quarter?: string) => {
-    const nm: Measure = {
-      id: genId("msr"),
-      rawText: "新活動",
-      kpis: [],
-      quarter: quarter ?? selectedQuarter,
-      status: "not-started",
-    };
-    onUpdate({ ...strategy, measures: [...strategy.measures, nm] });
-  };
-
-  const deleteMeasure = (msrId: string) => {
-    const linkedCount = strategy.actionPlans
-      .flatMap((p) => p.items)
-      .filter((i) => i.linkedMeasureId === msrId).length;
-    const msrName =
-      strategy.measures.find((m) => m.id === msrId)?.rawText || "此活動";
-    const msg =
-      linkedCount > 0
-        ? `確定要刪除「${msrName}」嗎？\n將同時刪除 ${linkedCount} 筆關聯的行動計畫項目。`
-        : `確定要刪除「${msrName}」嗎？`;
-    if (!window.confirm(msg)) return;
-    const newMeasures = strategy.measures.filter((m) => m.id !== msrId);
-    const newActionPlans = strategy.actionPlans.map((p) => ({
-      ...p,
-      items: p.items.filter((i) => i.linkedMeasureId !== msrId),
-    }));
-    onUpdate({
-      ...strategy,
-      measures: newMeasures,
-      actionPlans: newActionPlans,
-    });
-  };
-
-  const addKpiToMeasure = (
-    msrId: string,
-    kpiType: "value" | "progress" | "growth" | "target_rate",
-  ) => {
-    const labelMap = {
-      progress: "新進度指標",
-      growth: "新成長指標",
-      target_rate: "新目標率指標",
-      value: "新 KPI",
-    } as const;
-    const newKpi: KPI = {
-      id: genId("kpi"),
-      label: labelMap[kpiType],
-      target: kpiType === "progress" ? 100 : null,
-      actual: null,
-      unit: "%",
-      achievementRate: null,
-      kpiType,
-      ...(kpiType === "growth"
-        ? { baseValue: null, currentValue: null, targetGrowthRate: null }
-        : {}),
-      ...(kpiType === "target_rate" ? { targetRate: null } : {}),
-    };
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((m) =>
-        m.id === msrId ? { ...m, kpis: [...m.kpis, newKpi] } : m,
-      ),
-    });
-    setKpiDropdownMsrId(null);
-  };
-
-  const defaultCollapsed = () => {
-    const map: Record<string, boolean> = {};
-    strategy.measures.forEach((m) => {
-      map[m.id] = true;
-    });
-    return map;
-  };
-  const [measureCollapsed, setMeasureCollapsed] =
-    useState<Record<string, boolean>>(defaultCollapsed);
-
-  // 新增 KPI Dropdown：記錄目前展開選單的 measure id
-  const [kpiDropdownMsrId, setKpiDropdownMsrId] = useState<string | null>(null);
 
   const allKpisCount = strategy.measures.reduce((n, m) => n + m.kpis.length, 0);
   // Plan items count
@@ -1434,236 +798,124 @@ export default function DetailPanel({
       <div className="detail-body">
         {tab === "measure" && (
           <div>
-            {/* 衡量指標（活動/項目 -> KPI） */}
-            <div className="msec-header">
-              <span className="msec-badge msec-effect">衡量指標</span>
-              <span className="msec-desc">
-                活動/專案可新增、刪除與摺疊，每個活動可包含多個 KPI，
-                目前以季度欄位管理。
-              </span>
-            </div>
+            {/* Phase 3: Activity-First — 顯示 linkedDeptActivities，不再直接編輯 measures[] */}
             <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 8,
-              }}
+              className="msec-header"
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
             >
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {quarters.map((q) => (
-                  <button
-                    key={q}
-                    className={`detail-tab quarter-drop-tab ${selectedQuarter === q ? "active" : ""}`}
-                    onClick={() => setSelectedQuarter(q)}
-                    onDragOver={(e) => {
-                      if (q !== selectedQuarter) {
-                        e.preventDefault();
-                        e.currentTarget.classList.add("drag-over");
-                      }
-                    }}
-                    onDragLeave={(e) => {
-                      e.currentTarget.classList.remove("drag-over");
-                    }}
-                    onDrop={(e) => {
-                      e.currentTarget.classList.remove("drag-over");
-                      if (q !== selectedQuarter) {
-                        onMeasureDrop(e, q);
-                      }
-                    }}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+              <span className="msec-badge msec-effect">連結活動</span>
+              <span className="msec-desc" style={{ flex: 1 }}>
+                此策略的活動清單由「活動頁面」集中管理，可至活動頁面新增或編輯。
+              </span>
+              {onNavigateToActivityPage && (
+                <button
+                  className="detail-add-btn"
+                  onClick={onNavigateToActivityPage}
+                  style={{ whiteSpace: "nowrap" }}
+                >
+                  前往活動頁面 →
+                </button>
+              )}
             </div>
 
-            <div
-              className="measure-list"
-              onDragOver={onMeasureDragOver}
-              onDrop={(e) => onMeasureDrop(e, selectedQuarter)}
-            >
-              {strategy.measures
-                .filter((m) => {
-                  // Hide if doesn't match search/filter
-                  if (hasActiveFilter && !measureMatchesFilter(m)) return false;
-                  return (m.quarter ?? selectedQuarter) === selectedQuarter;
-                })
-                .map((m) => {
-                  const collapsed = !!measureCollapsed[m.id];
-                  // Phase 4: 找出對應的部門活動（用於 excludeFromOgsm toggle）
-                  const linkedDeptActivity = linkedDeptActivities?.find(
-                    (a) => a.id === m.id,
-                  );
+            {!linkedDeptActivities || linkedDeptActivities.length === 0 ? (
+              <div
+                style={{
+                  color: "#9ca3af",
+                  padding: "32px 0",
+                  textAlign: "center",
+                  fontSize: 14,
+                }}
+              >
+                尚無連結活動。請至活動頁面新增活動，並選擇此策略為連結目標。
+              </div>
+            ) : (
+              <div className="measure-list">
+                {linkedDeptActivities.map((act) => {
                   const isExcluded =
-                    linkedDeptActivity?.excludeFromOgsm === true;
+                    act.dashboardLinks?.find(
+                      (l) => l.type === "ogsm" && l.strategyId === strategy.id,
+                    )?.exclude === true;
+
+                  const statusColor: Record<string, string> = {
+                    completed: "#059669",
+                    attention: "#b45309",
+                    "in-progress": "#2563eb",
+                    "not-started": "#6b7280",
+                  };
+                  const statusBg: Record<string, string> = {
+                    completed: "#ecfdf5",
+                    attention: "#fffbeb",
+                    "in-progress": "#eff6ff",
+                    "not-started": "#f9fafb",
+                  };
+                  const statusBorder: Record<string, string> = {
+                    completed: "#a7f3d0",
+                    attention: "#fcd34d",
+                    "in-progress": "#bfdbfe",
+                    "not-started": "#d1d5db",
+                  };
+                  const statusLabel: Record<string, string> = {
+                    "not-started": "未開始",
+                    attention: "需注意",
+                    "in-progress": "進行中",
+                    completed: "已完成",
+                  };
+                  const s = act.status ?? "not-started";
+
                   return (
                     <div
-                      key={m.id}
+                      key={act.id}
                       className={`measure-block${isExcluded ? " measure-block--excluded" : ""}`}
-                      style={{ marginBottom: 12 }}
+                      style={{ marginBottom: 8 }}
                     >
                       <div
                         className="plan-section-header"
-                        style={{ alignItems: "center" }}
+                        style={{ alignItems: "center", gap: 8 }}
                       >
+                        {/* 狀態徽章（唯讀） */}
                         <span
-                          className="measure-drag-handle"
-                          title="拖曳移動到其他季度（按住 Ctrl 為複製）"
-                          draggable
-                          onDragStart={(e) => onMeasureDragStart(e, m.id)}
-                          onDragEnd={onMeasureDragEnd}
-                        >
-                          ⠿
-                        </span>
-                        <span
-                          className={`plan-collapse-arrow${collapsed ? " collapsed" : ""}`}
-                          onClick={() =>
-                            setMeasureCollapsed((s) => ({
-                              ...s,
-                              [m.id]: !s[m.id],
-                            }))
-                          }
-                          style={{ cursor: "pointer" }}
-                        >
-                          ▾
-                        </span>
-                        <InlineEdit
-                          value={m.rawText || ""}
-                          onSave={(v) =>
-                            onUpdate({
-                              ...strategy,
-                              measures: strategy.measures.map((ms) =>
-                                ms.id === m.id ? { ...ms, rawText: v } : ms,
-                              ),
-                            })
-                          }
-                          className="plan-title-edit"
-                          placeholder="活動名稱/專案名稱"
-                          disabled={isReadOnly}
-                        />
-                        {allMembers.length > 0 ? (
-                          <select
-                            className="owner-select"
-                            value={m.owner ?? ""}
-                            disabled={isReadOnly}
-                            onChange={(e) =>
-                              onUpdate({
-                                ...strategy,
-                                measures: strategy.measures.map((ms) =>
-                                  ms.id === m.id
-                                    ? { ...ms, owner: e.target.value }
-                                    : ms,
-                                ),
-                              })
-                            }
-                          >
-                            <option value="">選擇主責者</option>
-                            {teams.map((t) => (
-                              <optgroup key={t.id} label={t.name}>
-                                {t.members.map((mb) => (
-                                  <option key={mb.id} value={mb.name}>
-                                    {mb.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        ) : (
-                          <InlineEdit
-                            value={m.owner ?? ""}
-                            onSave={(v) =>
-                              onUpdate({
-                                ...strategy,
-                                measures: strategy.measures.map((ms) =>
-                                  ms.id === m.id ? { ...ms, owner: v } : ms,
-                                ),
-                              })
-                            }
-                            className="owner-chip owner-edit"
-                            placeholder="主責者"
-                            disabled={isReadOnly}
-                          />
-                        )}
-                        <label className="measure-date-label">
-                          最後更新
-                          <input
-                            type="date"
-                            className="measure-date-input"
-                            value={(m.updatedAt ?? "").slice(0, 10)}
-                            title="最後更新日期"
-                            onChange={(e) =>
-                              onUpdate({
-                                ...strategy,
-                                measures: strategy.measures.map((ms) =>
-                                  ms.id === m.id
-                                    ? {
-                                        ...ms,
-                                        updatedAt: e.target.value
-                                          ? new Date(
-                                              e.target.value,
-                                            ).toISOString()
-                                          : undefined,
-                                      }
-                                    : ms,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
-                        <select
-                          className="measure-status-select"
-                          value={m.status ?? "not-started"}
                           style={{
-                            color:
-                              (m.status ?? "not-started") === "completed"
-                                ? "#059669"
-                                : (m.status ?? "not-started") === "attention"
-                                  ? "#b45309"
-                                  : (m.status ?? "not-started") ===
-                                      "in-progress"
-                                    ? "#2563eb"
-                                    : "#6b7280",
-                            borderColor:
-                              (m.status ?? "not-started") === "completed"
-                                ? "#a7f3d0"
-                                : (m.status ?? "not-started") === "attention"
-                                  ? "#fcd34d"
-                                  : (m.status ?? "not-started") ===
-                                      "in-progress"
-                                    ? "#bfdbfe"
-                                    : "#d1d5db",
-                            background:
-                              (m.status ?? "not-started") === "completed"
-                                ? "#ecfdf5"
-                                : (m.status ?? "not-started") === "attention"
-                                  ? "#fffbeb"
-                                  : (m.status ?? "not-started") ===
-                                      "in-progress"
-                                    ? "#eff6ff"
-                                    : "#f9fafb",
+                            fontSize: 12,
+                            padding: "2px 8px",
+                            borderRadius: 12,
+                            border: `1px solid ${statusBorder[s]}`,
+                            color: statusColor[s],
+                            background: statusBg[s],
+                            flexShrink: 0,
                           }}
-                          onChange={(e) =>
-                            onUpdate({
-                              ...strategy,
-                              measures: strategy.measures.map((ms) =>
-                                ms.id === m.id
-                                  ? {
-                                      ...ms,
-                                      status: e.target.value as MeasureStatus,
-                                    }
-                                  : ms,
-                              ),
-                            })
-                          }
                         >
-                          <option value="not-started">未開始</option>
-                          <option value="attention">需注意</option>
-                          <option value="in-progress">進行中</option>
-                          <option value="completed">已完成</option>
-                        </select>
-                        {/* Phase 4: 計入 OGSM toggle（僅當部門活動存在時顯示） */}
-                        {linkedDeptActivity && (
+                          {statusLabel[s]}
+                        </span>
+
+                        {/* 活動名稱 */}
+                        <span
+                          className="plan-title-edit"
+                          style={{ flex: 1, fontWeight: 500 }}
+                        >
+                          {act.rawText || "(未命名活動)"}
+                        </span>
+
+                        {/* 主責者 */}
+                        {act.owner && (
+                          <span className="owner-chip">{act.owner}</span>
+                        )}
+
+                        {/* 日期範圍 */}
+                        {(act.startDate || act.endDate) && (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#6b7280",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {act.startDate ?? "?"} ～ {act.endDate ?? "?"}
+                          </span>
+                        )}
+
+                        {/* 計入 OGSM toggle */}
+                        {onToggleExcludeFromOgsm && (
                           <label
                             className="measure-ogsm-toggle"
                             title={
@@ -1678,9 +930,10 @@ export default function DetailPanel({
                               checked={!isExcluded}
                               disabled={isReadOnly}
                               onChange={(e) =>
-                                onToggleExcludeFromOgsm?.(
-                                  m.id,
+                                onToggleExcludeFromOgsm(
+                                  act.id,
                                   !e.target.checked,
+                                  strategy.id,
                                 )
                               }
                             />
@@ -1693,159 +946,40 @@ export default function DetailPanel({
                             </span>
                           </label>
                         )}
-                        <div
-                          style={{
-                            marginLeft: "auto",
-                            display: "flex",
-                            gap: 8,
-                          }}
-                        >
-                          {!isReadOnly && (
-                            <button
-                              className="detail-add-btn"
-                              onClick={() => copyMeasure(m.id)}
-                              title="複製此活動"
-                              style={{ padding: "6px 10px" }}
-                            >
-                              📋 複製
-                            </button>
-                          )}
-                          {!isReadOnly && (
-                            <div style={{ position: "relative" }}>
-                              <button
-                                className="detail-add-btn"
-                                style={{ padding: "6px 10px" }}
-                                onClick={() =>
-                                  setKpiDropdownMsrId(
-                                    kpiDropdownMsrId === m.id ? null : m.id,
-                                  )
-                                }
-                              >
-                                + 新增 KPI ▾
-                              </button>
-                              {kpiDropdownMsrId === m.id && (
-                                <>
-                                  {/* 點擊外部關閉 */}
-                                  <div
-                                    style={{
-                                      position: "fixed",
-                                      inset: 0,
-                                      zIndex: 99,
-                                    }}
-                                    onClick={() => setKpiDropdownMsrId(null)}
-                                  />
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: "calc(100% + 4px)",
-                                      right: 0,
-                                      zIndex: 100,
-                                      background: "#fff",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-                                      minWidth: 130,
-                                      overflow: "hidden",
-                                    }}
-                                  >
-                                    {(
-                                      [
-                                        ["value", "📐 量化型"],
-                                        ["progress", "📊 進度型"],
-                                        ["growth", "📈 成長型"],
-                                        ["target_rate", "🎯 目標率型"],
-                                      ] as const
-                                    ).map(([type, label]) => (
-                                      <button
-                                        key={type}
-                                        style={{
-                                          display: "block",
-                                          width: "100%",
-                                          padding: "9px 14px",
-                                          textAlign: "left",
-                                          background: "none",
-                                          border: "none",
-                                          fontSize: 13,
-                                          cursor: "pointer",
-                                          color: "#374151",
-                                        }}
-                                        onMouseEnter={(e) =>
-                                          ((
-                                            e.currentTarget as HTMLButtonElement
-                                          ).style.background = "#f3f4f6")
-                                        }
-                                        onMouseLeave={(e) =>
-                                          ((
-                                            e.currentTarget as HTMLButtonElement
-                                          ).style.background = "none")
-                                        }
-                                        onClick={() => {
-                                          addKpiToMeasure(m.id, type);
-                                        }}
-                                      >
-                                        {label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                          {!isReadOnly && (
-                            <button
-                              className="plan-del-btn"
-                              onClick={() => deleteMeasure(m.id)}
-                              title="刪除活動"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
+
+                        {/* KPI 數量 */}
+                        {act.kpis && act.kpis.length > 0 && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "#6b7280",
+                              background: "#f3f4f6",
+                              borderRadius: 8,
+                              padding: "2px 6px",
+                              flexShrink: 0,
+                            }}
+                          >
+                            KPI × {act.kpis.length}
+                          </span>
+                        )}
+
+                        {/* 編輯按鈕 */}
+                        {onNavigateToActivityPage && (
+                          <button
+                            className="detail-add-btn"
+                            onClick={onNavigateToActivityPage}
+                            title="在活動頁面編輯此活動"
+                            style={{ padding: "4px 8px", flexShrink: 0 }}
+                          >
+                            編輯 →
+                          </button>
+                        )}
                       </div>
-                      {!collapsed && (
-                        <div className="kpi-list-wrap">
-                          <div className="kpi-list">
-                            {m.kpis.map((k) => {
-                              const linkedItems = strategy.actionPlans
-                                .flatMap((p) => p.items)
-                                .filter((i) => i.linkedMeasureId === m.id);
-                              const linkedTotal = linkedItems.length;
-                              const linkedDone = linkedItems.filter(
-                                (i) => i.completed,
-                              ).length;
-                              return (
-                                <KpiCard
-                                  key={k.id}
-                                  kpi={k}
-                                  linkedTotal={linkedTotal}
-                                  linkedDone={linkedDone}
-                                  onUpdate={(updated) =>
-                                    updateKPI(m.id, k.id, updated)
-                                  }
-                                  onDelete={() => deleteKPI(m.id, k.id)}
-                                  isReadOnly={isReadOnly}
-                                />
-                              );
-                            })}
-                          </div>
-                          {m.kpis.length === 0 && (
-                            <p className="kpi-list-empty">
-                              尚未新增 KPI，點擊「新增 KPI」開始記錄。
-                            </p>
-                          )}
-                        </div>
-                      )}
                     </div>
                   );
                 })}
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              {!isReadOnly && (
-                <button className="detail-add-btn" onClick={() => addMeasure()}>
-                  + 新增活動（於所選季度）
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 

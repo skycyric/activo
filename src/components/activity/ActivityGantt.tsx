@@ -4,13 +4,7 @@ import type { ActivityWithContext } from "../ActivityPage";
 interface Props {
   activities: ActivityWithContext[];
   allActivities: ActivityWithContext[];
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 const ROW_H = 40; // px per row
@@ -46,7 +40,7 @@ function diffDays(a: Date, b: Date): number {
 export default function ActivityGantt({
   activities,
   allActivities,
-  onJumpToMeasure,
+  onJumpToActivity,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -197,15 +191,7 @@ export default function ActivityGantt({
               className="gantt-label-row"
               style={{ height: ROW_H }}
               title={act.rawText}
-              onClick={() =>
-                onJumpToMeasure(
-                  act.deptId,
-                  act.periodId,
-                  act.goalId,
-                  act.strategyId,
-                  act.id,
-                )
-              }
+              onClick={() => onJumpToActivity(act.deptId, act.id)}
             >
               <span className="gantt-label-dept">{act.deptName}</span>
               <span className="gantt-label-name">{act.rawText}</span>
@@ -268,15 +254,7 @@ export default function ActivityGantt({
                       background: color,
                     }}
                     title={`${act.rawText}\n${act.startDate} → ${act.endDate}`}
-                    onClick={() =>
-                      onJumpToMeasure(
-                        act.deptId,
-                        act.periodId,
-                        act.goalId,
-                        act.strategyId,
-                        act.id,
-                      )
-                    }
+                    onClick={() => onJumpToActivity(act.deptId, act.id)}
                   >
                     <span className="gantt-bar-label">{act.rawText}</span>
                   </div>

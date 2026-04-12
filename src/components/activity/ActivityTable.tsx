@@ -1,9 +1,9 @@
 import { useState, useRef, Fragment } from "react";
 import type {
-  Measure,
   MeasureStatus,
   WorkspaceData,
   AssistUnit,
+  DeptActivity,
 } from "../../schemas/ogsm";
 import type { ActivityWithContext } from "../ActivityPage";
 import AssistUnitPicker from "./AssistUnitPicker";
@@ -48,27 +48,9 @@ interface Props {
   onSetExpandedId: (id: string | null) => void;
   /** 目前套用中的 owner 篩選值；空字串代表未篩選 */
   ownerFilter: string;
-  onUpdateMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measure: Measure,
-  ) => void;
-  onDeleteMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
+  onDeleteActivity: (deptId: string, activityId: string) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 function formatDate(d: string | undefined): string {
@@ -83,9 +65,9 @@ export default function ActivityTable({
   expandedId,
   onSetExpandedId,
   ownerFilter,
-  onUpdateMeasure,
-  onDeleteMeasure,
-  onJumpToMeasure,
+  onUpdateActivity,
+  onDeleteActivity,
+  onJumpToActivity,
 }: Props) {
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
     field: "startDate",
@@ -125,7 +107,7 @@ export default function ActivityTable({
   const sorted = frozenSortRef.current ?? freshSorted;
 
   const updateStatus = (act: ActivityWithContext, status: MeasureStatus) => {
-    onUpdateMeasure(act.deptId, act.periodId, act.goalId, act.strategyId, {
+    onUpdateActivity(act.deptId, {
       ...act,
       status,
       updatedAt: new Date().toISOString(),
@@ -160,7 +142,7 @@ export default function ActivityTable({
     const newOwner = editState.owner.trim();
     // If owner filter is active and new owner won't match → schedule fade-out
     const willLeaveFilter = ownerFilter !== "" && newOwner !== ownerFilter;
-    onUpdateMeasure(act.deptId, act.periodId, act.goalId, act.strategyId, {
+    onUpdateActivity(act.deptId, {
       ...act,
       rawText: editState.rawText.trim() || act.rawText,
       description: editState.description.trim() || undefined,
@@ -380,15 +362,7 @@ export default function ActivityTable({
                     <button
                       className="act-action-btn act-jump-btn"
                       title="跳至 DetailPanel"
-                      onClick={() =>
-                        onJumpToMeasure(
-                          act.deptId,
-                          act.periodId,
-                          act.goalId,
-                          act.strategyId,
-                          act.id,
-                        )
-                      }
+                      onClick={() => onJumpToActivity(act.deptId, act.id)}
                     >
                       🔗
                     </button>
@@ -396,15 +370,7 @@ export default function ActivityTable({
                       <button
                         className="act-action-btn act-del-btn"
                         title="刪除活動"
-                        onClick={() =>
-                          onDeleteMeasure(
-                            act.deptId,
-                            act.periodId,
-                            act.goalId,
-                            act.strategyId,
-                            act.id,
-                          )
-                        }
+                        onClick={() => onDeleteActivity(act.deptId, act.id)}
                       >
                         🗑
                       </button>
