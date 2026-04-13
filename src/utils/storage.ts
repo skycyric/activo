@@ -385,6 +385,23 @@ export function migrateToV3(ws: WorkspaceData): boolean {
               changed = true;
             }
           }
+          // 4. GoalKpiLink 欄位升級：{ strategyId, measureId, kpiId } → { activityId, kpiId }
+          for (const gk of goal.goalKpis ?? []) {
+            const updatedLinks = gk.linkedKpis.map(
+              (link: Record<string, unknown>) => {
+                if ("measureId" in link && !("activityId" in link)) {
+                  changed = true;
+                  return {
+                    activityId: link.measureId as string,
+                    kpiId: link.kpiId as string,
+                  };
+                }
+                return link;
+              },
+            );
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (gk as any).linkedKpis = updatedLinks;
+          }
         }
       }
     }

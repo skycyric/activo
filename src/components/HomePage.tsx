@@ -8,8 +8,14 @@ interface AppCard {
 }
 
 const APP_CARDS: AppCard[] = [
+  { id: "activities", icon: "📋", title: "活動總覽", desc: "跨部門活動追蹤" },
   { id: "ogsm", icon: "📊", title: "OGSM 儀表板", desc: "目標策略管理" },
-  { id: "activities", icon: "📋", title: "活動管理", desc: "跨部門活動追蹤" },
+  {
+    id: "kpidesigner",
+    icon: "📐",
+    title: "目標編輯器",
+    desc: "GoalKPI 視覺化設計",
+  },
   { id: "settings", icon: "⚙️", title: "部門設定", desc: "成員與期間設定" },
 ];
 
@@ -18,6 +24,7 @@ const APP_CARDS: AppCard[] = [
 interface Props {
   onSwitchToActivities: () => void;
   onSwitchToOgsm: () => void;
+  onSwitchToKpiDesigner: () => void;
   onSwitchToDeptSettings: () => void;
 }
 
@@ -26,11 +33,13 @@ interface Props {
 export default function HomePage({
   onSwitchToActivities,
   onSwitchToOgsm,
+  onSwitchToKpiDesigner,
   onSwitchToDeptSettings,
 }: Props) {
   const handleCardClick = (id: string) => {
     if (id === "ogsm") onSwitchToOgsm();
     else if (id === "activities") onSwitchToActivities();
+    else if (id === "kpidesigner") onSwitchToKpiDesigner();
     else if (id === "settings") onSwitchToDeptSettings();
   };
 

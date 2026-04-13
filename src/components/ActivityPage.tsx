@@ -10,6 +10,7 @@ import ActivityCardGrid from "./activity/ActivityCardGrid";
 import ActivityGantt from "./activity/ActivityGantt";
 import ActivityCalendar from "./activity/ActivityCalendar";
 import ActivityAddModal from "./activity/ActivityAddModal";
+import ActivityDetailPanel from "./ActivityDetailPanel";
 
 export interface ActivityWithContext extends DeptActivity {
   deptId: string;
@@ -48,6 +49,8 @@ interface Props {
   onDeleteActivity: (deptId: string, activityId: string) => void;
   onAddActivity: (deptId: string, activity: DeptActivity) => void;
   onJumpToActivity: (deptId: string, activityId: string) => void;
+  /** 從外部（DetailPanel M tab）預先開啟某活動 */
+  initialSelectedActivityId?: string | null;
 }
 
 export default function ActivityPage({
@@ -57,6 +60,7 @@ export default function ActivityPage({
   onDeleteActivity,
   onAddActivity,
   onJumpToActivity,
+  initialSelectedActivityId,
 }: Props) {
   const [view, setView] = useState<ActivityView>("table");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -71,6 +75,16 @@ export default function ActivityPage({
     })(),
   }));
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(
+    initialSelectedActivityId ?? null,
+  );
+
+  // Sync if external navigation changes the target activity
+  useEffect(() => {
+    if (initialSelectedActivityId !== undefined) {
+      setSelectedActivityId(initialSelectedActivityId ?? null);
+    }
+  }, [initialSelectedActivityId]);
 
   // Persist owner filter to localStorage
   useEffect(() => {
@@ -88,7 +102,14 @@ export default function ActivityPage({
   // When a chip/card is clicked from non-table views, jump to table + expand
   const handleSetExpandedId = useCallback((id: string | null) => {
     setExpandedId(id);
+    setSelectedActivityId(id);
     if (id !== null) setView("table");
+  }, []);
+
+  // Open activity detail panel (without forcing table view)
+  const handleSelectActivity = useCallback((id: string | null) => {
+    setSelectedActivityId(id);
+    setExpandedId(id); // keep table row highlight in sync
   }, []);
 
   // Flatten all activities from all depts
@@ -168,15 +189,28 @@ export default function ActivityPage({
 
   // Apply filters
   const filtered = useMemo<ActivityWithContext[]>(() => {
+    // Pre-build set of member names for selected team (for owner-based matching)
+    const selectedTeamMemberNames = filters.teamId
+      ? new Set(
+          (workspace.teams ?? [])
+            .find((t) => t.id === filters.teamId)
+            ?.members.map((m) => m.name) ?? [],
+        )
+      : null;
+
     return allActivities.filter((a) => {
       if (filters.deptId && a.deptId !== filters.deptId) return false;
-      if (
-        filters.teamId &&
-        !a.assistUnits?.some(
+      if (filters.teamId && selectedTeamMemberNames) {
+        const isAssistUnit = a.assistUnits?.some(
           (u) => u.type === "team" && u.id === filters.teamId,
-        )
-      )
-        return false;
+        );
+        const ownerInTeam =
+          (a.owner && selectedTeamMemberNames.has(a.owner)) ||
+          (a as { owners?: string[] }).owners?.some((o) =>
+            selectedTeamMemberNames.has(o),
+          );
+        if (!isAssistUnit && !ownerInTeam) return false;
+      }
       if (filters.owner) {
         const ownerList: string[] = [
           a.owner ?? "",
@@ -208,9 +242,14 @@ export default function ActivityPage({
       }
       return true;
     });
-  }, [allActivities, filters]);
+  }, [allActivities, filters, workspace.teams]);
 
   const hasFilter = Object.values(filters).some((v) => v !== "");
+
+  // Resolve selected activity from allActivities
+  const selectedActivity = selectedActivityId
+    ? (allActivities.find((a) => a.id === selectedActivityId) ?? null)
+    : null;
 
   return (
     <div className="activity-page">
@@ -256,48 +295,69 @@ export default function ActivityPage({
         onChange={setFilters}
       />
 
-      {/* View area */}
-      <div className="activity-view-area">
-        {view === "table" && (
-          <ActivityTable
-            activities={filtered}
-            allActivities={allActivities}
+      {/* View area + detail panel (two-column) */}
+      <div className="activity-main-row">
+        <div className="activity-view-area">
+          {view === "table" && (
+            <ActivityTable
+              activities={filtered}
+              allActivities={allActivities}
+              workspace={workspace}
+              expandedId={expandedId}
+              onSetExpandedId={handleSetExpandedId}
+              ownerFilter={filters.owner}
+              onUpdateActivity={onUpdateActivity}
+              onDeleteActivity={onDeleteActivity}
+              onJumpToActivity={onJumpToActivity}
+            />
+          )}
+          {view === "kanban" && (
+            <ActivityKanban
+              activities={filtered}
+              allActivities={allActivities}
+              onUpdateActivity={onUpdateActivity}
+              onJumpToActivity={onJumpToActivity}
+            />
+          )}
+          {view === "gantt" && (
+            <ActivityGantt
+              activities={filtered}
+              allActivities={allActivities}
+              onJumpToActivity={onJumpToActivity}
+            />
+          )}
+          {view === "cards" && (
+            <ActivityCardGrid
+              activities={filtered}
+              allActivities={allActivities}
+              onUpdateActivity={onUpdateActivity}
+              onJumpToActivity={onJumpToActivity}
+            />
+          )}
+          {view === "calendar" && (
+            <ActivityCalendar
+              activities={filtered}
+              onJumpToActivity={onJumpToActivity}
+            />
+          )}
+        </div>
+
+        {/* Detail panel */}
+        {selectedActivity && (
+          <ActivityDetailPanel
+            activity={selectedActivity}
+            deptId={selectedActivity.deptId}
             workspace={workspace}
-            expandedId={expandedId}
-            onSetExpandedId={handleSetExpandedId}
-            ownerFilter={filters.owner}
-            onUpdateActivity={onUpdateActivity}
-            onDeleteActivity={onDeleteActivity}
-            onJumpToActivity={onJumpToActivity}
-          />
-        )}
-        {view === "kanban" && (
-          <ActivityKanban
-            activities={filtered}
-            allActivities={allActivities}
-            onUpdateActivity={onUpdateActivity}
-            onJumpToActivity={onJumpToActivity}
-          />
-        )}
-        {view === "gantt" && (
-          <ActivityGantt
-            activities={filtered}
-            allActivities={allActivities}
-            onJumpToActivity={onJumpToActivity}
-          />
-        )}
-        {view === "cards" && (
-          <ActivityCardGrid
-            activities={filtered}
-            allActivities={allActivities}
-            onUpdateActivity={onUpdateActivity}
-            onJumpToActivity={onJumpToActivity}
-          />
-        )}
-        {view === "calendar" && (
-          <ActivityCalendar
-            activities={filtered}
-            onJumpToActivity={onJumpToActivity}
+            isReadOnly={selectedActivity.isReadOnly}
+            warnDaysBefore={7}
+            onUpdate={(deptId, act) => {
+              onUpdateActivity(deptId, act);
+            }}
+            onDelete={(deptId, actId) => {
+              onDeleteActivity(deptId, actId);
+              handleSelectActivity(null);
+            }}
+            onClose={() => handleSelectActivity(null)}
           />
         )}
       </div>

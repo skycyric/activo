@@ -52,6 +52,7 @@ import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
 import ActivityPage from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
+import KpiDesigner from "./components/KpiDesigner";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
@@ -146,6 +147,14 @@ export default function App() {
   const [showDeptSettings, setShowDeptSettings] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
   const [showHomePage, setShowHomePage] = useState(true);
+  /** 從 DetailPanel 「編輯 →」跳入 ActivityPage 時要自動開啟的活動 ID */
+  const [pendingActivityDetailId, setPendingActivityDetailId] = useState<
+    string | null
+  >(null);
+  const [showKpiDesigner, setShowKpiDesigner] = useState(false);
+  const [kpiDesignerGoalId, setKpiDesignerGoalId] = useState<string | null>(
+    null,
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -1173,6 +1182,16 @@ export default function App() {
     overallRate: 0,
   };
 
+  // V3 活動清單：優先使用 dept.activities；若尚未遷移則從 strategy.measures 取得 fallback
+  const effectiveDeptActivities = useMemo((): DeptActivity[] => {
+    const deptActs = activeDept?.activities ?? [];
+    if (deptActs.length > 0) return deptActs;
+    // Migration fallback: use measures from strategies as DeptActivity
+    return data.goals.flatMap((g) =>
+      g.strategies.flatMap((s) => s.measures as unknown as DeptActivity[]),
+    );
+  }, [activeDept, data.goals]);
+
   const updateWorkspace = useCallback(
     (next: WorkspaceData) => {
       if (isUndoRedoRef.current) {
@@ -1712,16 +1731,13 @@ export default function App() {
 
   const linkedDeptActivities = useMemo((): DeptActivity[] => {
     if (!selectedStrategyId) return [];
-    const dept = effectiveWorkspace.departments.find(
-      (d) => d.id === activeDeptId,
-    );
-    return (dept?.activities ?? []).filter(
+    return effectiveDeptActivities.filter(
       (a) =>
         a.dashboardLinks?.some(
           (l) => l.type === "ogsm" && l.strategyId === selectedStrategyId,
         ) ?? false,
     );
-  }, [effectiveWorkspace, activeDeptId, selectedStrategyId]);
+  }, [effectiveDeptActivities, selectedStrategyId]);
 
   const handleUpdateStrategy = useCallback(
     (updated: Strategy) => {
@@ -2136,6 +2152,97 @@ export default function App() {
     ],
   );
 
+  /** 目標編輯器用：直接以 goalId 新增策略（不依賴 selectedGoalId state） */
+  const handleAddStrategyToGoal = useCallback(
+    (goalId: string) => {
+      const s: Strategy = {
+        id: genId("str"),
+        title: "新策略（點擊編輯名稱）",
+        rawText: "",
+        measures: [{ id: genId("msr"), rawText: "", kpis: [] }],
+        actionPlans: [],
+        owners: [],
+        notes: "",
+        completionRate: 0,
+        manualRate: null,
+        updatedAt: new Date().toISOString(),
+      };
+      updateData({
+        ...data,
+        goals: data.goals.map((g) =>
+          g.id !== goalId ? g : { ...g, strategies: [...g.strategies, s] },
+        ),
+      });
+    },
+    [data, updateData],
+  );
+
+  /** 目標編輯器用：以 stratId 掃描所有目標刪除（不依賴 selectedGoalId state） */
+  const handleDeleteStrategyById = useCallback(
+    (stratId: string) => {
+      if (!window.confirm("確定要刪除這個策略嗎？")) return;
+      const goalId = data.goals.find((g) =>
+        g.strategies.some((s) => s.id === stratId),
+      )?.id;
+      if (!goalId) return;
+      const next = recompute({
+        ...data,
+        goals: data.goals.map((g) => ({
+          ...g,
+          strategies: g.strategies.filter((s) => s.id !== stratId),
+        })),
+      });
+      const tombstones = [stratId];
+      if (isMultiFileMode && activeDept) {
+        const entry = deptFiles.find(
+          (f) => f.workspace.departments[0]?.id === activeDept.id,
+        );
+        if (!entry || entry.isReadOnly) return;
+        updateDeptWorkspace(activeDept.id, {
+          ...entry.workspace,
+          deletedIds: [...(entry.workspace.deletedIds ?? []), ...tombstones],
+          departments: entry.workspace.departments.map((d) =>
+            d.id !== activeDept.id
+              ? d
+              : {
+                  ...d,
+                  periods: d.periods.map((p) =>
+                    p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                  ),
+                },
+          ),
+        });
+      } else {
+        updateWorkspace({
+          ...workspace,
+          deletedIds: [...(workspace.deletedIds ?? []), ...tombstones],
+          departments: workspace.departments.map((d) =>
+            d.id !== activeDept?.id
+              ? d
+              : {
+                  ...d,
+                  periods: d.periods.map((p) =>
+                    p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                  ),
+                },
+          ),
+        });
+      }
+      if (selectedStrategyId === stratId) setSelectedStrategyId(null);
+    },
+    [
+      data,
+      selectedStrategyId,
+      workspace,
+      activeDept,
+      activePeriod,
+      updateWorkspace,
+      isMultiFileMode,
+      deptFiles,
+      updateDeptWorkspace,
+    ],
+  );
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2221,6 +2328,89 @@ export default function App() {
     }
   };
 
+  // ─── 目標編輯器「目標設定」模式的內容（供 KpiDesigner settingContent 和一般 OGSM 路由共用）───
+  const ogsmSettingContent =
+    selectedGoalId === null ? (
+      <OverviewPage
+        data={data}
+        warnDaysBefore={workspace.warnDaysBefore ?? 7}
+        onSelectGoal={(id) => {
+          setSelectedGoalId(id);
+          setSelectedStrategyId(null);
+        }}
+        onSelectStrategy={(goalId, strategyId, warnFilter) => {
+          setSelectedGoalId(goalId);
+          setSelectedStrategyId(strategyId);
+          setPendingDetailNav(warnFilter ? { tab: "plans", warnFilter } : null);
+        }}
+        onSelectMeasure={(goalId, stratId, measureId) => {
+          setSelectedGoalId(goalId);
+          setSelectedStrategyId(stratId);
+          setPendingDetailNav({ tab: "plans", measureId });
+        }}
+        onEditObjective={handleEditObjective}
+        onAddGoal={handleAddGoal}
+        isReadOnly={isActiveDeptReadOnly}
+        deptActivities={effectiveDeptActivities}
+      />
+    ) : (
+      <>
+        <StrategyList
+          goal={selectedGoal}
+          strategies={filteredStrategies}
+          selectedStrategyId={selectedStrategyId}
+          onSelectStrategy={(id, warnFilter) => {
+            setSelectedStrategyId(id);
+            setPendingDetailNav(
+              warnFilter ? { tab: "plans", warnFilter } : null,
+            );
+          }}
+          onAddStrategy={handleAddStrategy}
+          onUpdateGoal={handleUpdateGoal}
+          onDeleteGoal={handleDeleteGoal}
+          filterOwner={filterOwner}
+          onFilterOwner={setFilterOwner}
+          teams={teams}
+          warnDaysBefore={workspace.warnDaysBefore ?? 7}
+          isReadOnly={isActiveDeptReadOnly}
+          deptActivities={effectiveDeptActivities}
+        />
+        {selectedStrategy && (
+          <DetailPanel
+            key={
+              selectedStrategy.id +
+              (pendingDetailNav?.warnFilter ?? "") +
+              (pendingDetailNav?.measureId ?? "")
+            }
+            strategy={selectedStrategy}
+            onClose={() => setSelectedStrategyId(null)}
+            onUpdate={handleUpdateStrategy}
+            onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
+            teams={teams}
+            warnDaysBefore={workspace.warnDaysBefore ?? 7}
+            onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
+            initialTab={pendingDetailNav?.tab}
+            initialWarnFilter={pendingDetailNav?.warnFilter}
+            initialMeasureId={pendingDetailNav?.measureId}
+            isReadOnly={isActiveDeptReadOnly}
+            linkedDeptActivities={linkedDeptActivities}
+            onToggleExcludeFromOgsm={handleToggleExcludeFromOgsm}
+            onNavigateToActivityPage={() => {
+              setShowActivityPage(true);
+              setShowDeptSettings(false);
+              setShowHomePage(false);
+            }}
+            onOpenActivityDetail={(actId) => {
+              setPendingActivityDetailId(actId);
+              setShowActivityPage(true);
+              setShowDeptSettings(false);
+              setShowHomePage(false);
+            }}
+          />
+        )}
+      </>
+    );
+
   return (
     <div className="app">
       <header className="app-header">
@@ -2241,6 +2431,7 @@ export default function App() {
                     setShowHomePage(true);
                     setShowActivityPage(false);
                     setShowDeptSettings(false);
+                    setShowKpiDesigner(false);
                     setMenuOpen(false);
                   }}
                 >
@@ -2249,9 +2440,22 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
+                    setShowActivityPage(true);
+                    setShowHomePage(false);
+                    setShowDeptSettings(false);
+                    setShowKpiDesigner(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  📋 活動總覽
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
                     setShowHomePage(false);
                     setShowActivityPage(false);
                     setShowDeptSettings(false);
+                    setShowKpiDesigner(false);
                     setMenuOpen(false);
                   }}
                 >
@@ -2260,26 +2464,29 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
-                    setShowActivityPage(true);
-                    setShowHomePage(false);
-                    setShowDeptSettings(false);
-                    setMenuOpen(false);
-                  }}
-                >
-                  📋 活動管理
-                </button>
-                <button
-                  className="header-menu-item"
-                  onClick={() => {
                     setShowDeptSettings(true);
                     setShowHomePage(false);
                     setShowActivityPage(false);
+                    setShowKpiDesigner(false);
                     setSelectedGoalId(null);
                     setSelectedStrategyId(null);
                     setMenuOpen(false);
                   }}
                 >
                   ⚙️ 部門設定
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setShowKpiDesigner(true);
+                    setKpiDesignerGoalId(null);
+                    setShowHomePage(false);
+                    setShowActivityPage(false);
+                    setShowDeptSettings(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  🎯 目標編輯器
                 </button>
               </div>
             )}
@@ -2530,65 +2737,83 @@ export default function App() {
       )}
 
       <div className="app-body">
-        {!showHomePage && !showActivityPage && !showDeptSettings && (
-          <Sidebar
-            workspace={effectiveWorkspace}
-            activeDeptId={activeDept?.id ?? ""}
-            activePeriodId={activePeriod?.id ?? ""}
+        {!showHomePage &&
+          !showActivityPage &&
+          !showDeptSettings &&
+          !showKpiDesigner && (
+            <Sidebar
+              workspace={effectiveWorkspace}
+              activeDeptId={activeDept?.id ?? ""}
+              activePeriodId={activePeriod?.id ?? ""}
+              data={data}
+              selectedGoalId={selectedGoalId}
+              selectedStrategyId={selectedStrategyId}
+              isActivityPage={showActivityPage}
+              isHomePage={showHomePage}
+              readOnlyDeptIds={
+                isMultiFileMode
+                  ? (deptFiles
+                      .filter((f) => f.isReadOnly)
+                      .map((f) => f.workspace.departments[0]?.id)
+                      .filter(Boolean) as string[])
+                  : undefined
+              }
+              onSwitchDept={handleSwitchDept}
+              onAddDept={handleAddDept}
+              showAddDeptButton={!isMultiFileMode || isAdmin}
+              onRenameDept={handleRenameDept}
+              onDeleteDept={handleDeleteDept}
+              onSwitchPeriod={handleSwitchPeriod}
+              onAddPeriod={handleAddPeriod}
+              onCopyPeriod={handleCopyPeriod}
+              onDeletePeriod={handleDeletePeriod}
+              onSelectGoal={(id) => {
+                setSelectedGoalId(id);
+                setSelectedStrategyId(null);
+                setShowDeptSettings(false);
+                setShowActivityPage(false);
+                setShowHomePage(false);
+              }}
+              onSelectStrategy={setSelectedStrategyId}
+              onSelectOverview={() => {
+                setSelectedGoalId(null);
+                setSelectedStrategyId(null);
+                setShowDeptSettings(false);
+                setShowActivityPage(false);
+                setShowHomePage(false);
+              }}
+              onSelectActivities={() => {
+                setShowActivityPage(true);
+                setShowDeptSettings(false);
+                setShowHomePage(false);
+                setSelectedGoalId(null);
+                setSelectedStrategyId(null);
+              }}
+              onSelectHome={() => {
+                setShowHomePage(true);
+                setShowActivityPage(false);
+                setShowDeptSettings(false);
+                setSelectedGoalId(null);
+                setSelectedStrategyId(null);
+              }}
+            />
+          )}
+        {showKpiDesigner ? (
+          <KpiDesigner
             data={data}
-            selectedGoalId={selectedGoalId}
-            selectedStrategyId={selectedStrategyId}
-            isActivityPage={showActivityPage}
-            isHomePage={showHomePage}
-            readOnlyDeptIds={
-              isMultiFileMode
-                ? (deptFiles
-                    .filter((f) => f.isReadOnly)
-                    .map((f) => f.workspace.departments[0]?.id)
-                    .filter(Boolean) as string[])
-                : undefined
-            }
-            onSwitchDept={handleSwitchDept}
-            onAddDept={handleAddDept}
-            showAddDeptButton={!isMultiFileMode || isAdmin}
-            onRenameDept={handleRenameDept}
-            onDeleteDept={handleDeleteDept}
-            onSwitchPeriod={handleSwitchPeriod}
-            onAddPeriod={handleAddPeriod}
-            onCopyPeriod={handleCopyPeriod}
-            onDeletePeriod={handleDeletePeriod}
-            onSelectGoal={(id) => {
-              setSelectedGoalId(id);
-              setSelectedStrategyId(null);
-              setShowDeptSettings(false);
-              setShowActivityPage(false);
-              setShowHomePage(false);
-            }}
-            onSelectStrategy={setSelectedStrategyId}
-            onSelectOverview={() => {
-              setSelectedGoalId(null);
-              setSelectedStrategyId(null);
-              setShowDeptSettings(false);
-              setShowActivityPage(false);
-              setShowHomePage(false);
-            }}
-            onSelectActivities={() => {
-              setShowActivityPage(true);
-              setShowDeptSettings(false);
-              setShowHomePage(false);
-              setSelectedGoalId(null);
-              setSelectedStrategyId(null);
-            }}
-            onSelectHome={() => {
-              setShowHomePage(true);
-              setShowActivityPage(false);
-              setShowDeptSettings(false);
-              setSelectedGoalId(null);
-              setSelectedStrategyId(null);
+            deptActivities={effectiveDeptActivities}
+            initialGoalId={kpiDesignerGoalId ?? undefined}
+            onUpdateData={updateData}
+            onAddGoal={handleAddGoal}
+            onDeleteGoal={handleDeleteGoal}
+            onAddStrategyToGoal={handleAddStrategyToGoal}
+            onDeleteStrategy={handleDeleteStrategyById}
+            onClose={() => {
+              setShowKpiDesigner(false);
+              setKpiDesignerGoalId(null);
             }}
           />
-        )}
-        {showHomePage ? (
+        ) : showHomePage ? (
           <HomePage
             onSwitchToActivities={() => {
               setShowActivityPage(true);
@@ -2603,6 +2828,13 @@ export default function App() {
               setShowDeptSettings(false);
               setSelectedGoalId(null);
               setSelectedStrategyId(null);
+            }}
+            onSwitchToKpiDesigner={() => {
+              setShowKpiDesigner(true);
+              setKpiDesignerGoalId(null);
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setShowDeptSettings(false);
             }}
             onSwitchToDeptSettings={() => {
               setShowDeptSettings(true);
@@ -2636,80 +2868,10 @@ export default function App() {
             onDeleteActivity={handleDeleteDeptActivity}
             onAddActivity={handleAddDeptActivity}
             onJumpToActivity={handleJumpToActivity}
-          />
-        ) : selectedGoalId === null ? (
-          <OverviewPage
-            data={data}
-            warnDaysBefore={workspace.warnDaysBefore ?? 7}
-            onSelectGoal={(id) => {
-              setSelectedGoalId(id);
-              setSelectedStrategyId(null);
-            }}
-            onSelectStrategy={(goalId, strategyId, warnFilter) => {
-              setSelectedGoalId(goalId);
-              setSelectedStrategyId(strategyId);
-              setPendingDetailNav(
-                warnFilter ? { tab: "plans", warnFilter } : null,
-              );
-            }}
-            onSelectMeasure={(goalId, stratId, measureId) => {
-              setSelectedGoalId(goalId);
-              setSelectedStrategyId(stratId);
-              setPendingDetailNav({ tab: "plans", measureId });
-            }}
-            onEditObjective={handleEditObjective}
-            onAddGoal={handleAddGoal}
-            isReadOnly={isActiveDeptReadOnly}
+            initialSelectedActivityId={pendingActivityDetailId}
           />
         ) : (
-          <>
-            <StrategyList
-              goal={selectedGoal}
-              strategies={filteredStrategies}
-              selectedStrategyId={selectedStrategyId}
-              onSelectStrategy={(id, warnFilter) => {
-                setSelectedStrategyId(id);
-                setPendingDetailNav(
-                  warnFilter ? { tab: "plans", warnFilter } : null,
-                );
-              }}
-              onAddStrategy={handleAddStrategy}
-              onUpdateGoal={handleUpdateGoal}
-              onDeleteGoal={handleDeleteGoal}
-              filterOwner={filterOwner}
-              onFilterOwner={setFilterOwner}
-              teams={teams}
-              warnDaysBefore={workspace.warnDaysBefore ?? 7}
-              isReadOnly={isActiveDeptReadOnly}
-            />
-            {selectedStrategy && (
-              <DetailPanel
-                key={
-                  selectedStrategy.id +
-                  (pendingDetailNav?.warnFilter ?? "") +
-                  (pendingDetailNav?.measureId ?? "")
-                }
-                strategy={selectedStrategy}
-                onClose={() => setSelectedStrategyId(null)}
-                onUpdate={handleUpdateStrategy}
-                onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
-                teams={teams}
-                warnDaysBefore={workspace.warnDaysBefore ?? 7}
-                onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
-                initialTab={pendingDetailNav?.tab}
-                initialWarnFilter={pendingDetailNav?.warnFilter}
-                initialMeasureId={pendingDetailNav?.measureId}
-                isReadOnly={isActiveDeptReadOnly}
-                linkedDeptActivities={linkedDeptActivities}
-                onToggleExcludeFromOgsm={handleToggleExcludeFromOgsm}
-                onNavigateToActivityPage={() => {
-                  setShowActivityPage(true);
-                  setShowDeptSettings(false);
-                  setShowHomePage(false);
-                }}
-              />
-            )}
-          </>
+          ogsmSettingContent
         )}
       </div>
     </div>

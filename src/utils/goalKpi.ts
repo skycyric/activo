@@ -4,11 +4,22 @@
  * 供 StrategyList（完整計算）和 OverviewPage（只取 rate）共用，
  * 避免 value / progress 計算邏輯在兩個元件中重複實作。
  */
-import type { Goal, GoalKPI, GoalKpiLink } from "../schemas/ogsm";
+import type { Goal, GoalKPI, GoalKpiLink, DeptActivity } from "../schemas/ogsm";
+import { computeKpiAchievement } from "./kpiCalc";
+
+function getLinkActivityId(link: GoalKpiLink): string {
+  return (
+    link.activityId ||
+    ((link as unknown as Record<string, string>).measureId ?? "")
+  );
+}
 
 // ─── 回傳型別 ─────────────────────────────────────────────────────────────────
 
 export interface GoalKpiActivity {
+  /** V3 後為 activityId（對應 dept.activities[].id） */
+  activityId: string;
+  /** 向下相容保留，值同 activityId */
   measureId: string;
   measureRawText: string;
   chosenSrcId: string | null;
@@ -41,13 +52,93 @@ export interface GoalKpiResult {
 /**
  * 計算單一 GoalKPI 的完整資訊（actual / target / rate / activities）。
  *
- * @param gk   - 要計算的 GoalKPI 設定
- * @param goal - 所屬 Goal（提供 strategies 與 goalKpis 參照）
+ * @param gk             - 要計算的 GoalKPI 設定
+ * @param goal           - 所屬 Goal（提供 goalKpis 參照）
+ * @param deptActivities - 部門活動清單（V3 架構：KPI 由此查找）
+ * @param allGoals       - 所有 Goal（aggregate 型跨 Goal 引用需要）
+ * @param _visited       - 防循環引用（內部遞迴使用）
  */
-export function computeGoalKpiResult(gk: GoalKPI, goal: Goal): GoalKpiResult {
+export function computeGoalKpiResult(
+  gk: GoalKPI,
+  goal: Goal,
+  deptActivities: DeptActivity[] = [],
+  allGoals: Goal[] = [],
+  _visited: Set<string> = new Set(),
+): GoalKpiResult {
   const gkType = gk.type ?? "value";
   const goalKpis = goal.goalKpis ?? [];
   const emptyActivities: GoalKpiActivity[] = [];
+
+  // ── aggregate：加權平均其他 GoalKPI 的 rate ────────────────────────────────
+  if (gk.goalKpiType === "aggregate") {
+    const links = gk.linkedGoalKpis ?? [];
+    if (links.length === 0) {
+      return {
+        actual: null,
+        target: gk.target,
+        rate: null,
+        isRateMode: true,
+        metCount: null,
+        totalCount: 0,
+        activities: emptyActivities,
+      };
+    }
+    const nodeId = `${goal.id}/${gk.id}`;
+    if (_visited.has(nodeId)) {
+      // 循環引用：回傳 null（不參與計算）
+      return {
+        actual: null,
+        target: gk.target,
+        rate: null,
+        isRateMode: true,
+        metCount: null,
+        totalCount: 0,
+        activities: emptyActivities,
+      };
+    }
+    const nextVisited = new Set(_visited).add(nodeId);
+    let weightedRateSum = 0;
+    let weightSum = 0;
+    for (const link of links) {
+      const refGoal = allGoals.find((g) => g.id === link.goalId) ?? goal;
+      const refGk = (refGoal.goalKpis ?? []).find(
+        (g) => g.id === link.goalKpiId,
+      );
+      if (!refGk) continue;
+      const sub = computeGoalKpiResult(
+        refGk,
+        refGoal,
+        deptActivities,
+        allGoals,
+        nextVisited,
+      );
+      if (sub.rate === null) continue;
+      weightedRateSum += sub.rate * link.weight;
+      weightSum += link.weight;
+    }
+    if (weightSum === 0) {
+      return {
+        actual: null,
+        target: gk.target,
+        rate: null,
+        isRateMode: true,
+        metCount: null,
+        totalCount: links.length,
+        activities: emptyActivities,
+      };
+    }
+    const aggRate = Math.round((weightedRateSum / weightSum) * 10) / 10;
+    const target = gk.target ?? 100;
+    return {
+      actual: aggRate,
+      target,
+      rate: aggRate,
+      isRateMode: true,
+      metCount: null,
+      totalCount: links.length,
+      activities: emptyActivities,
+    };
+  }
 
   // ── 整體達標狀況（pct_activity）─────────────────────────────────────────────
   if (gkType === "pct_activity") {
@@ -74,18 +165,17 @@ export function computeGoalKpiResult(gk: GoalKPI, goal: Goal): GoalKpiResult {
       )
         continue;
       for (const link of threshGk.linkedKpis) {
-        if (!measureMap.has(link.measureId)) {
-          const s = (goal.strategies ?? []).find(
-            (s) => s.id === link.strategyId,
-          );
-          const m = s?.measures.find((m) => m.id === link.measureId);
-          measureMap.set(link.measureId, {
-            measureId: link.measureId,
-            measureRawText: m?.rawText ?? "（未知活動）",
+        const actId = getLinkActivityId(link);
+        if (!actId) continue;
+        if (!measureMap.has(actId)) {
+          const act = deptActivities.find((a) => a.id === actId);
+          measureMap.set(actId, {
+            measureId: actId,
+            measureRawText: act?.rawText ?? "（未知活動）",
             sources: [],
           });
         }
-        const entry = measureMap.get(link.measureId)!;
+        const entry = measureMap.get(actId)!;
         const existing = entry.sources.find(
           (src) => src.threshGkId === threshId,
         );
@@ -119,20 +209,15 @@ export function computeGoalKpiResult(gk: GoalKPI, goal: Goal): GoalKpiResult {
           const threshGk = goalKpis.find((g) => g.id === threshId);
           if (!threshGk) continue;
           for (const link of threshGk.linkedKpis) {
-            if (link.measureId !== entry.measureId) continue;
+            const actId = getLinkActivityId(link);
+            if (actId !== entry.measureId) continue;
             if (!chosen.kpiIds.includes(link.kpiId)) continue;
-            const s = (goal.strategies ?? []).find(
-              (s) => s.id === link.strategyId,
-            );
-            const m = s?.measures.find((m) => m.id === link.measureId);
-            const k = m?.kpis.find((k) => k.id === link.kpiId);
+            const act = deptActivities.find((a) => a.id === actId);
+            const k = act?.kpis.find((k) => k.id === link.kpiId);
             if (!k) continue;
             const r =
-              k.achievementRate ??
-              (k.target !== null && k.target !== undefined && k.target > 0
-                ? ((k.actual ?? 0) / k.target) * 100
-                : null);
-            if (r !== null) rates.push(r);
+              computeKpiAchievement(k, act?.kpis ?? []) ?? k.achievementRate;
+            if (r !== null && r !== undefined) rates.push(r);
           }
         }
         if (rates.length > 0) {
@@ -148,6 +233,7 @@ export function computeGoalKpiResult(gk: GoalKPI, goal: Goal): GoalKpiResult {
         : null;
 
       return {
+        activityId: entry.measureId,
         measureId: entry.measureId,
         measureRawText: entry.measureRawText,
         chosenSrcId: chosenSrcId ?? null,
@@ -180,17 +266,17 @@ export function computeGoalKpiResult(gk: GoalKPI, goal: Goal): GoalKpiResult {
 
   // ── 共用：收集 linked KPI 量化值 ─────────────────────────────────────────────
   const values = gk.linkedKpis.flatMap((link: GoalKpiLink) => {
-    const s = (goal.strategies ?? []).find((s) => s.id === link.strategyId);
-    if (!s) return [];
-    const m = s.measures.find((m) => m.id === link.measureId);
-    if (!m) return [];
-    const k = m.kpis.find((k) => k.id === link.kpiId);
+    const actId = getLinkActivityId(link);
+    const act = deptActivities.find((a) => a.id === actId);
+    if (!act) return [];
+    const k = act.kpis.find((k) => k.id === link.kpiId);
     if (!k) return [];
+    const computed = computeKpiAchievement(k, act.kpis);
     return [
       {
         actual: k.actual ?? 0,
         target: k.target ?? 0,
-        achievementRate: k.achievementRate,
+        achievementRate: computed ?? k.achievementRate,
       },
     ];
   });

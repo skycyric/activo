@@ -35,6 +35,8 @@ interface Props {
   ) => void;
   /** 導覽到活動頁面（從 M tab 的「前往活動頁面」按鈕觸發） */
   onNavigateToActivityPage?: () => void;
+  /** 開啟特定活動的 ActivityDetailPanel（從 M tab 的「編輯」按鈕觸發） */
+  onOpenActivityDetail?: (activityId: string) => void;
 }
 
 function InlineEdit({
@@ -193,6 +195,7 @@ export default function DetailPanel({
   linkedDeptActivities,
   onToggleExcludeFromOgsm,
   onNavigateToActivityPage,
+  onOpenActivityDetail,
 }: Props) {
   const [tab, setTab] = useState<"measure" | "plans" | "notes">(
     initialMeasureId ? "plans" : (initialTab ?? "measure"),
@@ -964,10 +967,16 @@ export default function DetailPanel({
                         )}
 
                         {/* 編輯按鈕 */}
-                        {onNavigateToActivityPage && (
+                        {(onOpenActivityDetail || onNavigateToActivityPage) && (
                           <button
                             className="detail-add-btn"
-                            onClick={onNavigateToActivityPage}
+                            onClick={() => {
+                              if (onOpenActivityDetail) {
+                                onOpenActivityDetail(act.id);
+                              } else {
+                                onNavigateToActivityPage?.();
+                              }
+                            }}
                             title="在活動頁面編輯此活動"
                             style={{ padding: "4px 8px", flexShrink: 0 }}
                           >

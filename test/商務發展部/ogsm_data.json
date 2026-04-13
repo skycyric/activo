@@ -2,7 +2,7 @@
   "departments": [
     {
       "id": "dept_mn48prth_qdgi",
-      "name": "營企本部",
+      "name": "商務發展部",
       "periods": [
         {
           "id": "period_mn48prth_j6lm",
@@ -34,9 +34,8 @@
                             "label": "觸及",
                             "target": 7000,
                             "actual": 4261,
-                            "unit": "",
-                            "achievementRate": 60.871428571428574,
-                            "targetIsPercent": false
+                            "unit": "%",
+                            "achievementRate": 60.871428571428574
                           },
                           {
                             "id": "kpi_mn4c1xmt_iol9",
@@ -105,7 +104,7 @@
                           {
                             "id": "kpi_mn4c50qm_ksls",
                             "label": "觸及",
-                            "target": 2500,
+                            "target": null,
                             "actual": null,
                             "unit": "%",
                             "achievementRate": null
@@ -113,7 +112,7 @@
                           {
                             "id": "kpi_mn4c50qm_1why",
                             "label": "綁定",
-                            "target": 1375,
+                            "target": null,
                             "actual": null,
                             "unit": "%",
                             "achievementRate": null
@@ -121,7 +120,7 @@
                           {
                             "id": "kpi_mn4c50qm_c9po",
                             "label": "交易",
-                            "target": 250,
+                            "target": null,
                             "actual": null,
                             "unit": "%",
                             "achievementRate": null
@@ -228,14 +227,14 @@
                             "id": "kpi_mn4c5wdi_fo6b",
                             "label": "交易",
                             "target": 885,
-                            "actual": 48,
+                            "actual": 90,
                             "unit": "%",
-                            "achievementRate": 5.423728813559322
+                            "achievementRate": 10.16949152542373
                           }
                         ],
                         "quarter": "Q1",
                         "owner": "雅琪",
-                        "updatedAt": "2026-03-15",
+                        "updatedAt": "2026-03-30T00:00:00.000Z",
                         "status": "completed",
                         "startDate": "2026-02-02",
                         "endDate": "2026-03-15"
@@ -290,18 +289,14 @@
                             "description": "EC活動專頁 需求單交付",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-02-09",
-                            "actualEndDate": "2026-02-09"
+                            "linkedMeasureId": "msr_mn4ay4lx_ht1f"
                           },
                           {
                             "id": "item_mn4c97sn_ao3e",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-02-11",
-                            "actualEndDate": "2026-02-24"
+                            "linkedMeasureId": "msr_mn4ay4lx_ht1f"
                           },
                           {
                             "id": "item_mn4c9g8n_bbpq",
@@ -309,8 +304,7 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-03-02",
-                            "actualEndDate": "2026-03-02"
+                            "plannedEndDate": "2026-03-13"
                           },
                           {
                             "id": "item_mn4c9t93_cex7",
@@ -318,26 +312,22 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-03-11",
-                            "actualEndDate": "2026-03-11"
+                            "plannedEndDate": "2026-03-20"
                           },
                           {
                             "id": "item_mn4ca2rz_zsbw",
                             "description": "贈品大貨入庫",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-03-13",
-                            "actualEndDate": "2026-03-13"
+                            "linkedMeasureId": "msr_mn4ay4lx_ht1f"
                           },
                           {
                             "id": "item_mn4caaqf_ld9l",
                             "description": "EC活動專頁 啟動",
                             "owner": "",
-                            "completed": true,
+                            "completed": false,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-03-18",
-                            "actualEndDate": "2026-03-18"
+                            "plannedEndDate": "2026-04-30"
                           },
                           {
                             "id": "item_mn4calvs_q8ws",
@@ -345,8 +335,7 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4ay4lx_ht1f",
-                            "plannedEndDate": "2026-03-21",
-                            "actualEndDate": "2026-03-21"
+                            "plannedEndDate": "2026-03-22"
                           }
                         ]
                       },
@@ -360,27 +349,21 @@
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedEndDate": "2026-02-09",
-                            "actualEndDate": "2026-02-09"
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           },
                           {
                             "id": "item_mn4cbwvc_jse9",
                             "description": "EC活動專頁 需求單交付",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedEndDate": "2026-03-02",
-                            "actualEndDate": "2026-03-06"
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           },
                           {
                             "id": "item_mn4cc4ov_riz2",
                             "description": "贈品大貨入庫",
                             "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedEndDate": "2026-03-31",
-                            "actualEndDate": "2026-03-31"
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           }
                         ]
                       },
@@ -395,7 +378,7 @@
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4c3zqm_vf69",
-                            "plannedEndDate": ""
+                            "plannedEndDate": "2026-05-13"
                           },
                           {
                             "id": "item_mn4ccrmg_28w0",
@@ -405,28 +388,12 @@
                             "linkedMeasureId": "msr_mn4c3zqm_vf69"
                           },
                           {
-                            "id": "item_mn4cekc8_28i5",
-                            "description": "攤位活動",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedEndDate": "2026-04-11"
-                          },
-                          {
                             "id": "item_mn4cjacp_d6x2",
                             "description": "線下攤位活動 啟動",
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn4c7k1z_c71v",
                             "plannedEndDate": "2026-04-03"
-                          },
-                          {
-                            "id": "item_mn4cfu74_jvhi",
-                            "description": "線下攤位活動啟動",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn4c5fbq_iw7d",
-                            "plannedEndDate": "2026-06-20"
                           }
                         ]
                       },
@@ -446,45 +413,43 @@
                             "description": "富邦提供贊助案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedEndDate": "2026-02-23",
-                            "actualEndDate": "2026-02-23"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cdwv4_c5pt",
                             "description": "回簽報價單",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedEndDate": "2026-03-11",
-                            "actualEndDate": "2026-03-11"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4ce1v4_3jz8",
                             "description": "提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedEndDate": "2026-03-10",
-                            "actualEndDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cea6g_5u1u",
                             "description": "提供設計文案單",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedEndDate": "2026-03-11",
-                            "actualEndDate": "2026-03-11"
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
                           },
                           {
                             "id": "item_mn4cee34_vybw",
                             "description": "申議書",
                             "owner": "",
                             "completed": true,
+                            "linkedMeasureId": "msr_mn4c50qm_fu2t"
+                          },
+                          {
+                            "id": "item_mn4cekc8_28i5",
+                            "description": "攤位活動",
+                            "owner": "",
+                            "completed": false,
                             "linkedMeasureId": "msr_mn4c50qm_fu2t",
-                            "plannedEndDate": "2026-03-13",
-                            "actualEndDate": "2026-03-13"
+                            "plannedEndDate": "2026-04-12"
                           }
                         ]
                       },
@@ -498,18 +463,22 @@
                             "description": "提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5fbq_iw7d",
-                            "plannedEndDate": "2026-03-23",
-                            "actualEndDate": "2026-03-23"
+                            "linkedMeasureId": "msr_mn4c5fbq_iw7d"
                           },
                           {
                             "id": "item_mn4cfn34_1kuz",
                             "description": "上呈申議書",
                             "owner": "",
-                            "completed": true,
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn4c5fbq_iw7d"
+                          },
+                          {
+                            "id": "item_mn4cfu74_jvhi",
+                            "description": "線下攤位活動啟動",
+                            "owner": "",
+                            "completed": false,
                             "linkedMeasureId": "msr_mn4c5fbq_iw7d",
-                            "plannedEndDate": "2026-03-30",
-                            "actualEndDate": "2026-03-30"
+                            "plannedEndDate": "2026-06-20"
                           }
                         ]
                       },
@@ -523,36 +492,28 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedEndDate": "2026-02-02",
-                            "actualEndDate": "2026-02-02"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4ch11d_tduj",
                             "description": "上申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedEndDate": "2026-02-06",
-                            "actualEndDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4ch5zc_4116",
                             "description": "燈會主辦單位行前會",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedEndDate": "2026-02-11",
-                            "actualEndDate": "2026-02-11"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4chend_w1ay",
                             "description": "進場",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedEndDate": "2026-03-03",
-                            "actualEndDate": "2026-03-03"
+                            "linkedMeasureId": "msr_mn4c5wdi_mnwn"
                           },
                           {
                             "id": "item_mn4chjtl_hc1k",
@@ -560,8 +521,7 @@
                             "owner": "",
                             "completed": true,
                             "linkedMeasureId": "msr_mn4c5wdi_mnwn",
-                            "plannedEndDate": "2026-03-03",
-                            "actualEndDate": "2026-03-03"
+                            "plannedEndDate": "2026-03-15"
                           }
                         ]
                       },
@@ -575,44 +535,36 @@
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedEndDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4ciau1_8rgl",
                             "description": "EC活動專頁 需求單交付",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedEndDate": "2026-02-11",
-                            "actualEndDate": "2026-02-23"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4cikhl_oegg",
                             "description": "提設計需求",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedEndDate": "2026-03-10",
-                            "actualEndDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4cipbe_4f0a",
                             "description": "贈品大貨入庫",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedEndDate": "2026-03-16",
-                            "actualEndDate": "2026-03-16"
+                            "linkedMeasureId": "msr_mn4c7k1z_c71v"
                           },
                           {
                             "id": "item_mn4cix29_afie",
                             "description": "EC活動專頁 啟動",
                             "owner": "",
-                            "completed": true,
+                            "completed": false,
                             "linkedMeasureId": "msr_mn4c7k1z_c71v",
-                            "plannedEndDate": "2026-03-25",
-                            "actualEndDate": "2026-03-25"
+                            "plannedEndDate": "2026-04-24"
                           }
                         ]
                       },
@@ -627,7 +579,7 @@
                     "completionRate": 13,
                     "manualRate": null,
                     "status": "behind",
-                    "updatedAt": "2026-04-02T01:19:55.924Z",
+                    "updatedAt": "2026-04-02T03:56:15.231Z",
                     "owners": [
                       "George team"
                     ]
@@ -644,8 +596,7 @@
                         "quarter": "Q1",
                         "owner": "雅琪",
                         "startDate": "2026-03-16",
-                        "endDate": "2026-03-27",
-                        "status": "in-progress"
+                        "endDate": "2026-03-27"
                       },
                       {
                         "id": "msr_mn5sylvd_nuk4",
@@ -663,9 +614,9 @@
                         "quarter": "Q1",
                         "owner": "雅琪",
                         "updatedAt": "2026-03-30T00:00:00.000Z",
-                        "status": "in-progress",
+                        "status": "attention",
                         "startDate": "2026-01-01",
-                        "endDate": "2026-12-31"
+                        "endDate": "2026-02-04"
                       },
                       {
                         "id": "msr_mn5t0ny9_npgk",
@@ -673,9 +624,8 @@
                         "kpis": [],
                         "quarter": "Q1",
                         "owner": "子硯",
-                        "startDate": "2026-02-24",
-                        "endDate": "2026-08-31",
-                        "status": "in-progress"
+                        "startDate": "2026-03-20",
+                        "endDate": "2026-08-31"
                       },
                       {
                         "id": "msr_mn5t13sx_kzk5",
@@ -684,8 +634,7 @@
                         "quarter": "Q1",
                         "owner": "子硯",
                         "startDate": "2026-02-11",
-                        "endDate": "2026-06-30",
-                        "status": "in-progress"
+                        "endDate": "2026-06-30"
                       },
                       {
                         "id": "msr_mn5t1mf5_hv8r",
@@ -721,7 +670,7 @@
                         "status": "in-progress",
                         "updatedAt": "2026-03-30T00:00:00.000Z",
                         "startDate": "2026-02-01",
-                        "endDate": "2026-12-31"
+                        "endDate": "2026-02-01"
                       },
                       {
                         "id": "msr_mn5t3jpe_3lse",
@@ -767,25 +716,30 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5sv3gv_geir",
-                            "plannedEndDate": "2026-03-16"
+                            "linkedMeasureId": "msr_mn5sv3gv_geir"
+                          },
+                          {
+                            "id": "item_mn5t5h6y_sr07",
+                            "description": "二提",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mn5sv3gv_geir"
                           },
                           {
                             "id": "item_mn5t5pjm_8hfs",
                             "description": "上申議書",
                             "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn5sv3gv_geir",
-                            "plannedEndDate": "2026-03-27",
-                            "actualEndDate": "2026-03-27"
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5sv3gv_geir"
                           },
                           {
-                            "id": "item_mnfu23zf_002_99c85fa3",
+                            "id": "item_mngxyovq_001_1031ac40",
                             "description": "昇恆昌啟動(推播、上架APP)",
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn5sylvd_nuk4",
-                            "plannedEndDate": "2026-03-13"
+                            "plannedEndDate": "2026-02-25",
+                            "notes": "宣傳物台新審核中"
                           }
                         ]
                       },
@@ -825,9 +779,14 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t0ny9_npgk",
-                            "plannedEndDate": "2026-02-24",
-                            "actualEndDate": "2026-03-31"
+                            "linkedMeasureId": "msr_mn5t0ny9_npgk"
+                          },
+                          {
+                            "id": "item_mn5v2jpj_pkbi",
+                            "description": "上呈申議書",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5t0ny9_npgk"
                           }
                         ]
                       },
@@ -841,27 +800,21 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedEndDate": "2026-02-11",
-                            "actualEndDate": "2026-02-11"
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5"
                           },
                           {
                             "id": "item_mn5v340p_6bis",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedEndDate": "2026-03-03",
-                            "actualEndDate": "2026-03-10"
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5"
                           },
                           {
                             "id": "item_mn5v39xb_8k3b",
                             "description": "視覺設計完稿",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedEndDate": "2026-03-20",
-                            "actualEndDate": "2026-03-20"
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5"
                           }
                         ]
                       },
@@ -875,9 +828,14 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vh5q3_k8hf",
-                            "plannedEndDate": "2026-03-23",
-                            "actualEndDate": "2026-04-10"
+                            "linkedMeasureId": "msr_mn5vh5q3_k8hf"
+                          },
+                          {
+                            "id": "item_mn5viatg_ek1y",
+                            "description": "上呈申議書",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5vh5q3_k8hf"
                           }
                         ]
                       },
@@ -891,9 +849,7 @@
                             "description": "購物金啟動",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t1mf5_hv8r",
-                            "plannedEndDate": "2026-02-01",
-                            "actualEndDate": "2026-02-01"
+                            "linkedMeasureId": "msr_mn5t1mf5_hv8r"
                           }
                         ]
                       },
@@ -907,27 +863,21 @@
                             "description": "活動啟動+春節製作物上架",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t3jpe_3lse",
-                            "plannedEndDate": "2026-01-09",
-                            "actualEndDate": "2026-01-09"
+                            "linkedMeasureId": "msr_mn5t3jpe_3lse"
                           },
                           {
                             "id": "item_mn5v4juw_g7y9",
                             "description": "LINE推播+隱藏官網上架",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t3jpe_3lse",
-                            "plannedEndDate": "2026-01-16",
-                            "actualEndDate": "2026-01-16"
+                            "linkedMeasureId": "msr_mn5t3jpe_3lse"
                           },
                           {
                             "id": "item_mn5v4rp4_0wx8",
                             "description": "IG限動上架",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5t3jpe_3lse",
-                            "plannedEndDate": "2026-02-19",
-                            "actualEndDate": "2026-02-19"
+                            "linkedMeasureId": "msr_mn5t3jpe_3lse"
                           }
                         ]
                       },
@@ -937,53 +887,12 @@
                         "title": "KKday",
                         "items": [
                           {
-                            "id": "item_mn5t5h6y_sr07",
-                            "description": "二提",
-                            "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn5sv3gv_geir",
-                            "plannedEndDate": "2026-04-02"
-                          },
-                          {
-                            "id": "item_mn5v2jpj_pkbi",
-                            "description": "上呈申議書",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5t0ny9_npgk",
-                            "plannedEndDate": "2026-04-08"
-                          },
-                          {
-                            "id": "item_mn5viatg_ek1y",
-                            "description": "上呈申議書",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5vh5q3_k8hf",
-                            "plannedEndDate": "2026-04-15"
-                          },
-                          {
-                            "id": "item_mnfufouq_003_00e3debd",
+                            "id": "item_mn5v5kz4_jdm8",
                             "description": "導流活動 啟動",
                             "owner": "",
                             "completed": false,
                             "linkedMeasureId": "msr_mn5t0ny9_npgk",
-                            "plannedEndDate": "2026-05-01"
-                          },
-                          {
-                            "id": "item_mnfugp1u_004_767289f8",
-                            "description": "導流活動 啟動",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
-                            "plannedEndDate": "2026-04-01",
-                            "actualEndDate": ""
-                          },
-                          {
-                            "id": "item_mnfuhx0z_005_8f92cd23",
-                            "description": "導流活動 啟動",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5vh5q3_k8hf",
-                            "plannedEndDate": "2026-05-01"
+                            "plannedEndDate": "2026-08-31"
                           }
                         ]
                       },
@@ -991,20 +900,38 @@
                         "id": "plan_mn48prtg_oh9d",
                         "quarter": "Q2",
                         "title": "新安東京海上",
-                        "items": []
+                        "items": [
+                          {
+                            "id": "item_mn5vk1as_d9iv",
+                            "description": "導流活動 啟動",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5t13sx_kzk5",
+                            "plannedEndDate": "2026-06-30"
+                          }
+                        ]
                       },
                       {
                         "id": "plan_mn48prtg_rgxw",
                         "quarter": "Q2",
                         "title": "Trip.com",
-                        "items": []
+                        "items": [
+                          {
+                            "id": "item_mn5vih70_gs8u",
+                            "description": "導流活動 啟動",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5vh5q3_k8hf",
+                            "plannedEndDate": "2026-05-31"
+                          }
+                        ]
                       }
                     ],
                     "notes": "",
                     "completionRate": 33,
                     "manualRate": null,
                     "status": "behind",
-                    "updatedAt": "2026-04-02T02:38:50.353Z",
+                    "updatedAt": "2026-04-02T04:25:46.057Z",
                     "owners": [
                       "George team"
                     ]
@@ -1052,7 +979,7 @@
                         "status": "in-progress",
                         "owner": "雅琪",
                         "startDate": "2026-03-13",
-                        "endDate": "2026-05-29"
+                        "endDate": "2026-04-10"
                       },
                       {
                         "id": "msr_mn5w5r16_s82u",
@@ -1079,7 +1006,7 @@
                         "status": "in-progress",
                         "owner": "Lorie",
                         "startDate": "2026-02-02",
-                        "endDate": "2026-12-31"
+                        "endDate": "2026-03-14"
                       },
                       {
                         "id": "msr_mn5w8zbn_l12i",
@@ -1087,7 +1014,7 @@
                         "kpis": [
                           {
                             "id": "kpi_mn5w9h4r_boi7",
-                            "label": "新增會員",
+                            "label": "綁定",
                             "target": 3000,
                             "actual": null,
                             "unit": "%",
@@ -1102,11 +1029,11 @@
                             "achievementRate": null
                           }
                         ],
-                        "quarter": "Q2",
-                        "status": "not-started",
+                        "quarter": "Q1",
+                        "status": "in-progress",
                         "owner": "Lorie",
-                        "startDate": "2026-06-10",
-                        "endDate": "2026-06-30"
+                        "startDate": "2026-03-10",
+                        "endDate": "2026-03-30"
                       },
                       {
                         "id": "msr_mn5w97l7_09c4",
@@ -1118,8 +1045,7 @@
                             "target": 234,
                             "actual": 110,
                             "unit": "%",
-                            "achievementRate": 47.008547008547005,
-                            "targetIsPercent": true
+                            "achievementRate": 47.008547008547005
                           }
                         ],
                         "quarter": "Q1",
@@ -1129,23 +1055,31 @@
                         "endDate": "2026-03-13"
                       },
                       {
-                        "id": "msr_mnfvl7ns_00i_3a256cce",
-                        "rawText": "母親節預購會",
+                        "id": "msr_mnpobx6q_004_5652b8d0",
+                        "rawText": "促購活動-AB母親節預購會",
                         "kpis": [
                           {
-                            "id": "kpi_mnfvm0k7_00j_442643a3",
-                            "label": "參與",
+                            "id": "kpi_mnpogfe0_004_3c2e67cf",
+                            "label": "活動參與目標350人",
                             "target": 350,
                             "actual": null,
-                            "unit": "",
+                            "unit": "人",
                             "achievementRate": null,
-                            "kpiType": "value",
-                            "targetIsPercent": false
+                            "kpiType": "value"
                           },
                           {
-                            "id": "kpi_mnfvmswo_00k_f5f527b1",
-                            "label": "進店",
+                            "id": "kpi_mnpohlga_007_09561755",
+                            "label": "進店人數目標125人",
                             "target": 125,
+                            "actual": null,
+                            "unit": "人",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          },
+                          {
+                            "id": "kpi_mnpoiita_009_005d3e2c",
+                            "label": "轉換率",
+                            "target": 35.71,
                             "actual": null,
                             "unit": "%",
                             "achievementRate": null,
@@ -1154,15 +1088,163 @@
                         ],
                         "quarter": "Q1",
                         "status": "in-progress",
+                        "owner": "Chloe",
                         "startDate": "2026-02-13",
                         "endDate": "2026-04-15"
                       },
                       {
-                        "id": "msr_mnfvoby8_00l_a1e0f6b0",
-                        "rawText": "澎湖花火節",
+                        "id": "msr_mnpoifxd_008_d9b8559b",
+                        "rawText": "社群自發性增粉-曬機票活動",
                         "kpis": [],
                         "quarter": "Q2",
-                        "status": "not-started"
+                        "status": "in-progress",
+                        "owner": "Jimmy"
+                      },
+                      {
+                        "id": "msr_mnpol6sa_00a_2ba4de71",
+                        "rawText": "社群自發性增粉-旅人桃機旅程",
+                        "kpis": [],
+                        "quarter": "Q2",
+                        "status": "in-progress",
+                        "owner": "寶寶"
+                      },
+                      {
+                        "id": "msr_mnpolpp6_00b_d99f863b",
+                        "rawText": "月月文化心體驗",
+                        "kpis": [
+                          {
+                            "id": "kpi_mnpom3e0_00c_4ddf6f24",
+                            "label": "互動率1.64%",
+                            "target": 1.64,
+                            "actual": 1.33,
+                            "unit": "%",
+                            "achievementRate": 81.09756097560977,
+                            "kpiType": "value"
+                          }
+                        ],
+                        "quarter": "Q1",
+                        "status": "in-progress",
+                        "owner": "Jimmy",
+                        "startDate": "2026-01-15",
+                        "endDate": "2026-07-20"
+                      },
+                      {
+                        "id": "msr_mnpomn7e_00d_ec1a7665",
+                        "rawText": "販促宣傳-馬上RICH 吉運來",
+                        "kpis": [
+                          {
+                            "id": "kpi_mnpondce_00e_e40f2a23",
+                            "label": "曝光470萬次",
+                            "target": 47000000,
+                            "actual": null,
+                            "unit": "次",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          },
+                          {
+                            "id": "kpi_mnponwoq_00g_277a1c1e",
+                            "label": "總觸及312萬次",
+                            "target": 3120000,
+                            "actual": null,
+                            "unit": "人次",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          },
+                          {
+                            "id": "kpi_mnpooazg_00h_4e73bc8f",
+                            "label": "CPC4元",
+                            "target": 4,
+                            "actual": null,
+                            "unit": "元",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          },
+                          {
+                            "id": "kpi_mnpoojy4_00i_9b9b71db",
+                            "label": "CTR 1.2%",
+                            "target": 1.2,
+                            "actual": null,
+                            "unit": "%",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          }
+                        ],
+                        "quarter": "Q1",
+                        "status": "in-progress",
+                        "owner": "Jimmy",
+                        "startDate": "2026-01-10",
+                        "endDate": "2026-04-02"
+                      },
+                      {
+                        "id": "msr_mnponqze_00f_ee0d150d",
+                        "rawText": "販促暖宣傳-共購買好 島嶼創生",
+                        "kpis": [
+                          {
+                            "id": "kpi_mnpoqbr8_00j_26487349",
+                            "label": "總觸及2萬次",
+                            "target": 20000,
+                            "actual": null,
+                            "unit": "人次",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          },
+                          {
+                            "id": "kpi_mnpor6ta_00l_4f27f6da",
+                            "label": "總導入連結點擊100次",
+                            "target": 100,
+                            "actual": null,
+                            "unit": "次",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          }
+                        ],
+                        "quarter": "Q2",
+                        "status": "in-progress",
+                        "owner": "寶寶"
+                      },
+                      {
+                        "id": "msr_mnpor06h_00k_406f4dc1",
+                        "rawText": "販促宣傳-CHIC LADY MAMA",
+                        "kpis": [
+                          {
+                            "id": "kpi_mnposz6h_00m_27f07b91",
+                            "label": "互動率2%",
+                            "target": 2,
+                            "actual": null,
+                            "unit": "%",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          }
+                        ],
+                        "quarter": "Q2",
+                        "status": "in-progress",
+                        "owner": "寶寶"
+                      },
+                      {
+                        "id": "msr_mnpot7o6_00n_e3fb18af",
+                        "rawText": "販宣傳-REEL Summer初夏購時尚",
+                        "kpis": [
+                          {
+                            "id": "kpi_mnpou083_00o_c9fb3723",
+                            "label": "互動率2%",
+                            "target": 2,
+                            "actual": null,
+                            "unit": "%",
+                            "achievementRate": null,
+                            "kpiType": "value"
+                          }
+                        ],
+                        "quarter": "Q2",
+                        "status": "in-progress",
+                        "owner": "Jimmy"
+                      },
+                      {
+                        "id": "msr_mnpy3fdn_010_3fe0c994",
+                        "rawText": "促購活動-澎湖花火節",
+                        "kpis": [],
+                        "quarter": "Q2",
+                        "status": "not-started",
+                        "owner": "Chloe"
                       }
                     ],
                     "q1Text": "【隱藏徽章任務】\n1/27 提供案型給資訊以及採購單位評估可行性\n2/24 採購討論,會再提供6檔活動(3/4提供資料供採購向廠商爭取資源)\n3/18 依照現有功能完成提案\n\n【SKIN活動】\n2/27 初步討論\n3/12 活動提案\n3/20 設計製作物清單完成(文案陸續提供4/10前完成)\n3/27 報價蒐集完成\n3/31上呈申議書\n\n【母親節線上互動活動】\n3/11提案\n3/17上申議書\n4/20上線\n\n【暑期活動心理測驗-小學生】\n3/9方向討論\n3/27方向定調\n\n【未綁定活動】\n2/2 Q1提案完成\n2/6 上呈申議書\n2/13 二月檔上線\n3/14 三月檔上線\n\n【點數換福袋活動】\n2/2 提案完成\n2/6上呈申議書\n2/13 上線\n\n【MGM活動】\n3/10 提案完成\n3/15 上呈申議書\n3/30 三月檔上線",
@@ -1178,45 +1260,118 @@
                             "description": "提供案型給資訊以及採購單位評估可行性",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vlyf9_31cy",
-                            "plannedEndDate": "2026-01-27",
-                            "actualEndDate": "2026-01-27"
+                            "linkedMeasureId": "msr_mn5vlyf9_31cy"
                           },
                           {
                             "id": "item_mn5wetyc_53dy",
                             "description": "採購討論,會再提供6檔活動",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vlyf9_31cy",
-                            "plannedEndDate": "2026-02-24",
-                            "actualEndDate": "2026-02-24"
+                            "linkedMeasureId": "msr_mn5vlyf9_31cy"
                           },
                           {
                             "id": "item_mn5wf37g_0iti",
                             "description": "依照現有功能完成提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5vlyf9_31cy",
-                            "plannedEndDate": "2026-03-18",
-                            "actualEndDate": "2026-03-31"
+                            "linkedMeasureId": "msr_mn5vlyf9_31cy"
                           },
                           {
-                            "id": "item_mnfvv9jn_000_eea2c674",
-                            "description": "宣傳規劃&目標final",
+                            "id": "item_mnpxsaw9_00p_545dfdeb",
+                            "description": "宣傳規劃&目標FINAL",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mnfvl7ns_00i_3a256cce",
+                            "linkedMeasureId": "msr_mnpobx6q_004_5652b8d0",
                             "plannedEndDate": "2026-02-13",
                             "actualEndDate": "2026-02-24"
                           },
                           {
-                            "id": "item_mnfvxvfp_000_ed520354",
+                            "id": "item_mnpxthqq_00q_d11d5030",
                             "description": "線上宣傳開跑",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mnfvl7ns_00i_3a256cce",
+                            "linkedMeasureId": "msr_mnpobx6q_004_5652b8d0",
                             "plannedEndDate": "2026-03-11",
                             "actualEndDate": "2026-03-17"
+                          },
+                          {
+                            "id": "item_mnpxvmnx_00s_bcd727e5",
+                            "description": "音樂饗宴-綠動竹語",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-01-15",
+                            "actualEndDate": "2026-01-15"
+                          },
+                          {
+                            "id": "item_mnpxwc31_00t_71b905ef",
+                            "description": "木趣DIY",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-01-22",
+                            "actualEndDate": "2026-01-22"
+                          },
+                          {
+                            "id": "item_mnpxwpv2_00u_6fa29d09",
+                            "description": "軟文-原來這些可以當樂器",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-01-31",
+                            "actualEndDate": "2026-01-31"
+                          },
+                          {
+                            "id": "item_mnpxx8x9_00v_b1e5e527",
+                            "description": "音樂饗宴-綠動竹語",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-02-13",
+                            "actualEndDate": "2026-02-13"
+                          },
+                          {
+                            "id": "item_mnpxxtwn_00w_68cc8000",
+                            "description": "軟文-這些藝術你像像不到他怎麼來",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-02-25",
+                            "actualEndDate": "2026-02-25"
+                          },
+                          {
+                            "id": "item_mnpxygk3_00x_7b1a8dae",
+                            "description": "音樂饗宴-綠動竹語",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-03-12",
+                            "actualEndDate": "2026-03-12"
+                          },
+                          {
+                            "id": "item_mnpxyyup_00y_32295a58",
+                            "description": "森呼吸DIY-君子蘭紙藝",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnpolpp6_00b_d99f863b",
+                            "plannedEndDate": "2026-03-19",
+                            "actualEndDate": "2026-03-19"
+                          },
+                          {
+                            "id": "item_mnpy5vkj_011_d80dc0d7",
+                            "description": "活動規劃定案",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnpoifxd_008_d9b8559b",
+                            "plannedEndDate": "2026-03-08"
+                          },
+                          {
+                            "id": "item_mnpy693o_012_e114b1a3",
+                            "description": "活動定案",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnpoifxd_008_d9b8559b",
+                            "plannedEndDate": "2026-03-08"
                           }
                         ]
                       },
@@ -1230,46 +1385,37 @@
                             "description": "初步討論",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedEndDate": "2026-02-27",
-                            "actualEndDate": "2026-02-27"
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           },
                           {
                             "id": "item_mn5wfovg_41i1",
                             "description": "活動提案",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedEndDate": "2026-03-12",
-                            "actualEndDate": "2026-03-12"
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           },
                           {
                             "id": "item_mn5wfv30_zjn5",
                             "description": "設計製作物清單完成",
                             "owner": "",
-                            "completed": true,
+                            "completed": false,
                             "linkedMeasureId": "msr_mn5w16so_mfan",
                             "notes": "文案陸續提供",
-                            "plannedEndDate": "2026-03-20",
-                            "actualEndDate": "2026-03-20"
+                            "plannedEndDate": "2026-04-10"
                           },
                           {
                             "id": "item_mn5wgf70_6pfc",
                             "description": "報價蒐集完成",
                             "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedEndDate": "2026-03-27",
-                            "actualEndDate": "2026-03-27"
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           },
                           {
                             "id": "item_mn5wgmqs_ktr9",
                             "description": "上呈申議書",
                             "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedEndDate": "2026-03-31",
-                            "actualEndDate": "2026-03-31"
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w16so_mfan"
                           }
                         ]
                       },
@@ -1277,7 +1423,22 @@
                         "id": "plan_mn48prtg_nyla",
                         "quarter": "Q1",
                         "title": "母親節線上互動活動",
-                        "items": []
+                        "items": [
+                          {
+                            "id": "item_mn5wh9wl_1zx1",
+                            "description": "提案",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w4ovd_q8g0"
+                          },
+                          {
+                            "id": "item_mn5whh8d_7ceg",
+                            "description": "上線",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w4ovd_q8g0"
+                          }
+                        ]
                       },
                       {
                         "id": "plan_mn48prtg_em8k",
@@ -1288,10 +1449,15 @@
                             "id": "item_mn5wit0t_6und",
                             "description": "方向討論",
                             "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedEndDate": "2026-03-13",
-                            "actualEndDate": "2026-03-13"
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w5gki_zdwh"
+                          },
+                          {
+                            "id": "item_mn5wiyct_rxoe",
+                            "description": "廠商提案",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w5gki_zdwh"
                           }
                         ]
                       },
@@ -1305,36 +1471,28 @@
                             "description": "Q1提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-02-02",
-                            "actualEndDate": "2026-02-02"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           },
                           {
                             "id": "item_mn5wkmh1_812n",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-02-06",
-                            "actualEndDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           },
                           {
                             "id": "item_mn5wkt7y_5bz4",
                             "description": "二月檔上線",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-02-13",
-                            "actualEndDate": "2026-02-13"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           },
                           {
                             "id": "item_mn5wkzse_0ffr",
                             "description": "三月檔上線",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-03-14",
-                            "actualEndDate": "2026-03-14"
+                            "linkedMeasureId": "msr_mn5w5r16_s82u"
                           }
                         ]
                       },
@@ -1348,27 +1506,21 @@
                             "description": "提案完成",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w97l7_09c4",
-                            "plannedEndDate": "2026-02-02",
-                            "actualEndDate": "2026-02-02"
+                            "linkedMeasureId": "msr_mn5w97l7_09c4"
                           },
                           {
                             "id": "item_mn5wlo19_3kfq",
                             "description": "上呈申議書",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w97l7_09c4",
-                            "plannedEndDate": "2026-02-06",
-                            "actualEndDate": "2026-02-06"
+                            "linkedMeasureId": "msr_mn5w97l7_09c4"
                           },
                           {
                             "id": "item_mn5wlu26_560g",
                             "description": "上線",
                             "owner": "",
                             "completed": true,
-                            "linkedMeasureId": "msr_mn5w97l7_09c4",
-                            "plannedEndDate": "2026-02-13",
-                            "actualEndDate": "2026-02-13"
+                            "linkedMeasureId": "msr_mn5w97l7_09c4"
                           }
                         ]
                       },
@@ -1376,7 +1528,29 @@
                         "id": "plan_mn48prth_o82o",
                         "quarter": "Q1",
                         "title": "MGM活動",
-                        "items": []
+                        "items": [
+                          {
+                            "id": "item_mn5wm99a_i6x6",
+                            "description": "提案完成",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mn5w8zbn_l12i"
+                          },
+                          {
+                            "id": "item_mn5wmcke_43zf",
+                            "description": "上呈申議書",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mn5w8zbn_l12i"
+                          },
+                          {
+                            "id": "item_mn5wmjxa_albl",
+                            "description": "三月檔上線",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mn5w8zbn_l12i"
+                          }
+                        ]
                       },
                       {
                         "id": "plan_mn48prth_gb6j",
@@ -1384,117 +1558,20 @@
                         "title": "SKIN活動",
                         "items": [
                           {
-                            "id": "item_mnfv571y_007_7cd9739b",
-                            "description": "前置測試",
+                            "id": "item_mnpxu3i1_00r_2e6f2c6d",
+                            "description": "結案報告",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w16so_mfan",
-                            "plannedEndDate": "2026-04-24"
-                          },
-                          {
-                            "id": "item_mn5wiyct_rxoe",
-                            "description": "廠商提案",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedEndDate": "2026-04-10"
-                          },
-                          {
-                            "id": "item_mnfv8kq1_008_dfa758b1",
-                            "description": "腳本提案",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedEndDate": "2026-04-17"
-                          },
-                          {
-                            "id": "item_mnfv8zjl_009_ac55e529",
-                            "description": "申議書上呈",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedEndDate": "2026-04-30"
-                          },
-                          {
-                            "id": "item_mnfv9909_00a_e23ad2b5",
-                            "description": "整體風格定案",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5gki_zdwh",
-                            "plannedEndDate": "2026-05-29"
-                          },
-                          {
-                            "id": "item_mnfvb2ga_00b_4131157b",
-                            "description": "Q2提案完成",
-                            "owner": "",
-                            "completed": true,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-04-01",
-                            "actualEndDate": "2026-04-01"
-                          },
-                          {
-                            "id": "item_mnfvdqx7_00c_c1fe8200",
-                            "description": "上呈申議書",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-04-07"
-                          },
-                          {
-                            "id": "item_mnfve4kr_00d_2c8a84f3",
-                            "description": "四月檔上線",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
+                            "linkedMeasureId": "msr_mnpobx6q_004_5652b8d0",
                             "plannedEndDate": "2026-04-15"
                           },
                           {
-                            "id": "item_mnfvebyz_00e_ca448220",
-                            "description": "五月檔上線",
+                            "id": "item_mnpy1xkd_00z_8e80a4a9",
+                            "description": "結案報告",
                             "owner": "",
                             "completed": false,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-05-15"
-                          },
-                          {
-                            "id": "item_mnfvejbw_00f_940decdc",
-                            "description": "六月檔上線",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w5r16_s82u",
-                            "plannedEndDate": "2026-06-16"
-                          },
-                          {
-                            "id": "item_mn5wm99a_i6x6",
-                            "description": "提案完成",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w8zbn_l12i",
-                            "plannedEndDate": "2026-06-10"
-                          },
-                          {
-                            "id": "item_mn5wmcke_43zf",
-                            "description": "上呈申議書",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w8zbn_l12i",
-                            "plannedEndDate": "2026-06-30"
-                          },
-                          {
-                            "id": "item_mn5wmjxa_albl",
-                            "description": "六月檔上線",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mn5w8zbn_l12i",
-                            "plannedEndDate": "2026-06-03"
-                          },
-                          {
-                            "id": "item_mnfvyccd_001_08063376",
-                            "description": "完成結案報告",
-                            "owner": "",
-                            "completed": false,
-                            "linkedMeasureId": "msr_mnfvl7ns_00i_3a256cce",
-                            "plannedEndDate": "2026-04-15"
+                            "linkedMeasureId": "msr_mnpomn7e_00d_ec1a7665",
+                            "plannedEndDate": "2026-04-02"
                           }
                         ]
                       },
@@ -1530,17 +1607,17 @@
                       }
                     ],
                     "notes": "",
-                    "completionRate": 19,
+                    "completionRate": 13,
                     "manualRate": null,
                     "status": "behind",
-                    "updatedAt": "2026-04-02T01:24:30.750Z",
+                    "updatedAt": "2026-04-08T11:11:04.826Z",
                     "owners": [
                       "Momo team",
                       "George team"
                     ]
                   }
                 ],
-                "completionRate": 22,
+                "completionRate": 20,
                 "goalKpis": [
                   {
                     "id": "id_mn4bnheq_ylcy",
@@ -1621,8 +1698,8 @@
                     "linkedKpis": []
                   },
                   {
-                    "id": "gkpi_mnguxw1q_000_b594bd43",
-                    "label": "活動綁定達標",
+                    "id": "gkpi_mngvisx0_000_28a231a9",
+                    "label": "綁定達標活動",
                     "unit": "%",
                     "target": 60,
                     "aggregation": "SUM",
@@ -1637,8 +1714,8 @@
                     "activitySourceOverrides": {}
                   },
                   {
-                    "id": "gkpi_mnguyjse_001_2a2a8ca8",
-                    "label": "活動交易達標",
+                    "id": "gkpi_mngvjo30_001_bdb6e430",
+                    "label": "交易達標活動",
                     "unit": "%",
                     "target": 60,
                     "aggregation": "SUM",
@@ -1653,7 +1730,7 @@
                     "activitySourceOverrides": {}
                   }
                 ],
-                "updatedAt": "2026-04-02T02:31:14.526Z"
+                "updatedAt": "2026-04-02T03:32:46.407Z"
               },
               {
                 "id": "goal_mn48prth_p16v",
@@ -1665,50 +1742,7 @@
                     "id": "str_mn48prth_knkn",
                     "title": "S1: 透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
                     "rawText": "S1: 透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
-                    "measures": [
-                      {
-                        "id": "msr_mnfw2jb3_005_c50e89bc",
-                        "rawText": "春節檔期",
-                        "kpis": [
-                          {
-                            "id": "kpi_mngsfw1g_000_ca186778",
-                            "label": "筆數提升率",
-                            "target": null,
-                            "actual": null,
-                            "unit": "%",
-                            "achievementRate": null,
-                            "kpiType": "growth",
-                            "baseValue": 191394,
-                            "currentValue": 192680,
-                            "targetGrowthRate": null
-                          }
-                        ],
-                        "quarter": "Q1",
-                        "status": "completed",
-                        "startDate": "2025-12-10",
-                        "endDate": "2026-02-24"
-                      },
-                      {
-                        "id": "msr_mngsh4sc_001_22297ad7",
-                        "rawText": "ESG檔期",
-                        "kpis": [
-                          {
-                            "id": "kpi_mngshldo_004_aba6d9e4",
-                            "label": "筆數提升率",
-                            "target": null,
-                            "actual": null,
-                            "unit": "%",
-                            "achievementRate": null,
-                            "kpiType": "growth",
-                            "baseValue": 7010,
-                            "currentValue": 7349,
-                            "targetGrowthRate": null
-                          }
-                        ],
-                        "quarter": "Q1",
-                        "status": "not-started"
-                      }
-                    ],
+                    "measures": [],
                     "q1Text": "1.1/10-2/24春節檔期\n   12/10發出需求\n   12/15回收需求\n   01/03定案 \n   02/24結案\n\n2.2/25-3/31ESG檔期\n  12/11發出需求\n  12/15回收需求\n  12/31定案\n  03/31結案",
                     "q2Text": "1.4/1-5/11母親節檔期\n    02/09前發出需求\n    02/23前回收需求\n    02/26前定案\n    05/11結案\n\n2.5/12-6/30初夏檔期\n    03/03前發出需求\n    03/11前回收需求\n    03/20前定案\n    06/30結案",
                     "actionPlans": [
@@ -1729,42 +1763,13 @@
                     "completionRate": 0,
                     "manualRate": null,
                     "status": "not-started",
-                    "owners": [],
-                    "updatedAt": "2026-04-02T02:39:25.641Z"
+                    "owners": []
                   },
                   {
                     "id": "str_mn48prth_ax3c",
                     "title": "S2: 透過會員旅程腳本提升會員交易率。",
                     "rawText": "S2: 透過會員旅程腳本提升會員交易率。",
-                    "measures": [
-                      {
-                        "id": "msr_mnfwbk6c_006_ca9dd0ee",
-                        "rawText": "會員旅程(二次回購)",
-                        "kpis": [
-                          {
-                            "id": "kpi_mnfwc3e3_007_9f6a4720",
-                            "label": "領券",
-                            "target": null,
-                            "actual": null,
-                            "unit": "%",
-                            "achievementRate": null,
-                            "kpiType": "value"
-                          },
-                          {
-                            "id": "kpi_mnfwcxfo_008_a9f1f41f",
-                            "label": "交易",
-                            "target": null,
-                            "actual": null,
-                            "unit": "%",
-                            "achievementRate": null,
-                            "kpiType": "value"
-                          }
-                        ],
-                        "quarter": "Q1",
-                        "status": "not-started",
-                        "owner": "Joanna"
-                      }
-                    ],
+                    "measures": [],
                     "q1Text": "1月 (首購客)二次消費會員旅程\n1/15 活動推播 \n2/13 2/26 昇議書完成\n2/6 活動推播\n2月(LV1轉活躍)喚起即將沉睡會員旅程\n2/9 確認受眾\n2/13 2/26 昇議書完成\n2/11 製作勿申請\n2/25圖素完成\n2/26 FAXMEMO完成\n2/26 推播設定\n2/27 活動開始\n3/31活動結束\n3月(首購客)二次消費會員旅程\n3/1 活動推播\n3/20 置換下一季圖素 & 設定\n3/25 活動推播",
                     "q2Text": "4月 (LV1轉活躍)喚起即將沉睡會員旅程\n4/8 確認受眾\n4/10 製作勿申請\n4/22圖素完成\n4/24 推播設定\n4/25 活動開始\n5/31活動結束\n5月 預期出國會員促購活動\n6月 (首購客)二次消費會員旅程\n6/1 活動推播\n6/23 置換下一季圖素 & 設定\n6/30 活動推播",
                     "actionPlans": [
@@ -1785,8 +1790,7 @@
                     "completionRate": 0,
                     "manualRate": null,
                     "status": "not-started",
-                    "owners": [],
-                    "updatedAt": "2026-04-01T10:22:33.710Z"
+                    "owners": []
                   },
                   {
                     "id": "str_mn48prth_75e6",
@@ -1840,76 +1844,7 @@
                     "owners": []
                   }
                 ],
-                "completionRate": 0,
-                "goalKpis": [
-                  {
-                    "id": "gkpi_mnguzduu_002_a41c45e9",
-                    "label": "活動進店達標",
-                    "unit": "%",
-                    "target": 70,
-                    "aggregation": "SUM",
-                    "type": "pct_activity",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  },
-                  {
-                    "id": "gkpi_mnguzp0u_003_3f7fa107",
-                    "label": "活動交易達標",
-                    "unit": "%",
-                    "target": 70,
-                    "aggregation": "SUM",
-                    "type": "pct_activity",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  },
-                  {
-                    "id": "gkpi_mngv09tz_004_8b103270",
-                    "label": "線上活動進店率",
-                    "unit": "%",
-                    "target": 1,
-                    "aggregation": "AVERAGE",
-                    "type": "value",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  },
-                  {
-                    "id": "gkpi_mngv0szj_005_e6a87c78",
-                    "label": "線上活動交易率",
-                    "unit": "%",
-                    "target": 10,
-                    "aggregation": "AVERAGE",
-                    "type": "value",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  },
-                  {
-                    "id": "gkpi_mngv1ktr_006_5da1f8d3",
-                    "label": "實體活動筆數提升率",
-                    "unit": "%",
-                    "target": 5,
-                    "aggregation": "AVERAGE",
-                    "type": "value",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  },
-                  {
-                    "id": "gkpi_mngv292v_007_13c2e952",
-                    "label": "會員旅程操作交易率",
-                    "unit": "%",
-                    "target": 15,
-                    "aggregation": "AVERAGE",
-                    "type": "value",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  }
-                ],
-                "updatedAt": "2026-04-02T02:33:55.831Z"
+                "completionRate": 0
               },
               {
                 "id": "goal_mn48prth_e0ds",
@@ -1921,7 +1856,41 @@
                     "id": "str_mn48prth_xz50",
                     "title": "透過數位工具與資料架構優化，提升受眾篩選與跨通路溝通的效率與精準度，並持續擴大會員數據應用場景。",
                     "rawText": "透過數位工具與資料架構優化，提升受眾篩選與跨通路溝通的效率與精準度，並持續擴大會員數據應用場景。",
-                    "measures": [],
+                    "measures": [
+                      {
+                        "id": "msr_mnr6fu3f_00o_4f669107",
+                        "rawText": "MA工具導入",
+                        "kpis": [],
+                        "quarter": "Q1",
+                        "status": "completed",
+                        "owner": "Darren",
+                        "updatedAt": "2026-04-09T00:00:00.000Z",
+                        "startDate": "2026-01-01",
+                        "endDate": "2026-03-31"
+                      },
+                      {
+                        "id": "msr_mnr6gpdx_00r_c9c95a1a",
+                        "rawText": "MA工具導入",
+                        "kpis": [],
+                        "quarter": "Q2",
+                        "status": "in-progress",
+                        "owner": "Darren",
+                        "updatedAt": "2026-04-09T00:00:00.000Z",
+                        "startDate": "2026-04-01",
+                        "endDate": "2026-06-30"
+                      },
+                      {
+                        "id": "msr_mnr6hbm7_00s_ba472132",
+                        "rawText": "MA工具導入",
+                        "kpis": [],
+                        "quarter": "Q3",
+                        "status": "in-progress",
+                        "owner": "Darren",
+                        "updatedAt": "2026-04-09T00:00:00.000Z",
+                        "startDate": "2026-07-01",
+                        "endDate": "2026-08-31"
+                      }
+                    ],
                     "q1Text": "2/13 廠商評選表完成\n   2/28 3/20 廠商與資訊部專案會議\n   3/31 與資訊部溝通需求確立",
                     "q2Text": "4/30 合約簽訂完成\n   6/15 完成資料匯入與驗證；LINE/Email/APP/SMS等會員溝通渠道介接完成\n   6/30 系統上線，廠商完成技術交接",
                     "actionPlans": [
@@ -1929,13 +1898,56 @@
                         "id": "plan_mn48prth_fs8s",
                         "quarter": "Q1",
                         "title": "Q1 行動計畫",
-                        "items": []
+                        "items": [
+                          {
+                            "id": "item_mnr6hrp9_00t_7f3f3d7d",
+                            "description": "廠商評選表完成",
+                            "owner": "",
+                            "completed": true,
+                            "linkedMeasureId": "msr_mnr6fu3f_00o_4f669107",
+                            "plannedEndDate": "2026-02-13",
+                            "actualEndDate": "2026-02-13"
+                          }
+                        ]
                       },
                       {
                         "id": "plan_mn48prth_h0pf",
                         "quarter": "Q2",
                         "title": "Q2 行動計畫",
-                        "items": []
+                        "items": [
+                          {
+                            "id": "item_mnr6imqk_00u_8d710050",
+                            "description": "商發版本申議書、合約確認",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6gpdx_00r_c9c95a1a",
+                            "plannedEndDate": "2026-04-27"
+                          },
+                          {
+                            "id": "item_mnr6jd6p_00v_39ce37c1",
+                            "description": "確立資料保護原則、申議書簽回",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6gpdx_00r_c9c95a1a",
+                            "plannedEndDate": "2026-05-22"
+                          },
+                          {
+                            "id": "item_mnr6k1eq_00w_7b85b874",
+                            "description": "資訊部與廠商完成行前對接、律師確認合約",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6gpdx_00r_c9c95a1a",
+                            "plannedEndDate": "2026-05-29"
+                          },
+                          {
+                            "id": "item_mnr6koux_00x_8c2bfe59",
+                            "description": "合約簽屬完成",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6gpdx_00r_c9c95a1a",
+                            "plannedEndDate": "2026-06-30"
+                          }
+                        ]
                       },
                       {
                         "id": "plan_mn48prth_3yqh",
@@ -1960,41 +1972,48 @@
                         "quarter": "Q1",
                         "title": "Q1 行動計畫",
                         "items": []
+                      },
+                      {
+                        "id": "plan_mnr6l4ml_00z_bfd743f9",
+                        "quarter": "Q3",
+                        "title": "Q3 計畫",
+                        "items": [
+                          {
+                            "id": "item_mnr6l4mk_00y_83a905f2",
+                            "description": "完成會員溝通渠道介接",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6hbm7_00s_ba472132",
+                            "plannedEndDate": "2026-07-31"
+                          },
+                          {
+                            "id": "item_mnr6loc0_010_38ca7c41",
+                            "description": "完成資料匯入",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6hbm7_00s_ba472132",
+                            "plannedEndDate": "2026-08-14"
+                          },
+                          {
+                            "id": "item_mnr6m3lp_011_194e0527",
+                            "description": "完成系統驗收、平台交接、教育訓練",
+                            "owner": "",
+                            "completed": false,
+                            "linkedMeasureId": "msr_mnr6hbm7_00s_ba472132",
+                            "plannedEndDate": "2026-08-31"
+                          }
+                        ]
                       }
                     ],
                     "notes": "",
                     "completionRate": 0,
                     "manualRate": null,
                     "status": "not-started",
-                    "owners": []
+                    "owners": [],
+                    "updatedAt": "2026-04-09T07:55:27.217Z"
                   }
                 ],
-                "completionRate": 0,
-                "goalKpis": [
-                  {
-                    "id": "gkpi_mngv3ion_008_a201184c",
-                    "label": "6/30數位功能優化進度",
-                    "unit": "%",
-                    "target": 50,
-                    "aggregation": "SUM",
-                    "type": "pct_activity",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  },
-                  {
-                    "id": "gkpi_mngv48zs_009_63083335",
-                    "label": "12/31數位功能優化進度",
-                    "unit": "%",
-                    "target": 100,
-                    "aggregation": "SUM",
-                    "type": "pct_activity",
-                    "isHeadline": false,
-                    "thresholdGoalKpiIds": [],
-                    "linkedKpis": []
-                  }
-                ],
-                "updatedAt": "2026-04-02T02:35:29.032Z"
+                "completionRate": 0
               }
             ],
             "period": "2026 H1",
@@ -2003,9 +2022,30 @@
           }
         }
       ]
+    },
+    {
+      "id": "dept_mno9wax2_003_e38848e5",
+      "name": "設計企劃部",
+      "periods": [
+        {
+          "id": "period_mno9wax2_002_29edd738",
+          "halfYear": "H1",
+          "year": 2026,
+          "ogsm": {
+            "objectives": {
+              "orgO": "",
+              "deptO": ""
+            },
+            "goals": [],
+            "period": "2026 H1",
+            "importedAt": "2026-04-07T07:03:35.750Z",
+            "overallRate": 0
+          }
+        }
+      ]
     }
   ],
-  "version": 52,
+  "version": 38,
   "_migratedClearOwners": true,
   "teams": [
     {
@@ -2033,7 +2073,8 @@
           "name": "Teresa"
         }
       ],
-      "updatedAt": "2026-03-25T10:24:10.595Z"
+      "updatedAt": "2026-04-07T09:58:57.693Z",
+      "deptId": "dept_mn48prth_qdgi"
     },
     {
       "id": "team_mn4btxur_t2vg",
@@ -2042,8 +2083,22 @@
         {
           "id": "mbr_mn4bu95g_sggl",
           "name": "Momo"
+        },
+        {
+          "id": "mbr_mnpofq88_001_49a7c309",
+          "name": "寶寶"
+        },
+        {
+          "id": "mbr_mnpofv9c_002_ce8c2f14",
+          "name": "Jimmy"
+        },
+        {
+          "id": "mbr_mnpofyu5_003_00870551",
+          "name": "MM"
         }
-      ]
+      ],
+      "deptId": "dept_mn48prth_qdgi",
+      "updatedAt": "2026-04-08T06:38:38.320Z"
     },
     {
       "id": "team_mn4bufms_o7re",
@@ -2065,7 +2120,9 @@
           "id": "mbr_mn4bz790_z76s",
           "name": "Lily"
         }
-      ]
+      ],
+      "deptId": "dept_mn48prth_qdgi",
+      "updatedAt": "2026-04-07T09:58:57.693Z"
     },
     {
       "id": "team_mn4bv984_f0xo",
@@ -2086,8 +2143,14 @@
         {
           "id": "mbr_mn4byi98_xpsh",
           "name": "苡倩"
+        },
+        {
+          "id": "mbr_mnpofgw2_000_a2d5d665",
+          "name": "Chloe"
         }
-      ]
+      ],
+      "deptId": "dept_mn48prth_qdgi",
+      "updatedAt": "2026-04-08T06:38:19.932Z"
     },
     {
       "id": "team_mn4bwmxo_xysr",
@@ -2117,7 +2180,9 @@
           "id": "mbr_mn4bxib8_obpn",
           "name": "金門全區-品淇"
         }
-      ]
+      ],
+      "deptId": "dept_mn48prth_qdgi",
+      "updatedAt": "2026-04-07T09:58:57.693Z"
     },
     {
       "id": "team_mn4bzcb1_5ms8",
@@ -2131,13 +2196,15 @@
           "id": "mbr_mn4bzwa6_1uly",
           "name": "婷婷"
         }
-      ]
+      ],
+      "deptId": "dept_mn48prth_qdgi",
+      "updatedAt": "2026-04-07T09:58:57.693Z"
     }
   ],
   "deletedIds": [
     "goal_mn5vl9w4_0f20"
   ],
-  "savedAt": "2026-04-02T02:39:54.804Z",
+  "savedAt": "2026-04-09T07:55:41.869Z",
   "_migratedPhase2": true,
   "_migratedPhase3": true
 }

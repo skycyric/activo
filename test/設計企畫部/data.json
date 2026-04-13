@@ -1,0 +1,28 @@
+{
+  "departments": [
+    {
+      "id": "dept_mnsazgxc_001_05995463",
+      "name": "設計企畫部",
+      "periods": [
+        {
+          "id": "period_mnsazgxc_000_7526b7c0",
+          "halfYear": "H1",
+          "year": 2026,
+          "ogsm": {
+            "objectives": {
+              "orgO": "",
+              "deptO": ""
+            },
+            "goals": [],
+            "period": "2026 H1",
+            "importedAt": "2026-04-10T02:45:07.823Z",
+            "overallRate": 0
+          }
+        }
+      ]
+    }
+  ],
+  "teams": [],
+  "version": 1,
+  "savedAt": "2026-04-10T02:45:07.824Z"
+}

@@ -5,6 +5,7 @@ import type {
   GoalKpiLink,
   Strategy,
   Team,
+  DeptActivity,
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { countStrategyWarnings } from "../utils/planWarnings";
@@ -23,6 +24,8 @@ interface Props {
   teams: Team[];
   warnDaysBefore: number;
   isReadOnly?: boolean;
+  /** V3 架構：部門活動清單，用於 GoalKPI 連結查找 */
+  deptActivities?: DeptActivity[];
 }
 
 function StrategyRow({
@@ -129,6 +132,7 @@ export default function StrategyList({
   teams,
   warnDaysBefore,
   isReadOnly = false,
+  deptActivities = [],
 }: Props) {
   const [editingGoalTitle, setEditingGoalTitle] = useState(false);
   const [titleText, setTitleText] = useState("");
@@ -206,7 +210,8 @@ export default function StrategyList({
   //                       actual >= at least one threshold GoalKPI's target (OR logic)
   // type="progress"     : average actual of linked progress-type KPIs
   // computeGoalKpi 已抽取至 utils/goalKpi.ts（computeGoalKpiResult）
-  const computeGoalKpi = (gk: GoalKPI) => computeGoalKpiResult(gk, goal!);
+  const computeGoalKpi = (gk: GoalKPI) =>
+    computeGoalKpiResult(gk, goal!, deptActivities);
   const saveKpi = () => {
     if (!kpiForm.label.trim()) return;
     const targetVal =
@@ -242,6 +247,7 @@ export default function StrategyList({
         isHeadline: kpiForm.isHeadline,
         thresholdGoalKpiIds: kpiForm.thresholdGoalKpiIds,
         linkedKpis: [],
+        goalKpiType: "direct",
       };
       onUpdateGoal({ ...goal, goalKpis: [...goalKpis, newKpi] });
     }
@@ -287,6 +293,7 @@ export default function StrategyList({
         isHeadline: false,
         thresholdGoalKpiIds: [],
         linkedKpis: [],
+        goalKpiType: "direct",
       };
       onUpdateGoal({ ...goal, goalKpis: [...goalKpis, newKpi] });
     }
@@ -316,19 +323,11 @@ export default function StrategyList({
     const gk = goalKpis.find((g) => g.id === goalKpiId);
     if (!gk) return;
     const exists = gk.linkedKpis.some(
-      (l) =>
-        l.strategyId === link.strategyId &&
-        l.measureId === link.measureId &&
-        l.kpiId === link.kpiId,
+      (l) => l.activityId === link.activityId && l.kpiId === link.kpiId,
     );
     const updated = exists
       ? gk.linkedKpis.filter(
-          (l) =>
-            !(
-              l.strategyId === link.strategyId &&
-              l.measureId === link.measureId &&
-              l.kpiId === link.kpiId
-            ),
+          (l) => !(l.activityId === link.activityId && l.kpiId === link.kpiId),
         )
       : [...gk.linkedKpis, link];
     onUpdateGoal({
@@ -659,7 +658,7 @@ export default function StrategyList({
               (g) => g.id !== gk.id && (g.type ?? "value") !== "pct_activity",
             );
 
-            // ??? measureId ??????????????????????????
+            // 以 activityId 為 key，判斷同一個活動是否被多個 threshGk 引用
             const measureCoverage = new Map<
               string,
               {
@@ -671,22 +670,21 @@ export default function StrategyList({
             for (const tid of selectedIds) {
               const tGk = goalKpis.find((g) => g.id === tid);
               if (!tGk) continue;
-              // ????????measureId ???
+              // 同一 activityId 在同一 threshGk 只記一次
               const seenMeasures = new Set<string>();
               for (const link of tGk.linkedKpis) {
-                if (seenMeasures.has(link.measureId)) continue;
-                seenMeasures.add(link.measureId);
-                if (!measureCoverage.has(link.measureId))
-                  measureCoverage.set(link.measureId, []);
-                // ??rawText
-                const s = (goal.strategies ?? []).find(
-                  (s) => s.id === link.strategyId,
+                if (seenMeasures.has(link.activityId)) continue;
+                seenMeasures.add(link.activityId);
+                if (!measureCoverage.has(link.activityId))
+                  measureCoverage.set(link.activityId, []);
+                // 從 deptActivities 取 rawText
+                const act = deptActivities.find(
+                  (a) => a.id === link.activityId,
                 );
-                const m = s?.measures.find((m) => m.id === link.measureId);
-                measureCoverage.get(link.measureId)?.push({
+                measureCoverage.get(link.activityId)?.push({
                   threshGkId: tid,
                   threshGkLabel: tGk.label,
-                  measureRawText: m?.rawText ?? "未知度量指標",
+                  measureRawText: act?.rawText ?? "未知度量指標",
                 });
               }
             }
@@ -821,12 +819,8 @@ export default function StrategyList({
             />
             {(() => {
               const q = linkPickerSearch.trim().toLowerCase();
-              const rows = strategies
-                .flatMap((s, si) =>
-                  s.measures.flatMap((m) =>
-                    m.kpis.map((k) => ({ s, si, m, k })),
-                  ),
-                )
+              const rows = deptActivities
+                .flatMap((a) => a.kpis.map((k) => ({ a, k })))
                 .filter(({ k }) => {
                   const mKpiType = k.kpiType ?? "value";
                   return gkType === "progress"
@@ -834,10 +828,9 @@ export default function StrategyList({
                     : mKpiType !== "progress";
                 })
                 .filter(
-                  ({ s, m, k }) =>
+                  ({ a, k }) =>
                     !q ||
-                    s.title.toLowerCase().includes(q) ||
-                    m.rawText.toLowerCase().includes(q) ||
+                    a.rawText.toLowerCase().includes(q) ||
                     k.label.toLowerCase().includes(q),
                 );
               if (rows.length === 0)
@@ -850,21 +843,17 @@ export default function StrategyList({
                         : "沒有可連結的數值型 M KPI 度量指標"}
                   </div>
                 );
-              return rows.map(({ s, si, m, k }) => {
+              return rows.map(({ a, k }) => {
                 const link: GoalKpiLink = {
-                  strategyId: s.id,
-                  measureId: m.id,
+                  activityId: a.id,
                   kpiId: k.id,
                 };
                 const linked = gk.linkedKpis.some(
-                  (l) =>
-                    l.strategyId === s.id &&
-                    l.measureId === m.id &&
-                    l.kpiId === k.id,
+                  (l) => l.activityId === a.id && l.kpiId === k.id,
                 );
                 return (
                   <label
-                    key={`${s.id}-${m.id}-${k.id}`}
+                    key={`${a.id}-${k.id}`}
                     className={`g-kpi-link-item${linked ? " linked" : ""}`}
                   >
                     <input
@@ -872,9 +861,8 @@ export default function StrategyList({
                       checked={linked}
                       onChange={() => toggleLink(gk.id, link)}
                     />
-                    <span className="g-kpi-link-s">S{si + 1}</span>
                     <span className="g-kpi-link-m">
-                      {m.rawText.substring(0, 20) || ""}
+                      {a.rawText.substring(0, 20) || ""}
                     </span>
                     <span className="g-kpi-link-k">{k.label}</span>
                     <span className="g-kpi-link-val">

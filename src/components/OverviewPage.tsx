@@ -5,6 +5,7 @@ import type {
   Strategy,
   Measure,
   GoalKPI,
+  DeptActivity,
 } from "../schemas/ogsm";
 import { getPlanItemWarning } from "../utils/planWarnings";
 import { computeGoalKpiResult } from "../utils/goalKpi";
@@ -22,6 +23,8 @@ interface Props {
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
   isReadOnly?: boolean;
+  /** V3 架構：部門活動清單，供 GoalKPI 計算使用 */
+  deptActivities?: DeptActivity[];
 }
 
 //  stat types
@@ -34,8 +37,12 @@ interface NodeStats {
 
 //  GoalKPI helpers
 // goalKpiRate 委派給共用的 computeGoalKpiResult（utils/goalKpi.ts）
-function goalKpiRate(gk: GoalKPI, goal: Goal): number | null {
-  return computeGoalKpiResult(gk, goal).rate;
+function goalKpiRate(
+  gk: GoalKPI,
+  goal: Goal,
+  deptActivities: DeptActivity[] = [],
+): number | null {
+  return computeGoalKpiResult(gk, goal, deptActivities).rate;
 }
 
 // sStats: "行動計畫" = Measure row；KPI = all KPIs in measures (not filtered by actual)
@@ -55,7 +62,7 @@ function sStats(s: Strategy): NodeStats {
 }
 
 // gStats: GoalKPI (G-level KPI panel) if exists, else sum M-level; plans aggregated from strategies
-function gStats(g: Goal): NodeStats {
+function gStats(g: Goal, deptActivities: DeptActivity[] = []): NodeStats {
   const gks = g.goalKpis ?? [];
   const planAcc = g.strategies.reduce(
     (acc, s) => {
@@ -70,7 +77,9 @@ function gStats(g: Goal): NodeStats {
   if (gks.length > 0) {
     // kpiTotal = ALL GoalKPIs in the panel (not just those with computable rate)
     return {
-      kpiDone: gks.filter((gk) => (goalKpiRate(gk, g) ?? 0) >= 100).length,
+      kpiDone: gks.filter(
+        (gk) => (goalKpiRate(gk, g, deptActivities) ?? 0) >= 100,
+      ).length,
       kpiTotal: gks.length,
       ...planAcc,
     };
@@ -121,6 +130,7 @@ export default function OverviewPage({
   onEditObjective,
   onAddGoal,
   isReadOnly = false,
+  deptActivities = [],
 }: Props) {
   const [editingO, setEditingO] = useState(false);
   const [oText, setOText] = useState("");
@@ -173,7 +183,7 @@ export default function OverviewPage({
   // O-level KPI 統計：G = GoalKPI 看板；M = Measure 內的 kpis
   const oKpiItems = data.goals.flatMap((g) =>
     (g.goalKpis ?? []).map((gk) => ({
-      done: (goalKpiRate(gk, g) ?? 0) >= 100,
+      done: (goalKpiRate(gk, g, deptActivities) ?? 0) >= 100,
     })),
   );
   const oKpiTotal = oKpiItems.length;
@@ -193,7 +203,9 @@ export default function OverviewPage({
   const gPctItems = data.goals.flatMap((g) =>
     (g.goalKpis ?? [])
       .filter((gk) => (gk.type ?? "value") === "pct_activity")
-      .map((gk) => ({ done: (goalKpiRate(gk, g) ?? 0) >= 100 })),
+      .map((gk) => ({
+        done: (goalKpiRate(gk, g, deptActivities) ?? 0) >= 100,
+      })),
   );
   const gPctTotal = gPctItems.length;
   const gPctDone = gPctItems.filter((k) => k.done).length;
@@ -588,7 +600,7 @@ export default function OverviewPage({
 
               <ul className="org-children">
                 {data.goals.map((g: Goal) => {
-                  const gs = gStats(g);
+                  const gs = gStats(g, deptActivities);
                   return (
                     <li key={g.id}>
                       {/* G node */}

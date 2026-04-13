@@ -19,27 +19,59 @@ const IsoDate = z
 
 // ── KPI ──────────────────────────────────────────────────────────────────────
 
+/**
+ * KPI baseline：成長型公式的分母（起點值）。
+ * - fixed：固定常數
+ * - kpiRef：引用同一活動內另一個 KPI 的 actual 值（限同活動內）
+ */
+export const KpiBaselineSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("fixed"), value: z.number() }),
+  z.object({ type: z.literal("kpiRef"), kpiId: z.string() }),
+]);
+
 export const KPISchema = z.object({
   id: z.string(),
+  /** 使用者自訂 KPI 名稱，如「業績達成率」「新增客戶數」 */
+  name: z.string().optional(),
+  /** @deprecated 改用 name；label 保留供舊資料讀取 */
   label: z.string(),
   target: z.number().nullable(),
   actual: z.number().nullable(),
   unit: z.string(),
+  /**
+   * 計算達成率的公式類型：
+   * - "direct_rate"：achievementRate = actual / target × 100
+   * - "growth"：achievementRate = ((actual / resolvedBaseline - 1) × 100) / targetGrowthRate × 100
+   * 未設定時沿用舊 kpiType 欄位行為（向下相容）。
+   */
+  formulaType: z.enum(["direct_rate", "growth"]).optional(),
+  /**
+   * 成長型（formulaType="growth"）專用：基底值來源。
+   * - fixed：固定常數
+   * - kpiRef：同活動內另一個 KPI 的 actual 值
+   */
+  baseline: KpiBaselineSchema.nullable().optional(),
+  /**
+   * 達成率（唯讀計算值）。
+   * 由 computeKpiAchievement() 計算後寫入，不應手動填入。
+   * 保留欄位是為了讓 GoalKPI 聚合計算讀取快照值。
+   */
   achievementRate: z.number().nullable(),
   /**
+   * @deprecated 改用 formulaType。
    * "value"       ＝量化型（預設）
    * "progress"    ＝進度型（actual 為 0-100 完成度）
    * "growth"      ＝成長型（輸入基期值與現值，計算成長率；可選填目標成長率）
    * "target_rate" ＝目標率型（和量化型相同填法，但達成率需再與目標率比較看成效）
    */
   kpiType: z.enum(["value", "progress", "growth", "target_rate"]).optional(),
-  /** 成長型專用：基期值（成長計算的起點） */
+  /** @deprecated 改用 baseline: { type:"fixed", value } */
   baseValue: z.number().nullable().optional(),
-  /** 成長型專用：現值（當前量測值） */
+  /** @deprecated 改用 actual */
   currentValue: z.number().nullable().optional(),
-  /** 成長型專用：目標成長率（%，選填；有值才顯示達成圓環） */
+  /** 成長型目標成長率（%）；formulaType="growth" 時作為分母 */
   targetGrowthRate: z.number().nullable().optional(),
-  /** 目標率型專用：目標達成率（%，選填；有值時圓環顯示 achievementRate/targetRate） */
+  /** 目標率型專用：目標達成率（%） */
   targetRate: z.number().nullable().optional(),
 });
 
@@ -198,8 +230,8 @@ export const StrategySchema = z.object({
 // ── Goal ──────────────────────────────────────────────────────────────────────
 
 export const GoalKpiLinkSchema = z.object({
-  strategyId: z.string(),
-  measureId: z.string(),
+  /** V3 後以 activityId 直接對應 dept.activities[].id */
+  activityId: z.string(),
   kpiId: z.string(),
 });
 
@@ -235,6 +267,24 @@ export const GoalKPISchema = z.object({
    * value = thresholdGoalKpiId（必須出現在 thresholdGoalKpiIds 中）
    */
   activitySourceOverrides: z.record(z.string(), z.string()).optional(),
+  /**
+   * Phase 6B：GoalKPI 類型
+   * "direct"    ＝ 直接連结活動 M KPI（linkedKpis 計算，預設行為）
+   * "aggregate" ＝ 聚合引用其他 GoalKPI（linkedGoalKpis 加權平均）
+   */
+  goalKpiType: z.enum(["direct", "aggregate"]).default("direct"),
+  /**
+   * aggregate 專用：引用其他 Goal 的 GoalKPI，並指定權重（權重加總應≒1）
+   */
+  linkedGoalKpis: z
+    .array(
+      z.object({
+        goalId: z.string(),
+        goalKpiId: z.string(),
+        weight: z.number().min(0).max(1),
+      }),
+    )
+    .optional(),
 });
 
 export const GoalSchema = z.object({
@@ -310,6 +360,7 @@ export const WorkspaceDataSchema = z.object({
 // 這些 type 由 schema 推導，與 src/types/ogsm.ts re-export 的保持一致
 
 export type KPI = z.infer<typeof KPISchema>;
+export type KpiBaseline = z.infer<typeof KpiBaselineSchema>;
 export type AssistUnit = z.infer<typeof AssistUnitSchema>;
 export type PlanItem = z.infer<typeof PlanItemSchema>;
 export type ActionPlan = z.infer<typeof ActionPlanSchema>;
