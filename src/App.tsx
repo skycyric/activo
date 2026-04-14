@@ -2527,6 +2527,39 @@ export default function App() {
               </button>
             ))}
 
+          {syncStatus !== "unlinked" && (
+            <span
+              className={`sp-sync-badge sp-sync-${syncStatus}`}
+              onClick={
+                syncStatus === "saved" || syncStatus === "error"
+                  ? () => fileSaveNow(workspace)
+                  : undefined
+              }
+              style={{
+                cursor:
+                  syncStatus === "saved" || syncStatus === "error"
+                    ? "pointer"
+                    : "default",
+              }}
+              title={
+                syncStatus === "error"
+                  ? "儲存失敗，點擊重試"
+                  : syncStatus === "saved"
+                    ? "點擊手動儲存"
+                    : undefined
+              }
+            >
+              {syncStatus === "saving" && (
+                <>
+                  <span className="sp-spin">⏳</span> 儲存中…
+                </>
+              )}
+              {syncStatus === "pending" && "⏸ 等待儲存"}
+              {syncStatus === "saved" && "✅ 已儲存"}
+              {syncStatus === "error" && "❌ 儲存失敗"}
+            </span>
+          )}
+
           <button
             className="btn-secondary"
             onClick={() => exportWorkspaceJSON(effectiveWorkspace)}

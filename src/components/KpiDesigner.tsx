@@ -1,31 +1,15 @@
 ﻿import React, { useState, useCallback, useEffect, useRef } from "react";
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  Handle,
-  Position,
-  MarkerType,
-  Panel,
-  NodeResizer as _NodeResizer,
-  type NodeProps,
-  type Connection,
-  type Edge,
-  type Node,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import type {
   OGSMData,
   Goal,
   GoalKPI,
   Strategy,
   DeptActivity,
+  FreeNode,
+  KPI,
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
-import { computeGoalKpiResult, type GoalKpiResult } from "../utils/goalKpi";
+import { computeGoalKpiResult } from "../utils/goalKpi";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +18,7 @@ interface Props {
   deptActivities: DeptActivity[];
   initialGoalId?: string;
   onUpdateData: (d: OGSMData) => void;
+  onUpdateActivity?: (activity: DeptActivity) => void;
   onAddGoal: () => void;
   onDeleteGoal: (id: string) => void;
   onAddStrategyToGoal: (goalId: string) => void;
@@ -41,498 +26,538 @@ interface Props {
   onClose: () => void;
 }
 
-// ─── Full canvas builders ─────────────────────────────────────────────────────
-
 type ViewMode = "item" | "kpi";
+type ModuleId = "ogsm" | "other" | null;
 
-// ── Layout constants ──────────────────────────────────────────────────────────
-const COL_O = 60,
-  COL_G = 320,
-  COL_S = 580;
-const S_ROW_H = 90; // item mode: vertical gap between strategy rows
-const GOAL_GAP = 60; // vertical gap between consecutive goals
+// ─── Item Canvas (replaces React Flow canvas) ────────────────────────────────
 
-// KPI mode layout (horizontal 4-column: G → pct GKs → direct GKs → Activities)
-const KPI_G_X = 80; // Col 1: G node
-const KPI_PCT_X = 360; // Col 2: pct_activity / summary GKs
-const KPI_GK_X = 660; // Col 3: direct / threshold GKs
-const KPI_ACT_X = 1000; // Col 4: Activity nodes
-const KPI_GK_ROW_H = 120; // vertical step between rows
-const KPI_GOAL_GAP = 80; // extra vertical gap between goals
-
-// ── Item mode: O → G → S ──────────────────────────────────────────────────────
-function buildItemNodes(
-  data: OGSMData,
-  _deptActivities: DeptActivity[],
-  selectedId: string | null,
-): Node[] {
-  const nodes: Node[] = [];
-  let curY = 0;
-  const layouts: { topY: number; itemH: number }[] = [];
-
-  for (const goal of data.goals) {
-    const itemH = Math.max(goal.strategies.length, 1) * S_ROW_H;
-    layouts.push({ topY: curY, itemH });
-    curY += itemH + GOAL_GAP;
-  }
-
-  nodes.push({
-    id: "o",
-    type: "oNode",
-    position: { x: COL_O, y: curY / 2 - 40 },
-    data: { text: data.objectives.deptO, selected: selectedId === "o" },
-  });
-
-  data.goals.forEach((goal, gi) => {
-    const { topY, itemH } = layouts[gi];
-    nodes.push({
-      id: `g-${goal.id}`,
-      type: "goalNode",
-      position: { x: COL_G, y: topY + itemH / 2 - 28 },
-      data: { goal, selected: selectedId === `g-${goal.id}` },
-    });
-    goal.strategies.forEach((s, j) => {
-      nodes.push({
-        id: `s-${s.id}`,
-        type: "strategyNode",
-        position: { x: COL_S, y: topY + j * S_ROW_H + 10 },
-        data: { strategy: s, selected: selectedId === `s-${s.id}` },
-      });
-    });
-  });
-
-  return nodes;
+interface ItemCanvasProps {
+  data: OGSMData;
+  deptActivities: DeptActivity[];
+  freeNodes: FreeNode[];
+  selectedNodeId: string | null;
+  moduleId: ModuleId;
+  onSelectNode: (id: string) => void;
 }
 
-// ── KPI mode: G → pct GKs → threshold GKs → Activities (4-column) ─────────────
-function buildKpiNodes(
-  data: OGSMData,
-  deptActivities: DeptActivity[],
-  selectedId: string | null,
-): Node[] {
-  const nodes: Node[] = [];
-  const actPositions = new Map<string, { x: number; y: number }>();
-  const kpiGoals = data.goals.filter((g) => (g.goalKpis?.length ?? 0) > 0);
-
-  let curY = 0;
-  for (const goal of kpiGoals) {
-    const gkpis = goal.goalKpis ?? [];
-
-    // Split GKs into layers:
-    //   col2 (KPI_PCT_X)  = pct_activity or aggregate summary GKs
-    //   col3 (KPI_GK_X)   = threshold / direct rate GKs
-    const pctGks = gkpis.filter((gk) => gk.type === "pct_activity");
-    const aggGks = gkpis.filter(
-      (gk) => gk.goalKpiType === "aggregate" && gk.type !== "pct_activity",
-    );
-    const thresholdGkIds = new Set(
-      pctGks.flatMap((gk) => gk.thresholdGoalKpiIds ?? []),
-    );
-    const thresholdGks = gkpis.filter((gk) => thresholdGkIds.has(gk.id));
-    // Standalone: not pct, not aggregate, not threshold
-    const standaloneGks = gkpis.filter(
-      (gk) =>
-        gk.type !== "pct_activity" &&
-        gk.goalKpiType !== "aggregate" &&
-        !thresholdGkIds.has(gk.id),
-    );
-
-    const hasPct = pctGks.length > 0;
-    // col2: pct_activity + aggregate GKs (when there are pct GKs)
-    // col3: threshold + standalone direct GKs
-    // when no pct: all GKs go to col3 (G connects directly)
-    const col2Gks = hasPct ? [...pctGks, ...aggGks] : [];
-    const col3Gks = hasPct
-      ? [...thresholdGks, ...standaloneGks]
-      : gkpis.filter((gk) => gk.goalKpiType !== "aggregate");
-    const col2AggOnly = !hasPct ? aggGks : []; // aggregates when no pct
-    const allCol3 = [...col3Gks];
-
-    const totalRows = Math.max(
-      col2Gks.length,
-      allCol3.length + col2AggOnly.length,
-      1,
-    );
-    const totalH = totalRows * KPI_GK_ROW_H;
-
-    // G node — show pct GKs in summary, or all if no pct
-    const gkResults = gkpis.map((gk) => ({
-      gk,
-      result: computeGoalKpiResult(gk, goal, deptActivities, data.goals),
-    }));
-    nodes.push({
-      id: `g-${goal.id}`,
-      type: "goalNode",
-      position: { x: KPI_G_X, y: curY + totalH / 2 - 28 },
-      data: { goal, gkResults, selected: selectedId === `g-${goal.id}` },
-    });
-
-    // Col-2 nodes (pct_activity + aggregate)
-    col2Gks.forEach((gk, k) => {
-      const gkY = curY + k * KPI_GK_ROW_H + KPI_GK_ROW_H / 2 - 28;
-      const rate = computeGoalKpiResult(
-        gk,
-        goal,
-        deptActivities,
-        data.goals,
-      ).rate;
-      nodes.push({
-        id: `gk-${gk.id}`,
-        type: "goalKpiNode",
-        position: { x: KPI_PCT_X, y: gkY },
-        data: { gk, rate, selected: selectedId === `gk-${gk.id}` },
-      });
-    });
-
-    // Col-3 nodes (threshold + standalone + aggOnly when no pct)
-    const col3All = [...allCol3, ...col2AggOnly];
-    col3All.forEach((gk, k) => {
-      const gkY = curY + k * KPI_GK_ROW_H + KPI_GK_ROW_H / 2 - 28;
-      const rate = computeGoalKpiResult(
-        gk,
-        goal,
-        deptActivities,
-        data.goals,
-      ).rate;
-      nodes.push({
-        id: `gk-${gk.id}`,
-        type: "goalKpiNode",
-        position: { x: KPI_GK_X, y: gkY },
-        data: { gk, rate, selected: selectedId === `gk-${gk.id}` },
-      });
-      if (gk.goalKpiType !== "aggregate") {
-        gk.linkedKpis.forEach((link) => {
-          // Support both V3 activityId and legacy measureId formats
-          const actId =
-            link.activityId ||
-            (link as unknown as Record<string, string>).measureId;
-          if (actId && !actPositions.has(actId)) {
-            actPositions.set(actId, { x: KPI_ACT_X, y: gkY });
-          }
-        });
-      }
-    });
-
-    curY += totalH + KPI_GOAL_GAP;
-  }
-
-  for (const [actId, pos] of actPositions) {
-    const act = deptActivities.find((a) => a.id === actId);
-    if (!act) continue;
-    nodes.push({
-      id: `act-${act.id}`,
-      type: "activityNode",
-      position: pos,
-      data: { activity: act, selected: selectedId === `act-${act.id}` },
-    });
-  }
-
-  return nodes;
-}
-
-function buildItemEdges(data: OGSMData): Edge[] {
-  const edges: Edge[] = [];
-  for (const goal of data.goals) {
-    edges.push({
-      id: `e-o-g-${goal.id}`,
-      source: "o",
-      target: `g-${goal.id}`,
-      sourceHandle: "source-right",
-      targetHandle: "target-left",
-      type: "default",
-      style: { stroke: "#fb923c", strokeWidth: 2 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#fb923c" },
-    });
-    for (const s of goal.strategies) {
-      edges.push({
-        id: `e-g-s-${s.id}`,
-        source: `g-${goal.id}`,
-        target: `s-${s.id}`,
-        sourceHandle: "source-right",
-        targetHandle: "target-left",
-        type: "default",
-        style: { stroke: "#94a3b8", strokeWidth: 1.5 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
-      });
-    }
-  }
-  return edges;
-}
-
-function buildKpiEdges(data: OGSMData): Edge[] {
-  const edges: Edge[] = [];
-
-  for (const goal of data.goals) {
-    const gkpis = goal.goalKpis ?? [];
-    if (gkpis.length === 0) continue;
-
-    const pctGks = gkpis.filter((gk) => gk.type === "pct_activity");
-    const thresholdGkIds = new Set(
-      pctGks.flatMap((gk) => gk.thresholdGoalKpiIds ?? []),
-    );
-    const hasPct = pctGks.length > 0;
-
-    for (const gk of gkpis) {
-      const isPct = gk.type === "pct_activity";
-      const isThreshold = thresholdGkIds.has(gk.id);
-      const isAgg = gk.goalKpiType === "aggregate";
-
-      // ── G → GK edges ───────────────────────────────────────────────────────
-      if (hasPct) {
-        // Only pct GKs and non-threshold/non-pct GKs connect from G
-        if (isPct || (!isThreshold && !isPct)) {
-          const color = isPct ? "#06b6d4" : isAgg ? "#a855f7" : "#94a3b8";
-          edges.push({
-            id: `e-g-gk-${gk.id}`,
-            source: `g-${goal.id}`,
-            target: `gk-${gk.id}`,
-            sourceHandle: "source-right",
-            targetHandle: "target-left",
-            type: "default",
-            style: { stroke: color, strokeWidth: 1.5 },
-            markerEnd: { type: MarkerType.ArrowClosed, color },
-          });
-        }
-      } else {
-        // No pct GKs: all GKs connect from G
-        const color = isAgg ? "#a855f7" : "#06b6d4";
-        edges.push({
-          id: `e-g-gk-${gk.id}`,
-          source: `g-${goal.id}`,
-          target: `gk-${gk.id}`,
-          sourceHandle: "source-right",
-          targetHandle: "target-left",
-          type: "default",
-          style: { stroke: color, strokeWidth: 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color },
-        });
-      }
-
-      // ── pct_activity GK → threshold GKs ────────────────────────────────────
-      if (isPct) {
-        for (const thId of gk.thresholdGoalKpiIds ?? []) {
-          edges.push({
-            id: `e-pct-th-${gk.id}-${thId}`,
-            source: `gk-${gk.id}`,
-            target: `gk-${thId}`,
-            sourceHandle: "source-right",
-            targetHandle: "target-left",
-            type: "default",
-            style: {
-              stroke: "#06b6d4",
-              strokeWidth: 1.5,
-              strokeDasharray: "5 3",
-            },
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#06b6d4" },
-          });
-        }
-      }
-
-      // ── aggregate GK → linked GoalKPIs ─────────────────────────────────────
-      if (isAgg && !isPct) {
-        for (const link of gk.linkedGoalKpis ?? []) {
-          edges.push({
-            id: `e-gkagg-${gk.id}-${link.goalKpiId}`,
-            source: `gk-${gk.id}`,
-            target: `gk-${link.goalKpiId}`,
-            sourceHandle: "source-right",
-            targetHandle: "target-left",
-            animated: true,
-            label: `×${link.weight}`,
-            labelStyle: { fontSize: 11, fill: "#a855f7" },
-            type: "default",
-            style: { stroke: "#a855f7", strokeWidth: 2 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#a855f7" },
-          });
-        }
-      }
-
-      // ── direct GK → Activities ──────────────────────────────────────────────
-      if (!isAgg && !isPct) {
-        const linkedActIds = new Set(
-          gk.linkedKpis
-            .map(
-              (l) =>
-                l.activityId ||
-                (l as unknown as Record<string, string>).measureId,
-            )
-            .filter(Boolean),
-        );
-        for (const actId of linkedActIds) {
-          edges.push({
-            id: `e-gk-act-${gk.id}-${actId}`,
-            source: `gk-${gk.id}`,
-            target: `act-${actId}`,
-            sourceHandle: "source-right",
-            targetHandle: "target-left",
-            type: "default",
-            style: { stroke: "#3b82f6", strokeWidth: 2 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#3b82f6" },
-          });
-        }
-      }
-    }
-  }
-
-  return edges;
-}
-
-// ─── O Node ───────────────────────────────────────────────────────────────────
-
-function ONode({ data }: NodeProps) {
-  const { text, selected } = data as { text: string; selected: boolean };
-  return (
-    <div className={`kpid-o-node${selected ? " selected" : ""}`}>
-      <div className="kpid-o-label">O</div>
-      <div className="kpid-o-text">{text || "（未設定組織目標）"}</div>
-      <Handle type="source" position={Position.Right} id="source-right" />
-    </div>
-  );
-}
-
-// ─── Goal Node ────────────────────────────────────────────────────────────────
-
-function GoalNode({ data }: NodeProps) {
-  const { goal, gkResults, selected } = data as {
-    goal: Goal;
-    gkResults?: Array<{ gk: GoalKPI; result: GoalKpiResult }>;
-    selected: boolean;
-  };
-  // Prefer pct_activity GKs for the inline summary; fall back to isHeadline; then all
-  const pctResults = gkResults?.filter(({ gk }) => gk.type === "pct_activity");
-  const headlineResults = gkResults?.filter(({ gk }) => gk.isHeadline);
-  const displayResults =
-    (pctResults?.length ? pctResults : null) ??
-    (headlineResults?.length ? headlineResults : null) ??
-    gkResults;
-
-  return (
-    <div className={`kpid-g-node${selected ? " selected" : ""}`}>
-      <Handle type="target" position={Position.Left} id="target-left" />
-      <div className="kpid-g-header">
-        <span className="kpid-g-label">{goal.label}</span>
-        <span className="kpid-g-title">{goal.title}</span>
+function ItemCanvas({
+  data,
+  freeNodes,
+  selectedNodeId,
+  moduleId,
+  onSelectNode,
+}: ItemCanvasProps) {
+  if (!moduleId) {
+    return (
+      <div className="kpid-canvas-empty">
+        <div className="kpid-canvas-empty-icon">🎯</div>
+        <div>請從上方下拉選單選擇模組</div>
       </div>
-      {displayResults && displayResults.length > 0 && (
-        <div className="kpid-g-kpis">
-          {displayResults.map(({ gk, result }) => (
-            <div
-              key={gk.id}
-              className={`kpid-g-kpi-row${gk.type === "pct_activity" ? " pct" : ""}`}
-            >
-              {gk.type === "pct_activity" ? (
-                <span className="kpid-g-kpi-star">✦</span>
-              ) : gk.isHeadline ? (
-                <span className="kpid-g-kpi-star">★</span>
-              ) : null}
-              <span className="kpid-g-kpi-label">{gk.label}</span>
-              <span className="kpid-g-kpi-rate-inline">
-                {result.rate !== null
-                  ? `${result.rate}%`
-                  : result.metCount !== null
-                    ? `${result.metCount}/${result.totalCount}`
-                    : "─"}
-              </span>
-            </div>
-          ))}
+    );
+  }
+
+  if (moduleId === "other") {
+    return (
+      <div className="kpid-item-canvas">
+        {freeNodes.length === 0 ? (
+          <div className="kpid-canvas-empty">
+            <div className="kpid-canvas-empty-icon">📋</div>
+            <div>尚無自由節點，請從左側面板新增</div>
+          </div>
+        ) : (
+          <div className="kpid-free-cards">
+            {freeNodes.map((fn) => {
+              const sel = selectedNodeId === `free-${fn.id}`;
+              return (
+                <div
+                  key={fn.id}
+                  className={`kpid-s-node kpid-cnv-free${sel ? " selected" : ""}`}
+                  onClick={() => onSelectNode(`free-${fn.id}`)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="kpid-s-header">
+                    <span className="kpid-s-badge">其</span>
+                    <span className="kpid-s-title">
+                      {fn.name || "自由節點"}
+                    </span>
+                  </div>
+                  {fn.description && (
+                    <div className="kpid-s-m-list">
+                      <div className="kpid-s-m-item">
+                        <span className="kpid-s-m-name">{fn.description}</span>
+                      </div>
+                    </div>
+                  )}
+                  {(fn.linkedActivityIds?.length ?? 0) > 0 && (
+                    <div className="kpid-s-m-list">
+                      <div className="kpid-s-m-item">
+                        <span className="kpid-s-m-dot">🔗</span>
+                        <span className="kpid-s-m-name">
+                          {fn.linkedActivityIds.length} 個連結活動
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // OGSM mode: O → G → S org-tree (reuse OverviewPage structure)
+  return (
+    <div className="kpid-item-canvas">
+      {data.goals.length === 0 ? (
+        <div className="kpid-canvas-empty">
+          <div className="kpid-canvas-empty-icon">🎯</div>
+          <div>尚無目標，請從左側面板新增</div>
+        </div>
+      ) : (
+        <div className="org-tree-wrap">
+          <ul className="org-root">
+            <li>
+              {/* O node */}
+              <div
+                className={`org-node org-node-o${selectedNodeId === "o" ? " selected" : ""}`}
+                onClick={() => onSelectNode("o")}
+                role="button"
+                tabIndex={0}
+              >
+                <span className="org-badge org-badge-o">O</span>
+                <span className="org-title">
+                  {data.objectives?.deptO || (
+                    <em style={{ color: "#a16207" }}>點擊設定部門目標…</em>
+                  )}
+                </span>
+              </div>
+
+              <ul className="org-children">
+                {data.goals.map((g) => (
+                  <li key={g.id}>
+                    {/* G node */}
+                    <div
+                      className={`org-node org-node-g${selectedNodeId === `g-${g.id}` ? " selected" : ""}`}
+                      onClick={() => onSelectNode(`g-${g.id}`)}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span className="org-badge org-badge-g">{g.label}</span>
+                      <span className="org-title">
+                        {g.title || <em>(未命名)</em>}
+                      </span>
+                    </div>
+
+                    {g.strategies.length > 0 && (
+                      <ul className="org-children">
+                        {g.strategies.map((s, si) => (
+                          <li key={s.id}>
+                            {/* S node */}
+                            <div
+                              className={`org-node org-node-s${selectedNodeId === `s-${s.id}` ? " selected" : ""}`}
+                              onClick={() => onSelectNode(`s-${s.id}`)}
+                              role="button"
+                              tabIndex={0}
+                            >
+                              <span className="org-badge org-badge-s">{`S${si + 1}`}</span>
+                              <span className="org-title">
+                                {s.title || <em>(未命名)</em>}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          </ul>
         </div>
       )}
-      <Handle type="source" position={Position.Right} id="source-right" />
     </div>
   );
 }
 
-// ─── Strategy Node ────────────────────────────────────────────────────────────
+// ─── KPI helpers ────────────────────────────────────────────────────────────
 
-function StrategyNode({ data }: NodeProps) {
-  const { strategy, selected } = data as {
-    strategy: Strategy;
-    selected: boolean;
-  };
-  return (
-    <div className={`kpid-s-node${selected ? " selected" : ""}`}>
-      <Handle type="target" position={Position.Left} id="target-left" />
-      <div className="kpid-s-title">{strategy.title}</div>
-    </div>
-  );
+/** G-KPI = aggregate 或 pct_activity（達標活動比率），G-sub-KPI = 其餘直接值型 */
+function isGKpi(gk: GoalKPI): boolean {
+  return gk.goalKpiType === "aggregate" || gk.type === "pct_activity";
 }
 
-// ─── GoalKPI Node ─────────────────────────────────────────────────────────────
+// ─── KPI Computation Tree ────────────────────────────────────────────────────
 
-function GoalKpiNode({ data }: NodeProps) {
-  const { gk, rate, selected } = data as {
-    gk: GoalKPI;
-    rate: number | null;
-    selected: boolean;
-  };
-  const isAgg = gk.goalKpiType === "aggregate";
-  return (
-    <div
-      className={`kpid-gk-node${isAgg ? " agg" : ""}${selected ? " selected" : ""}`}
-    >
-      <Handle type="target" position={Position.Left} id="target-left" />
-      <div className="kpid-gk-header">
-        <span className="kpid-gk-label" title={gk.label}>
-          {gk.label}
-        </span>
-        <span className={`kpid-type-badge${isAgg ? " agg" : ""}`}>
-          {isAgg ? "聚合" : "直接"}
-        </span>
-      </div>
-      <div className="kpid-gk-rate">
-        {rate !== null ? `${rate}%` : "─"} / 目標&nbsp;{gk.target ?? "─"}&nbsp;
-        {gk.unit}
-      </div>
-      <Handle type="source" position={Position.Right} id="source-right" />
-    </div>
-  );
+interface GkComputeTreeProps {
+  gk: GoalKPI;
+  goal: Goal;
+  deptActivities: DeptActivity[];
+  allGoals: Goal[];
 }
 
-// ─── Activity Node ────────────────────────────────────────────────────────────
-
-function ActivityNode({ data }: NodeProps) {
-  const { activity, selected } = data as {
-    activity: DeptActivity;
-    selected: boolean;
-  };
-  return (
-    <div className={`kpid-act-node${selected ? " selected" : ""}`}>
-      <Handle type="target" position={Position.Left} id="target-left" />
-      <div className="kpid-act-header" title={activity.rawText}>
-        {activity.rawText || "活動"}
+function GkComputeTree({
+  gk,
+  goal,
+  deptActivities,
+  allGoals,
+}: GkComputeTreeProps) {
+  // G-KPI 聚合型：顯示加權 GoalKPI 來源
+  if (gk.goalKpiType === "aggregate") {
+    const links = gk.linkedGoalKpis ?? [];
+    if (links.length === 0) {
+      return <div className="kpid-ctree-empty">尚未連結任何來源 GoalKPI</div>;
+    }
+    return (
+      <div className="kpid-ctree-wrap">
+        {links.map((link, i) => {
+          const srcGoal = allGoals.find((g) => g.id === link.goalId) ?? goal;
+          const srcGk = (srcGoal.goalKpis ?? []).find(
+            (g) => g.id === link.goalKpiId,
+          );
+          const result = srcGk
+            ? computeGoalKpiResult(srcGk, srcGoal, deptActivities, allGoals)
+            : null;
+          const rate = result?.rate;
+          const color =
+            rate != null
+              ? rate >= 100
+                ? "#16a34a"
+                : rate >= 60
+                  ? "#d97706"
+                  : "#dc2626"
+              : "#94a3b8";
+          return (
+            <div key={i} className="kpid-ctree-row">
+              <span className="kpid-ctree-tag agg">×{link.weight}</span>
+              <span className="kpid-ctree-src">
+                {srcGoal.label}／{srcGk?.label ?? "(未知)"}
+              </span>
+              <span className="kpid-ctree-rate-val" style={{ color }}>
+                {rate != null ? `${rate}%` : "─"}
+              </span>
+            </div>
+          );
+        })}
       </div>
-      {activity.kpis.length === 0 && <div className="kpid-no-kpi">無 KPI</div>}
-      {activity.kpis.map((kpi) => (
-        <div key={kpi.id} className="kpid-kpi-row">
-          <span className="kpid-kpi-name">
-            {kpi.name || kpi.label || `KPI#${kpi.id.slice(-4)}`}
-          </span>
-          <span className="kpid-kpi-val">
-            {kpi.actual ?? "─"}/{kpi.target ?? "─"}
-            {kpi.unit}
-          </span>
+    );
+  }
+
+  // G-KPI pct_activity 型：顯示 result.activities 達標清單
+  if (gk.type === "pct_activity") {
+    const result = computeGoalKpiResult(gk, goal, deptActivities, allGoals);
+    const acts = result.activities;
+    if (acts.length === 0) {
+      return <div className="kpid-ctree-empty">尚未有符合門檻的活動資料</div>;
+    }
+    return (
+      <div className="kpid-ctree-wrap">
+        {acts.map((a, i) => {
+          const rate = a.displayRate;
+          const color =
+            rate != null
+              ? rate >= 100
+                ? "#16a34a"
+                : rate >= 60
+                  ? "#d97706"
+                  : "#dc2626"
+              : "#94a3b8";
+          return (
+            <div key={i} className={`kpid-ctree-row${a.met ? " met" : ""}`}>
+              <span className={`kpid-ctree-met-icon`}>{a.met ? "✓" : "✗"}</span>
+              <span className="kpid-ctree-src">{a.measureRawText}</span>
+              <span className="kpid-ctree-rate-val" style={{ color }}>
+                {rate != null ? `${rate}%` : "─"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // G-sub-KPI 直接型：按活動分組顯示 KPI 實績
+  const links = gk.linkedKpis ?? [];
+  if (links.length === 0) {
+    return <div className="kpid-ctree-empty">尚未連結任何活動 KPI</div>;
+  }
+
+  const seen = new Set<string>();
+  type ActGroup = {
+    actId: string;
+    act: DeptActivity | undefined;
+    kpis: Array<{
+      link: { activityId: string; kpiId: string };
+      kpi: KPI | undefined;
+    }>;
+  };
+  const actGroups: ActGroup[] = [];
+  for (const link of links) {
+    const actId =
+      link.activityId || (link as Record<string, string>).measureId || "";
+    if (!seen.has(actId)) {
+      seen.add(actId);
+      const act = deptActivities.find((a) => a.id === actId);
+      actGroups.push({ actId, act, kpis: [] });
+    }
+    const group = actGroups.find((g) => g.actId === actId)!;
+    const kpi = group.act?.kpis.find((k) => k.id === link.kpiId);
+    group.kpis.push({ link, kpi });
+  }
+
+  return (
+    <div className="kpid-ctree-wrap">
+      {actGroups.map(({ actId, act, kpis }) => (
+        <div key={actId} className="kpid-ctree-act-group">
+          <div className="kpid-ctree-act-name">
+            <span className="kpid-ctree-tag direct">活動</span>
+            {act?.rawText ?? actId}
+          </div>
+          {kpis.map(({ kpi }, ki) => {
+            const rate = kpi?.achievementRate;
+            const color =
+              rate != null
+                ? rate >= 100
+                  ? "#16a34a"
+                  : rate >= 60
+                    ? "#d97706"
+                    : "#dc2626"
+                : "#94a3b8";
+            return (
+              <div key={ki} className="kpid-ctree-row sub">
+                <span className="kpid-ctree-kpi-name">
+                  {kpi?.name || kpi?.label || "(未知 KPI)"}
+                </span>
+                <span className="kpid-ctree-val">
+                  {kpi
+                    ? `${kpi.actual ?? "─"} / ${kpi.target ?? "─"}${kpi.unit ? ` ${kpi.unit}` : ""}`
+                    : "─"}
+                </span>
+                <span className="kpid-ctree-rate-val" style={{ color }}>
+                  {rate != null ? `${rate}%` : "─"}
+                </span>
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>
   );
 }
 
-const NODE_TYPES = {
-  oNode: ONode,
-  goalNode: GoalNode,
-  strategyNode: StrategyNode,
-  goalKpiNode: GoalKpiNode,
-  activityNode: ActivityNode,
-};
+interface GkCardProps {
+  gk: GoalKPI;
+  goal: Goal;
+  deptActivities: DeptActivity[];
+  allGoals: Goal[];
+  selected: boolean;
+  onSelectNode: () => void;
+}
 
-// ─── GoalKPI Config Panel ─────────────────────────────────────────────────────
+function GkCard({
+  gk,
+  goal,
+  deptActivities,
+  allGoals,
+  selected,
+  onSelectNode,
+}: GkCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const result = computeGoalKpiResult(gk, goal, deptActivities, allGoals);
+  const gkKpi = isGKpi(gk);
+  const hasLinks =
+    gk.goalKpiType === "aggregate"
+      ? (gk.linkedGoalKpis?.length ?? 0) > 0
+      : gk.type === "pct_activity"
+        ? true // pct_activity always shows tree (uses result.activities)
+        : (gk.linkedKpis?.length ?? 0) > 0;
 
-interface ConfigPanelProps {
+  return (
+    <div
+      className={`kpid-gk-node${gkKpi ? " agg" : ""}${selected ? " selected" : ""}${expanded ? " expanded" : ""}`}
+      onClick={onSelectNode}
+      role="button"
+      tabIndex={0}
+    >
+      <div className="kpid-gk-header">
+        <span className="kpid-gk-label" title={gk.label}>
+          {gk.label}
+        </span>
+      </div>
+      <div className="kpid-gk-rate">
+        {result.rate !== null ? (
+          <strong
+            style={{
+              color:
+                result.rate >= 100
+                  ? "#16a34a"
+                  : result.rate >= 60
+                    ? "#d97706"
+                    : "#dc2626",
+            }}
+          >
+            {result.rate}%
+          </strong>
+        ) : (
+          "─"
+        )}{" "}
+        / 目標 {gk.target ?? "─"} {gk.unit}
+      </div>
+      {gk.type === "pct_activity"
+        ? result.metCount != null && (
+            <div className="kpid-gk-actval">
+              {result.metCount}&nbsp;/&nbsp;{result.totalCount}&nbsp;活動達標
+            </div>
+          )
+        : (result.actual != null || result.target != null) && (
+            <div className="kpid-gk-actval">
+              實際 {result.actual ?? "─"} / 目標 {result.target ?? "─"}
+              {gk.unit ? ` ${gk.unit}` : ""}
+            </div>
+          )}
+      {hasLinks && (
+        <button
+          className="kpid-ctree-toggle"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+        >
+          {expanded ? "▲ 收合來源" : "▼ 展開來源"}
+        </button>
+      )}
+      {expanded && (
+        <GkComputeTree
+          gk={gk}
+          goal={goal}
+          deptActivities={deptActivities}
+          allGoals={allGoals}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── KPI Canvas ───────────────────────────────────────────────────────────────
+
+interface KpiCanvasProps {
+  draftGoals: Goal[];
+  deptActivities: DeptActivity[];
+  selectedNodeId: string | null;
+  onSelectNode: (id: string) => void;
+}
+
+function KpiCanvas({
+  draftGoals,
+  deptActivities,
+  selectedNodeId,
+  onSelectNode,
+}: KpiCanvasProps) {
+  const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(new Set());
+  const toggleCollapse = (gId: string) =>
+    setCollapsedGoals((prev) => {
+      const next = new Set(prev);
+      next.has(gId) ? next.delete(gId) : next.add(gId);
+      return next;
+    });
+  if (draftGoals.length === 0) {
+    return (
+      <div className="kpid-canvas-empty">
+        <div className="kpid-canvas-empty-icon">📊</div>
+        <div>尚無目標，請切換到「項目模式」先建立目標</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="kpid-kpi-canvas">
+      {draftGoals.map((g) => {
+        const gkpis = g.goalKpis ?? [];
+        return (
+          <div key={g.id} className="kpid-kpi-goal-group">
+            <div
+              className={`kpid-kpi-goal-header${selectedNodeId === `g-${g.id}` ? " selected" : ""}`}
+              onClick={() => onSelectNode(`g-${g.id}`)}
+              role="button"
+              tabIndex={0}
+            >
+              <button
+                className="kpid-kpi-collapse-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCollapse(g.id);
+                }}
+                title={collapsedGoals.has(g.id) ? "展開" : "折疊"}
+              >
+                {collapsedGoals.has(g.id) ? "▶" : "▼"}
+              </button>
+              <span className="kpid-g-label">{g.label}</span>
+              <span style={{ marginLeft: 8, fontWeight: 500, fontSize: 13 }}>
+                {g.title}
+              </span>
+              <span className="kpid-kpi-goal-count">{gkpis.length} 個 KPI</span>
+            </div>
+            {!collapsedGoals.has(g.id) && (
+              <div className="kpid-kpi-gk-row">
+                {gkpis.length === 0 ? (
+                  <div className="kpid-kpi-no-gk">
+                    尚無 GoalKPI，可從左側面板或點擊上方目標後在右側新增
+                  </div>
+                ) : (
+                  (() => {
+                    const aggKpis = gkpis.filter(isGKpi);
+                    const directKpis = gkpis.filter((gk) => !isGKpi(gk));
+                    const renderCard = (gk: GoalKPI) => (
+                      <GkCard
+                        key={gk.id}
+                        gk={gk}
+                        goal={g}
+                        deptActivities={deptActivities}
+                        allGoals={draftGoals}
+                        selected={selectedNodeId === `gk-${gk.id}`}
+                        onSelectNode={() => onSelectNode(`gk-${gk.id}`)}
+                      />
+                    );
+                    return (
+                      <>
+                        {aggKpis.length > 0 && (
+                          <>
+                            <div className="kpid-canvas-subhead">G-KPI</div>
+                            {aggKpis.map(renderCard)}
+                          </>
+                        )}
+                        {directKpis.length > 0 && (
+                          <>
+                            <div
+                              className={`kpid-canvas-subhead${aggKpis.length > 0 ? " sub" : ""}`}
+                            >
+                              G-sub-KPI
+                            </div>
+                            {directKpis.map(renderCard)}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface GoalKpiConfigPanelProps {
   gk: GoalKPI;
   draftGoal: Goal;
   allGoals: Goal[];
   deptActivities: DeptActivity[];
   onUpdate: (updated: GoalKPI) => void;
+  onDelete: () => void;
   onClose: () => void;
 }
 
@@ -542,93 +567,178 @@ function GoalKpiConfigPanel({
   allGoals,
   deptActivities,
   onUpdate,
+  onDelete,
   onClose,
-}: ConfigPanelProps) {
+}: GoalKpiConfigPanelProps) {
   const isAgg = gk.goalKpiType === "aggregate";
-
+  const isPctActivity = gk.type === "pct_activity";
+  const [kpiSearch, setKpiSearch] = useState("");
+  const [kpiPickerOpen, setKpiPickerOpen] = useState(false);
   return (
-    <div className="kpid-config-panel">
+    <div className="kpid-node-config">
+      {/* Header */}
       <div className="kpid-config-header">
-        <span className="kpid-config-title" title={gk.label}>
-          {gk.label}
-        </span>
+        <span className="kpid-config-title">GK｜{gk.label}</span>
+        <button
+          className="kpid-config-close kpid-config-delete"
+          title="刪除此 KPI"
+          onClick={onDelete}
+        >
+          🗑
+        </button>
         <button className="kpid-config-close" onClick={onClose}>
           ✕
         </button>
       </div>
 
-      {/* Type toggle */}
+      {/* Label */}
       <div className="kpid-config-section">
-        <div className="kpid-config-label">GoalKPI 類型</div>
-        <div className="kpid-type-toggle">
-          <button
-            className={`kpid-type-btn${!isAgg ? " active" : ""}`}
-            onClick={() => onUpdate({ ...gk, goalKpiType: "direct" })}
-          >
-            直接映射
-          </button>
-          <button
-            className={`kpid-type-btn${isAgg ? " active" : ""}`}
-            onClick={() => onUpdate({ ...gk, goalKpiType: "aggregate" })}
-          >
-            聚合 GoalKPI
-          </button>
+        <div className="kpid-config-label">KPI 標籤</div>
+        <input
+          className="kpid-config-input"
+          value={gk.label}
+          onChange={(e) => onUpdate({ ...gk, label: e.target.value })}
+        />
+      </div>
+
+      {/* Target & Unit */}
+      <div className="kpid-config-section">
+        <div className="kpid-config-label">目標值 / 單位</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            className="kpid-config-input"
+            style={{ width: 80 }}
+            type="number"
+            value={gk.target ?? ""}
+            onChange={(e) =>
+              onUpdate({
+                ...gk,
+                target: e.target.value ? parseFloat(e.target.value) : null,
+              })
+            }
+          />
+          <input
+            className="kpid-config-input"
+            style={{ width: 60 }}
+            placeholder="單位"
+            value={gk.unit ?? ""}
+            onChange={(e) => onUpdate({ ...gk, unit: e.target.value })}
+          />
         </div>
       </div>
 
-      {isAgg ? (
+      {/* Links */}
+      {isPctActivity ? (
+        // G-KPI pct_activity: 選取 G-sub-KPI 作為門檻
         <div className="kpid-config-section">
-          <div className="kpid-config-label">連結的 GoalKPI</div>
-          {(gk.linkedGoalKpis ?? []).length === 0 && (
-            <div className="kpid-empty-links">請從下方選單新增連結 GoalKPI</div>
+          <div className="kpid-config-label">選取 G-sub-KPI 門檻</div>
+          <div className="kpid-config-hint">
+            勾選後會統計「有多少活動同時達到所選 KPI 門檻」
+          </div>
+          {(gk.thresholdGoalKpiIds ?? []).length === 0 && (
+            <div className="kpid-empty-links">尚未選取任何 G-sub-KPI</div>
           )}
-          {(gk.linkedGoalKpis ?? []).map((link, idx) => {
-            const refGoal = allGoals.find((g) => g.id === link.goalId);
-            const refGk = refGoal?.goalKpis?.find(
-              (g) => g.id === link.goalKpiId,
-            );
+          {(gk.thresholdGoalKpiIds ?? []).map((gkId) => {
+            const subGk = (draftGoal.goalKpis ?? []).find((g) => g.id === gkId);
             return (
-              <div
-                key={`${link.goalId}-${link.goalKpiId}`}
-                className="kpid-linked-row"
-              >
-                <span
-                  className="kpid-linked-name"
-                  title={`${refGoal?.label ?? link.goalId} / ${refGk?.label ?? link.goalKpiId}`}
-                >
-                  {refGoal?.label ?? link.goalId}&nbsp;/&nbsp;
-                  {refGk?.label ?? link.goalKpiId}
+              <div key={gkId} className="kpid-linked-row">
+                <span className="kpid-linked-name" title={subGk?.label ?? gkId}>
+                  {subGk?.label ?? gkId}
                 </span>
-                <label className="kpid-weight-label">
-                  權重
-                  <input
-                    type="number"
-                    className="kpid-weight-input"
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    value={link.weight}
-                    onChange={(e) => {
-                      const w = Math.min(
-                        1,
-                        Math.max(0, parseFloat(e.target.value) || 0),
-                      );
-                      onUpdate({
-                        ...gk,
-                        linkedGoalKpis: gk.linkedGoalKpis!.map((l, i) =>
-                          i === idx ? { ...l, weight: w } : l,
-                        ),
-                      });
-                    }}
-                  />
-                </label>
+                {subGk && (
+                  <span
+                    style={{ fontSize: 10, color: "#94a3b8", marginRight: 4 }}
+                  >
+                    目標 {subGk.target ?? "─"} {subGk.unit}
+                  </span>
+                )}
                 <button
                   className="kpid-remove-btn"
-                  title="移除"
                   onClick={() =>
                     onUpdate({
                       ...gk,
-                      linkedGoalKpis: gk.linkedGoalKpis!.filter(
+                      thresholdGoalKpiIds: (
+                        gk.thresholdGoalKpiIds ?? []
+                      ).filter((id) => id !== gkId),
+                    })
+                  }
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+          <select
+            className="kpid-add-select"
+            value=""
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id) return;
+              if ((gk.thresholdGoalKpiIds ?? []).includes(id)) return;
+              onUpdate({
+                ...gk,
+                thresholdGoalKpiIds: [...(gk.thresholdGoalKpiIds ?? []), id],
+              });
+            }}
+          >
+            <option value="">── 新增 G-sub-KPI...</option>
+            {(draftGoal.goalKpis ?? [])
+              .filter(
+                (subGk) =>
+                  !isGKpi(subGk) &&
+                  subGk.id !== gk.id &&
+                  !(gk.thresholdGoalKpiIds ?? []).includes(subGk.id),
+              )
+              .map((subGk) => (
+                <option key={subGk.id} value={subGk.id}>
+                  {subGk.label}
+                  {subGk.target != null
+                    ? ` (目標 ${subGk.target} ${subGk.unit})`
+                    : ""}
+                </option>
+              ))}
+          </select>
+        </div>
+      ) : isAgg ? (
+        <div className="kpid-config-section">
+          <div className="kpid-config-label">聚合來源 GoalKPI</div>
+          {(gk.linkedGoalKpis ?? []).map((link, idx) => {
+            const srcGoal = allGoals.find((g) => g.id === link.goalId);
+            const srcGk = srcGoal?.goalKpis?.find(
+              (g) => g.id === link.goalKpiId,
+            );
+            return (
+              <div key={link.goalKpiId} className="kpid-linked-row">
+                <span
+                  className="kpid-linked-name"
+                  title={`${srcGoal?.label} / ${srcGk?.label}`}
+                >
+                  {srcGoal?.label}&nbsp;/&nbsp;
+                  {srcGk?.label ?? link.goalKpiId}
+                </span>
+                <input
+                  type="number"
+                  className="kpid-weight-input"
+                  step={0.05}
+                  min={0}
+                  max={1}
+                  value={link.weight}
+                  onChange={(e) => {
+                    const w = parseFloat(e.target.value);
+                    onUpdate({
+                      ...gk,
+                      linkedGoalKpis: (gk.linkedGoalKpis ?? []).map((l, i) =>
+                        i === idx ? { ...l, weight: isNaN(w) ? 0 : w } : l,
+                      ),
+                    });
+                  }}
+                />
+                <button
+                  className="kpid-remove-btn"
+                  onClick={() =>
+                    onUpdate({
+                      ...gk,
+                      linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
                         (_, i) => i !== idx,
                       ),
                     })
@@ -649,6 +759,7 @@ function GoalKpiConfigPanel({
                 return;
               onUpdate({
                 ...gk,
+                goalKpiType: "aggregate",
                 linkedGoalKpis: [
                   ...(gk.linkedGoalKpis ?? []),
                   { goalId, goalKpiId, weight: 1 },
@@ -673,73 +784,114 @@ function GoalKpiConfigPanel({
         </div>
       ) : (
         <div className="kpid-config-section">
-          <div className="kpid-config-label">連結的活動 KPI</div>
-          {gk.linkedKpis.length === 0 && (
-            <div className="kpid-empty-links">請從下方選單新增連結 KPI</div>
-          )}
-          {gk.linkedKpis.map((link, idx) => {
-            const actId =
-              link.activityId ||
-              ((link as unknown as Record<string, string>).measureId ?? "");
-            const act = deptActivities.find((a) => a.id === actId);
-            const kpi = act?.kpis.find((k) => k.id === link.kpiId);
-            return (
-              <div key={`${actId}-${link.kpiId}`} className="kpid-linked-row">
-                <span
-                  className="kpid-linked-name"
-                  title={`${act?.rawText ?? actId} / ${(kpi as { name?: string; label?: string } | undefined)?.name ?? kpi?.label ?? link.kpiId}`}
-                >
-                  {act?.rawText ?? actId}&nbsp;/&nbsp;
-                  {kpi?.name ?? kpi?.label ?? link.kpiId}
-                </span>
-                <button
-                  className="kpid-remove-btn"
-                  title="移除"
-                  onClick={() =>
-                    onUpdate({
-                      ...gk,
-                      linkedKpis: gk.linkedKpis.filter((_, i) => i !== idx),
-                    })
-                  }
-                >
-                  ✕
-                </button>
+          <div className="kpid-kpi-link-picker">
+            <div className="kpid-config-label" style={{ marginBottom: 4 }}>
+              新增連結 M KPI
+            </div>
+            <input
+              className="g-kpi-link-search"
+              placeholder="🔍 點擊搜尋並選擇 M KPI..."
+              value={kpiSearch}
+              onChange={(e) => setKpiSearch(e.target.value)}
+              onFocus={() => setKpiPickerOpen(true)}
+              onBlur={() => setTimeout(() => setKpiPickerOpen(false), 150)}
+            />
+            {kpiPickerOpen && (
+              <div
+                className="kpid-kpi-link-list"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {(() => {
+                  const q = kpiSearch.trim().toLowerCase();
+                  const rows = deptActivities.flatMap((act) =>
+                    (act.kpis ?? []).map((kpi) => ({ act, kpi })),
+                  );
+                  const filtered = rows.filter(({ act, kpi }) => {
+                    if (q) {
+                      const actLabel = (act.rawText || act.id).toLowerCase();
+                      const kpiLabel = (
+                        kpi.name ||
+                        kpi.label ||
+                        kpi.id
+                      ).toLowerCase();
+                      if (!actLabel.includes(q) && !kpiLabel.includes(q))
+                        return false;
+                    }
+                    return true;
+                  });
+                  if (filtered.length === 0)
+                    return (
+                      <div className="g-kpi-link-empty">
+                        {q ? "找不到符合的結果" : "此部門沒有 M KPI"}
+                      </div>
+                    );
+                  const isLinked = ({
+                    act,
+                    kpi,
+                  }: {
+                    act: { id: string };
+                    kpi: { id: string };
+                  }) =>
+                    gk.linkedKpis.some(
+                      (l) =>
+                        (l.activityId ||
+                          ((l as unknown as Record<string, string>).measureId ??
+                            "")) === act.id && l.kpiId === kpi.id,
+                    );
+                  const sortedFiltered = [
+                    ...filtered.filter(isLinked),
+                    ...filtered.filter((r) => !isLinked(r)),
+                  ];
+                  return sortedFiltered.map(({ act, kpi }) => {
+                    const linked = isLinked({ act, kpi });
+                    return (
+                      <label
+                        key={`${act.id}::${kpi.id}`}
+                        className={`g-kpi-link-item${linked ? " linked" : ""}`}
+                        onClick={() => {
+                          if (linked) {
+                            onUpdate({
+                              ...gk,
+                              linkedKpis: gk.linkedKpis.filter(
+                                (l) =>
+                                  !(
+                                    (l.activityId ||
+                                      ((l as unknown as Record<string, string>)
+                                        .measureId ??
+                                        "")) === act.id && l.kpiId === kpi.id
+                                  ),
+                              ),
+                            });
+                          } else {
+                            onUpdate({
+                              ...gk,
+                              linkedKpis: [
+                                ...gk.linkedKpis,
+                                { activityId: act.id, kpiId: kpi.id },
+                              ],
+                            });
+                          }
+                        }}
+                      >
+                        <input type="checkbox" checked={linked} readOnly />
+                        <span className="g-kpi-link-m">
+                          {(act.rawText || act.id).substring(0, 20)}
+                        </span>
+                        <span className="g-kpi-link-k">
+                          {kpi.name || kpi.label || kpi.id}
+                        </span>
+                        {(kpi.actual != null || kpi.target != null) && (
+                          <span className="g-kpi-link-val">
+                            {kpi.actual ?? "--"} / {kpi.target ?? "--"}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  });
+                })()}
               </div>
-            );
-          })}
-          <select
-            className="kpid-add-select"
-            value=""
-            onChange={(e) => {
-              const [actId, kpiId] = e.target.value.split("::");
-              if (!actId) return;
-              if (
-                gk.linkedKpis.some(
-                  (l) =>
-                    (l.activityId ||
-                      ((l as unknown as Record<string, string>).measureId ??
-                        "")) === actId && l.kpiId === kpiId,
-                )
-              )
-                return;
-              onUpdate({
-                ...gk,
-                linkedKpis: [...gk.linkedKpis, { activityId: actId, kpiId }],
-              });
-            }}
-          >
-            <option value="">── 新增連結活動 KPI...</option>
-            {deptActivities.flatMap((act) =>
-              (act.kpis ?? []).map((kpi) => (
-                <option
-                  key={`${act.id}::${kpi.id}`}
-                  value={`${act.id}::${kpi.id}`}
-                >
-                  {act.rawText || act.id}&nbsp;/&nbsp;{kpi.name || kpi.id}
-                </option>
-              )),
             )}
-          </select>
+          </div>
           {(() => {
             const linkedActIds = new Set(
               gk.linkedKpis.map(
@@ -777,17 +929,18 @@ function GoalKpiConfigPanel({
                     className="kpid-kpi-summary-row"
                   >
                     <span className="kpid-kpi-summary-name">
+                      {act?.rawText ?? actId}&nbsp;/&nbsp;
                       {kpi.name || kpi.label || link.kpiId}
                     </span>
                     <span className="kpid-kpi-summary-val">
-                      {kpi.actual ?? "─"}&nbsp;/&nbsp;{kpi.target ?? "─"}&nbsp;
-                      {kpi.unit}
+                      {kpi.actual ?? "─"}&nbsp;/&nbsp;{kpi.target ?? "─"}
+                      {kpi.unit ? <>&nbsp;({kpi.unit})</> : null}
                     </span>
                     {rate != null && (
                       <span
                         className={`kpid-kpi-summary-rate${rate >= 100 ? " done" : rate >= 60 ? " ok" : " warn"}`}
                       >
-                        {rate}%
+                        {Math.round(rate * 10) / 10}%
                       </span>
                     )}
                   </div>
@@ -829,16 +982,69 @@ function GoalKpiConfigPanel({
         return (
           <div className="kpid-preview">
             <div className="kpid-config-label">預覽結果</div>
-            <div className="kpid-preview-row">
-              <span>實際值</span>
-              <strong>{result.actual ?? "─"}</strong>
-            </div>
-            <div className="kpid-preview-row">
-              <span>目標值</span>
-              <strong>
-                {result.target ?? "─"}&nbsp;{gk.unit}
-              </strong>
-            </div>
+            {isPctActivity ? (
+              <>
+                <div className="kpid-preview-row">
+                  <span>達標活動數</span>
+                  <strong>
+                    {result.metCount ?? "─"} / {result.totalCount}
+                  </strong>
+                </div>
+                <div className="kpid-preview-row">
+                  <span>達標率</span>
+                  <strong>
+                    {result.actual != null ? `${result.actual}%` : "─"}
+                  </strong>
+                </div>
+              </>
+            ) : (
+              <>
+                {(() => {
+                  const linkedValues = gk.linkedKpis.flatMap((link) => {
+                    const actId =
+                      link.activityId ||
+                      ((link as unknown as Record<string, string>).measureId ??
+                        "");
+                    const act = deptActivities.find((a) => a.id === actId);
+                    const kpi = act?.kpis.find((k) => k.id === link.kpiId);
+                    if (!kpi) return [];
+                    return [
+                      { actual: kpi.actual ?? 0, target: kpi.target ?? 0 },
+                    ];
+                  });
+                  const formulaStr =
+                    linkedValues.length > 1
+                      ? `(${linkedValues.map((v) => v.actual).join(" + ")}) / (${linkedValues.map((v) => v.target).join(" + ")})`
+                      : linkedValues.length === 1
+                        ? `${linkedValues[0].actual} / ${linkedValues[0].target}`
+                        : null;
+                  return (
+                    <>
+                      <div className="kpid-preview-row">
+                        <span>實際值</span>
+                        <strong>
+                          {result.actual ?? "─"}
+                          {gk.unit ? ` ${gk.unit}` : ""}
+                        </strong>
+                      </div>
+                      {formulaStr && (
+                        <div className="kpid-preview-formula-row">
+                          <span className="kpid-preview-formula">
+                            = {formulaStr}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+                <div className="kpid-preview-row">
+                  <span>目標值</span>
+                  <strong>
+                    {result.target ?? "─"}&nbsp;{gk.unit}
+                  </strong>
+                </div>
+              </>
+            )}
             <div className="kpid-preview-row">
               <span>達成率</span>
               <strong
@@ -862,250 +1068,302 @@ function GoalKpiConfigPanel({
   );
 }
 
-// ─── OGS Tree (left panel) ────────────────────────────────────────────────────
+// ─── NodeTypeManager (left panel for item mode) ───────────────────────────────
 
-interface OgsTreeProps {
+interface NodeTypeManagerProps {
   data: OGSMData;
+  deptActivities: DeptActivity[];
+  freeNodes: FreeNode[];
   selectedNodeId: string | null;
+  moduleId: ModuleId;
   onSelectNode: (id: string) => void;
   onUpdateData: (d: OGSMData) => void;
   onAddGoal: () => void;
   onDeleteGoal: (id: string) => void;
-  onAddStrategyToGoal: (goalId: string) => void;
+  onCopyGoal: (id: string) => void;
+  onAddStrategy: (goalId: string) => void;
   onDeleteStrategy: (stratId: string) => void;
+  onCopyStrategy: (stratId: string) => void;
+  onAddFreeNode: () => void;
+  onDeleteFreeNode: (id: string) => void;
+  onCopyFreeNode: (id: string) => void;
   style?: React.CSSProperties;
 }
 
-function OgsTree({
+function NodeTypeManager({
   data,
+  deptActivities: _deptActivities,
+  freeNodes,
   selectedNodeId,
+  moduleId,
   onSelectNode,
   onUpdateData,
   onAddGoal,
   onDeleteGoal,
-  onAddStrategyToGoal,
+  onCopyGoal,
+  onAddStrategy,
   onDeleteStrategy,
+  onCopyStrategy,
+  onAddFreeNode,
+  onDeleteFreeNode,
+  onCopyFreeNode,
   style,
-}: OgsTreeProps) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+}: NodeTypeManagerProps) {
+  const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({});
+  const [addingStratFor, setAddingStratFor] = React.useState<string | null>(
+    null,
+  );
 
-  const startEdit = (id: string, current: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    setEditingId(id);
-    setEditText(current);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
-  const commitEdit = () => {
-    if (!editingId) return;
-    const id = editingId;
-    const text = editText.trim();
-    setEditingId(null);
-
-    if (id === "o") {
-      onUpdateData({
-        ...data,
-        objectives: { ...data.objectives, deptO: text },
-      });
-    } else if (id.startsWith("g-")) {
-      const gid = id.slice(2);
-      const [labelPart, ...rest] = text.split(" ");
-      const newLabel = rest.length
-        ? labelPart
-        : (data.goals.find((g) => g.id === gid)?.label ?? "");
-      const newTitle = rest.length ? rest.join(" ") : text;
-      onUpdateData({
-        ...data,
-        goals: data.goals.map((g) =>
-          g.id !== gid
-            ? g
-            : {
-                ...g,
-                label: newLabel || g.label,
-                title: newTitle || g.title,
-                updatedAt: new Date().toISOString(),
-              },
-        ),
-      });
-    } else if (id.startsWith("s-")) {
-      const sid = id.slice(2);
-      onUpdateData({
-        ...data,
-        goals: data.goals.map((g) => ({
-          ...g,
-          strategies: g.strategies.map((s) =>
-            s.id !== sid
-              ? s
-              : {
-                  ...s,
-                  title: text || s.title,
-                  updatedAt: new Date().toISOString(),
-                },
-          ),
-        })),
-      });
-    }
-  };
-
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement))
-      commitEdit();
-    if (e.key === "Escape") setEditingId(null);
-  };
+  const toggle = (key: string) =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
   return (
-    <div className="kpid-ogs-tree" style={style}>
-      {/* O */}
-      <div className="kpid-tree-section-label">組織目標 (O)</div>
-      <div
-        className={`kpid-tree-o${selectedNodeId === "o" ? " selected" : ""}`}
-        onClick={() => onSelectNode("o")}
-      >
-        {editingId === "o" ? (
-          <textarea
-            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-            className="kpid-tree-edit"
-            value={editText}
-            rows={3}
-            onChange={(e) => setEditText(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={handleKey}
-          />
-        ) : (
-          <span
-            className="kpid-tree-o-text"
-            onDoubleClick={() => startEdit("o", data.objectives.deptO)}
-          >
-            {data.objectives.deptO || "（雙擊編輯組織目標）"}
-          </span>
-        )}
-      </div>
-
-      {/* G list */}
-      <div className="kpid-tree-section-label">
-        目標 (G)
-        <button
-          className="kpid-tree-add-btn"
-          onClick={onAddGoal}
-          title="新增目標"
-        >
-          ＋
-        </button>
-      </div>
-      <div className="kpid-tree-g-list">
-        {data.goals.map((g) => (
-          <div key={g.id} className="kpid-tree-g-item">
+    <div className="ntm-root" style={style}>
+      {!moduleId && (
+        <div className="ntm-no-module">請先從頂部下拉選單選擇模組</div>
+      )}
+      {moduleId === "ogsm" && (
+        <>
+          {/* ── O Section ─────────────────────────────────── */}
+          <div className="ntm-section-header" onClick={() => toggle("o")}>
+            <button className="ntm-collapse-btn">
+              {collapsed["o"] ? "▶" : "▼"}
+            </button>
+            <span className="ntm-section-label">組織目標 O</span>
+            <span className="ntm-count-badge">1</span>
+          </div>
+          {!collapsed["o"] && (
             <div
-              className={`kpid-tree-g-header${selectedNodeId === `g-${g.id}` ? " selected" : ""}`}
-              onClick={() => onSelectNode(`g-${g.id}`)}
+              className={`ntm-item-row${selectedNodeId === "o" ? " selected" : ""}`}
+              onClick={() => onSelectNode("o")}
             >
-              <span className="kpid-tree-g-label">{g.label}</span>
-              {editingId === `g-${g.id}` ? (
-                <input
-                  ref={inputRef as React.RefObject<HTMLInputElement>}
-                  className="kpid-tree-edit-inline"
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  onBlur={commitEdit}
-                  onKeyDown={handleKey}
-                />
-              ) : (
-                <span
-                  className="kpid-tree-g-title"
-                  onDoubleClick={(e) =>
-                    startEdit(`g-${g.id}`, `${g.label} ${g.title}`, e)
-                  }
-                >
-                  {g.title}
-                </span>
-              )}
-              <div className="kpid-tree-actions">
-                <button
-                  className="kpid-tree-action-btn"
-                  title="新增策略"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAddStrategyToGoal(g.id);
-                  }}
-                >
-                  S＋
-                </button>
-                <button
-                  className="kpid-tree-action-btn del"
-                  title="刪除目標"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteGoal(g.id);
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
+              <span className="ntm-type-badge o">O</span>
+              <span className="ntm-item-label">
+                {data.objectives.deptO || "（未設定）"}
+              </span>
             </div>
+          )}
 
-            {g.strategies.length > 0 && (
-              <div className="kpid-tree-s-list">
-                {g.strategies.map((s) => (
-                  <div
-                    key={s.id}
-                    className={`kpid-tree-s-item${selectedNodeId === `s-${s.id}` ? " selected" : ""}`}
-                    onClick={() => onSelectNode(`s-${s.id}`)}
-                  >
-                    {editingId === `s-${s.id}` ? (
-                      <input
-                        ref={inputRef as React.RefObject<HTMLInputElement>}
-                        className="kpid-tree-edit-inline"
-                        value={editText}
-                        onChange={(e) => setEditText(e.target.value)}
-                        onBlur={commitEdit}
-                        onKeyDown={handleKey}
-                      />
-                    ) : (
-                      <span
-                        className="kpid-tree-s-title"
-                        onDoubleClick={(e) =>
-                          startEdit(`s-${s.id}`, s.title, e)
-                        }
-                      >
-                        {s.title}
-                      </span>
-                    )}
+          {/* ── G Section ─────────────────────────────────── */}
+          <div className="ntm-section-header" onClick={() => toggle("g")}>
+            <button className="ntm-collapse-btn">
+              {collapsed["g"] ? "▶" : "▼"}
+            </button>
+            <span className="ntm-section-label">目標 G</span>
+            <span className="ntm-count-badge">{data.goals.length}</span>
+            <button
+              className="ntm-add-btn"
+              title="新增目標"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddGoal();
+              }}
+            >
+              ＋
+            </button>
+          </div>
+          {!collapsed["g"] && (
+            <>
+              {data.goals.length === 0 && (
+                <div className="ntm-empty">尚無目標，按 ＋ 新增</div>
+              )}
+              {data.goals.map((g) => (
+                <div
+                  key={g.id}
+                  className={`ntm-item-row${selectedNodeId === `g-${g.id}` ? " selected" : ""}`}
+                  onClick={() => onSelectNode(`g-${g.id}`)}
+                >
+                  <span className="ntm-type-badge g">G</span>
+                  <span className="ntm-item-label" title={g.title}>
+                    {g.label} {g.title}
+                  </span>
+                  <div className="ntm-item-actions">
                     <button
-                      className="kpid-tree-action-btn del"
-                      title="刪除策略"
+                      className="ntm-action-btn"
+                      title="複製目標"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteStrategy(s.id);
+                        onCopyGoal(g.id);
+                      }}
+                    >
+                      ⧉
+                    </button>
+                    <button
+                      className="ntm-action-btn del"
+                      title="刪除目標"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteGoal(g.id);
                       }}
                     >
                       ✕
                     </button>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </>
+          )}
 
-            {(g.goalKpis?.length ?? 0) > 0 && (
-              <div className="kpid-tree-gk-list">
-                {g.goalKpis!.map((gk) => (
-                  <div
-                    key={gk.id}
-                    className={`kpid-tree-gk-tag${gk.goalKpiType === "aggregate" ? " agg" : ""}${selectedNodeId === `gk-${gk.id}` ? " selected" : ""}`}
-                    onClick={() => onSelectNode(`gk-${gk.id}`)}
-                    title={
-                      gk.goalKpiType === "aggregate" ? "聚合 KPI" : "直接 KPI"
-                    }
-                  >
-                    {gk.label}
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* ── S Section ─────────────────────────────────── */}
+          <div className="ntm-section-header" onClick={() => toggle("s")}>
+            <button className="ntm-collapse-btn">
+              {collapsed["s"] ? "▶" : "▼"}
+            </button>
+            <span className="ntm-section-label">策略 S</span>
+            <span className="ntm-count-badge">
+              {data.goals.reduce((n, g) => n + g.strategies.length, 0)}
+            </span>
+            <button
+              className="ntm-add-btn"
+              title="新增策略"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (data.goals.length === 1) {
+                  onAddStrategy(data.goals[0].id);
+                } else {
+                  setAddingStratFor(addingStratFor ? null : "__pick__");
+                }
+              }}
+            >
+              ＋
+            </button>
           </div>
-        ))}
-      </div>
+          {addingStratFor === "__pick__" && (
+            <div className="ntm-goal-picker">
+              <span>選擇目標：</span>
+              {data.goals.map((g) => (
+                <button
+                  key={g.id}
+                  className="ntm-goal-pick-btn"
+                  onClick={() => {
+                    onAddStrategy(g.id);
+                    setAddingStratFor(null);
+                  }}
+                >
+                  {g.label}
+                </button>
+              ))}
+              <button
+                className="ntm-goal-pick-cancel"
+                onClick={() => setAddingStratFor(null)}
+              >
+                取消
+              </button>
+            </div>
+          )}
+          {!collapsed["s"] && (
+            <>
+              {data.goals.flatMap((g) => g.strategies).length === 0 && (
+                <div className="ntm-empty">尚無策略，按 ＋ 新增</div>
+              )}
+              {data.goals.flatMap((g) =>
+                g.strategies.map((s) => (
+                  <div
+                    key={s.id}
+                    className={`ntm-item-row${selectedNodeId === `s-${s.id}` ? " selected" : ""}`}
+                    onClick={() => onSelectNode(`s-${s.id}`)}
+                  >
+                    <span className="ntm-type-badge s">S</span>
+                    <span className="ntm-item-label" title={s.title}>
+                      <span className="ntm-parent-hint">{g.label}</span>{" "}
+                      {s.title}
+                    </span>
+                    <div className="ntm-item-actions">
+                      <button
+                        className="ntm-action-btn"
+                        title="複製策略"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCopyStrategy(s.id);
+                        }}
+                      >
+                        ⧉
+                      </button>
+                      <button
+                        className="ntm-action-btn del"
+                        title="刪除策略"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteStrategy(s.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )),
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {moduleId === "other" && (
+        <>
+          {/* ── 自由節點 Section ──────────────────────────── */}
+          <div className="ntm-section-header" onClick={() => toggle("free")}>
+            <button className="ntm-collapse-btn">
+              {collapsed["free"] ? "▶" : "▼"}
+            </button>
+            <span className="ntm-section-label">其他 (自由節點)</span>
+            <span className="ntm-count-badge">{freeNodes.length}</span>
+            <button
+              className="ntm-add-btn"
+              title="新增自由節點"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddFreeNode();
+              }}
+            >
+              ＋
+            </button>
+          </div>
+          {!collapsed["free"] && (
+            <>
+              {freeNodes.length === 0 && (
+                <div className="ntm-empty">按 ＋ 新增自由節點</div>
+              )}
+              {freeNodes.map((fn) => (
+                <div
+                  key={fn.id}
+                  className={`ntm-item-row${selectedNodeId === `free-${fn.id}` ? " selected" : ""}`}
+                  onClick={() => onSelectNode(`free-${fn.id}`)}
+                >
+                  <span className="ntm-type-badge free">其</span>
+                  <span className="ntm-item-label">
+                    {fn.name || "自由節點"}
+                  </span>
+                  <div className="ntm-item-actions">
+                    <button
+                      className="ntm-action-btn"
+                      title="複製"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCopyFreeNode(fn.id);
+                      }}
+                    >
+                      ⧉
+                    </button>
+                    <button
+                      className="ntm-action-btn del"
+                      title="刪除"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteFreeNode(fn.id);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
+
+      {/* dummy usage to avoid unused-var — onUpdateData used by NodeConfig */}
+      {void onUpdateData}
     </div>
   );
 }
@@ -1118,6 +1376,9 @@ interface KpiGoalTreeProps {
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
   onAddGoalKpi: (goalId: string) => void;
+  onAddGoalKpiOfType: (goalId: string, type: "direct" | "aggregate") => void;
+  onDeleteGoalKpi: (gkId: string) => void;
+  onCopyGoalKpi: (gkId: string) => void;
   style?: React.CSSProperties;
 }
 
@@ -1126,7 +1387,9 @@ function KpiGoalTree({
   deptActivities,
   selectedNodeId,
   onSelectNode,
-  onAddGoalKpi,
+  onAddGoalKpiOfType,
+  onDeleteGoalKpi,
+  onCopyGoalKpi,
   style,
 }: KpiGoalTreeProps) {
   return (
@@ -1146,54 +1409,128 @@ function KpiGoalTree({
                 <div className="kpid-tree-actions">
                   <button
                     className="kpid-tree-add-btn"
-                    title="新增 GoalKPI"
+                    title="新增 G-sub-KPI"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onAddGoalKpi(g.id);
+                      onAddGoalKpiOfType(g.id, "direct");
                     }}
                   >
-                    KPI＋
+                    sub＋
+                  </button>
+                  <button
+                    className="kpid-tree-add-btn"
+                    title="新增 G-KPI"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddGoalKpiOfType(g.id, "aggregate");
+                    }}
+                  >
+                    G-KPI＋
                   </button>
                 </div>
               </div>
               {gkpis.length > 0 ? (
                 <div className="kpid-tree-gk-rows">
-                  {gkpis.map((gk) => {
-                    const result = computeGoalKpiResult(
-                      gk,
-                      g,
-                      deptActivities,
-                      draftGoals,
-                    );
-                    const rate = result.rate;
+                  {(() => {
+                    const aggKpis = gkpis.filter(isGKpi);
+                    const directKpis = gkpis.filter((gk) => !isGKpi(gk));
+                    const renderGkRow = (gk: GoalKPI) => {
+                      const result = computeGoalKpiResult(
+                        gk,
+                        g,
+                        deptActivities,
+                        draftGoals,
+                      );
+                      const rate = result.rate;
+                      const rateClass =
+                        rate !== null
+                          ? rate >= 100
+                            ? " done"
+                            : rate >= 60
+                              ? " ok"
+                              : " warn"
+                          : "";
+                      return (
+                        <div
+                          key={gk.id}
+                          className={`kpid-tree-gk-full-row${selectedNodeId === `gk-${gk.id}` ? " selected" : ""}`}
+                          onClick={() => onSelectNode(`gk-${gk.id}`)}
+                        >
+                          <div className="kpid-tree-gk-row-main">
+                            <span
+                              className="kpid-tree-gk-fullname"
+                              title={gk.label}
+                            >
+                              {gk.isHeadline && (
+                                <span className="kpid-tree-gk-star">★ </span>
+                              )}
+                              {gk.label}
+                            </span>
+                            <span className={`kpid-tree-gk-pct${rateClass}`}>
+                              {rate !== null ? `${rate}%` : "─"}
+                            </span>
+                            <div className="ntm-item-actions kpid-tree-gk-actions">
+                              <button
+                                className="ntm-action-btn"
+                                title="複製"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCopyGoalKpi(gk.id);
+                                }}
+                              >
+                                ⧉
+                              </button>
+                              <button
+                                className="ntm-action-btn del"
+                                title="刪除"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteGoalKpi(gk.id);
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                          {gk.type === "pct_activity"
+                            ? result.metCount != null && (
+                                <div className="kpid-tree-gk-row-vals">
+                                  {result.metCount}&nbsp;/&nbsp;
+                                  {result.totalCount}&nbsp;活動達標
+                                </div>
+                              )
+                            : (result.actual != null ||
+                                result.target != null) && (
+                                <div className="kpid-tree-gk-row-vals">
+                                  實際 {result.actual ?? "─"} / 目標{" "}
+                                  {result.target ?? "─"}
+                                  {gk.unit ? ` ${gk.unit}` : ""}
+                                </div>
+                              )}
+                        </div>
+                      );
+                    };
                     return (
-                      <div
-                        key={gk.id}
-                        className={`kpid-tree-gk-full-row${selectedNodeId === `gk-${gk.id}` ? " selected" : ""}`}
-                        onClick={() => onSelectNode(`gk-${gk.id}`)}
-                      >
-                        <span
-                          className={`kpid-tree-gk-type-tag${gk.goalKpiType === "aggregate" ? " agg" : ""}`}
-                        >
-                          {gk.goalKpiType === "aggregate" ? "聚" : "直"}
-                        </span>
-                        {gk.isHeadline && (
-                          <span className="kpid-tree-gk-star">★</span>
+                      <>
+                        {aggKpis.length > 0 && (
+                          <>
+                            <div className="kpid-tree-gk-subhead">G-KPI</div>
+                            {aggKpis.map(renderGkRow)}
+                          </>
                         )}
-                        <span
-                          className="kpid-tree-gk-fullname"
-                          title={gk.label}
-                        >
-                          {gk.label}
-                        </span>
-                        <span
-                          className={`kpid-tree-gk-pct${rate !== null ? (rate >= 100 ? " done" : rate >= 60 ? " ok" : " warn") : ""}`}
-                        >
-                          {rate !== null ? `${rate}%` : "─"}
-                        </span>
-                      </div>
+                        {directKpis.length > 0 && (
+                          <>
+                            <div
+                              className={`kpid-tree-gk-subhead${aggKpis.length > 0 ? " sub" : ""}`}
+                            >
+                              G-sub-KPI
+                            </div>
+                            {directKpis.map(renderGkRow)}
+                          </>
+                        )}
+                      </>
                     );
-                  })}
+                  })()}
                 </div>
               ) : (
                 <div className="kpid-tree-gk-none">尚無 GoalKPI</div>
@@ -1206,36 +1543,48 @@ function KpiGoalTree({
   );
 }
 
-// ─── GoalKPI List Panel (right panel for G node in KPI mode) ─────────────────
+// ─── Goal KPI Summary Panel (right panel for G node in KPI mode) ───────────────
 
-interface GoalKpiListPanelProps {
+interface GoalKpiSummaryPanelProps {
   draftGoal: Goal;
   allGoals: Goal[];
   deptActivities: DeptActivity[];
+  onSelectGk: (gkId: string) => void;
   onUpdateGoalKpis: (goalId: string, kpis: GoalKPI[]) => void;
+  onDeleteGoalKpi: (gkId: string) => void;
+  onCopyGoalKpi: (gkId: string) => void;
+  onAddGoalKpiOfType: (goalId: string, type: "direct" | "aggregate") => void;
   onClose: () => void;
 }
 
-function GoalKpiListPanel({
+function GoalKpiSummaryPanel({
   draftGoal,
   allGoals,
   deptActivities,
-  onUpdateGoalKpis,
+  onSelectGk,
+  onUpdateGoalKpis: _onUpdateGoalKpis,
+  onDeleteGoalKpi,
+  onCopyGoalKpi,
+  onAddGoalKpiOfType,
   onClose,
-}: GoalKpiListPanelProps) {
+}: GoalKpiSummaryPanelProps) {
   const gkpis = draftGoal.goalKpis ?? [];
-
-  const updateGk = (updated: GoalKPI) =>
-    onUpdateGoalKpis(
-      draftGoal.id,
-      gkpis.map((gk) => (gk.id === updated.id ? updated : gk)),
-    );
-
-  const deleteGk = (gkId: string) =>
-    onUpdateGoalKpis(
-      draftGoal.id,
-      gkpis.filter((gk) => gk.id !== gkId),
-    );
+  const results = gkpis.map((gk) => ({
+    gk,
+    result: computeGoalKpiResult(gk, draftGoal, deptActivities, allGoals),
+  }));
+  const metCount = results.filter(
+    ({ result }) => (result.rate ?? 0) >= 100,
+  ).length;
+  const ratedResults = results.filter(({ result }) => result.rate !== null);
+  const overallRate =
+    ratedResults.length > 0
+      ? Math.round(
+          (ratedResults.reduce((s, { result }) => s + (result.rate ?? 0), 0) /
+            ratedResults.length) *
+            10,
+        ) / 10
+      : null;
 
   const addGk = () => {
     const newGk: GoalKPI = {
@@ -1247,143 +1596,145 @@ function GoalKpiListPanel({
       linkedKpis: [],
       goalKpiType: "direct",
     };
-    onUpdateGoalKpis(draftGoal.id, [...gkpis, newGk]);
+    _onUpdateGoalKpis(draftGoal.id, [...gkpis, newGk]);
+  };
+  void addGk; // keep for potential future use
+
+  const aggKpis = gkpis.filter(isGKpi);
+  const directKpis = gkpis.filter((gk) => !isGKpi(gk));
+
+  const renderGkRow = (gk: GoalKPI) => {
+    const r = results.find((x) => x.gk.id === gk.id)?.result;
+    const rate = r?.rate ?? null;
+    const rateClass =
+      rate !== null
+        ? rate >= 100
+          ? " done"
+          : rate >= 60
+            ? " ok"
+            : " warn"
+        : "";
+    return (
+      <div
+        key={gk.id}
+        className="kpid-gks-row"
+        onClick={() => onSelectGk(gk.id)}
+        title="點擊進入 KPI 設定"
+        role="button"
+        tabIndex={0}
+      >
+        <span className="kpid-gks-name">
+          {gk.isHeadline && <span className="kpid-tree-gk-star">★ </span>}
+          {gk.label}
+        </span>
+        {r && (r.actual !== null || r.target !== null) && (
+          <span className="kpid-gks-vals">
+            {r.actual ?? "─"}&nbsp;/&nbsp;{r.target ?? "─"}
+            {gk.unit ? ` ${gk.unit}` : ""}
+          </span>
+        )}
+        <span className={`kpid-gks-rate${rateClass}`}>
+          {rate !== null ? `${rate}%` : "─"}
+        </span>
+        <div className="ntm-item-actions kpid-gks-row-actions">
+          <button
+            className="ntm-action-btn"
+            title="複製"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyGoalKpi(gk.id);
+            }}
+          >
+            ⧉
+          </button>
+          <button
+            className="ntm-action-btn del"
+            title="刪除"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteGoalKpi(gk.id);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+        <span className="kpid-gks-arrow">›</span>
+      </div>
+    );
   };
 
   return (
     <div className="kpid-node-config">
       <div className="kpid-config-header">
-        <span className="kpid-config-title">
-          {draftGoal.label}｜GoalKPI 設定
-        </span>
+        <span className="kpid-config-title">{draftGoal.label}｜KPI 總覽</span>
         <button className="kpid-config-close" onClick={onClose}>
           ✕
         </button>
       </div>
+
+      <div className="kpid-g-summary-bar">
+        <span className="kpid-g-summary-met">
+          達標&nbsp;<strong>{metCount}</strong>&nbsp;/&nbsp;{gkpis.length}
+        </span>
+        {overallRate !== null && (
+          <span
+            className={`kpid-g-summary-rate${
+              overallRate >= 100 ? " done" : overallRate >= 60 ? " ok" : " warn"
+            }`}
+          >
+            整體&nbsp;<strong>{overallRate}%</strong>
+          </span>
+        )}
+      </div>
+
       <div className="kpid-config-section">
-        <div
-          className="kpid-config-label"
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>GoalKPI 列表（{gkpis.length} 個）</span>
-          <button className="kpid-tree-add-btn" onClick={addGk}>
-            ＋ 新增
+        {gkpis.length === 0 ? (
+          <div className="kpid-empty-links">
+            尚無 GoalKPI，按下方「＋ 新增」建立
+          </div>
+        ) : (
+          <>
+            {aggKpis.length > 0 && (
+              <>
+                <div className="kpid-gks-subhead">G-KPI</div>
+                {aggKpis.map(renderGkRow)}
+              </>
+            )}
+            {directKpis.length > 0 && (
+              <>
+                <div
+                  className={`kpid-gks-subhead${
+                    aggKpis.length > 0 ? " sub" : ""
+                  }`}
+                >
+                  G-sub-KPI
+                </div>
+                {directKpis.map(renderGkRow)}
+              </>
+            )}
+          </>
+        )}
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <button
+            className="kpid-gks-add-btn"
+            onClick={() => onAddGoalKpiOfType(draftGoal.id, "direct")}
+          >
+            ＋ G-sub-KPI
+          </button>
+          <button
+            className="kpid-gks-add-btn"
+            onClick={() => onAddGoalKpiOfType(draftGoal.id, "aggregate")}
+          >
+            ＋ G-KPI
           </button>
         </div>
-        {gkpis.length === 0 && (
-          <div className="kpid-empty-links">
-            尚無 GoalKPI，按「＋ 新增」建立
-          </div>
-        )}
-        {gkpis.map((gk) => {
-          const result = computeGoalKpiResult(
-            gk,
-            draftGoal,
-            deptActivities,
-            allGoals,
-          );
-          return (
-            <div key={gk.id} className="kpid-gkl-item">
-              {/* Row 1: label input + delete */}
-              <div className="kpid-gkl-row1">
-                <input
-                  className="kpid-gkl-label-input"
-                  value={gk.label}
-                  placeholder="KPI 名稱"
-                  onChange={(e) => updateGk({ ...gk, label: e.target.value })}
-                />
-                <button
-                  className="kpid-remove-btn"
-                  title="刪除"
-                  onClick={() => deleteGk(gk.id)}
-                >
-                  ✕
-                </button>
-              </div>
-              {/* Row 2: target, unit, headline, type */}
-              <div className="kpid-gkl-row2">
-                <label className="kpid-gkl-field">
-                  目標
-                  <input
-                    type="number"
-                    className="kpid-weight-input"
-                    value={gk.target ?? ""}
-                    onChange={(e) =>
-                      updateGk({
-                        ...gk,
-                        target: e.target.value
-                          ? parseFloat(e.target.value)
-                          : null,
-                      })
-                    }
-                  />
-                </label>
-                <label className="kpid-gkl-field">
-                  單位
-                  <input
-                    className="kpid-weight-input"
-                    style={{ width: 40 }}
-                    value={gk.unit}
-                    onChange={(e) => updateGk({ ...gk, unit: e.target.value })}
-                  />
-                </label>
-                <label
-                  className="kpid-gkl-field"
-                  style={{ cursor: "pointer" }}
-                  title="標示為標題 KPI（顯示在 G 節點上）"
-                >
-                  <input
-                    type="checkbox"
-                    checked={gk.isHeadline ?? false}
-                    onChange={(e) =>
-                      updateGk({ ...gk, isHeadline: e.target.checked })
-                    }
-                  />
-                  ★ 標題
-                </label>
-                <label
-                  className="kpid-gkl-field"
-                  style={{ cursor: "pointer" }}
-                  title="切換為聚合 GoalKPI"
-                >
-                  <input
-                    type="checkbox"
-                    checked={gk.goalKpiType === "aggregate"}
-                    onChange={(e) =>
-                      updateGk({
-                        ...gk,
-                        goalKpiType: e.target.checked ? "aggregate" : "direct",
-                      })
-                    }
-                  />
-                  聚合
-                </label>
-              </div>
-              {/* Row 3: computed result preview */}
-              <div className="kpid-gkl-result">
-                {result.rate !== null ? (
-                  <>
-                    <span>
-                      {result.actual ?? "─"} / {result.target ?? "─"} {gk.unit}
-                    </span>
-                    <span
-                      className={`kpid-kpi-summary-rate${result.rate >= 100 ? " done" : result.rate >= 60 ? " ok" : " warn"}`}
-                    >
-                      {result.rate}%
-                    </span>
-                  </>
-                ) : (
-                  <span className="kpid-config-hint">尚無實績</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
       </div>
+      <p
+        className="kpid-config-hint"
+        style={{ padding: "0 14px 12px", marginTop: 0 }}
+      >
+        點擊各列可進入 KPI 詳細設定
+      </p>
     </div>
   );
 }
@@ -1396,8 +1747,15 @@ interface NodeConfigProps {
   data: OGSMData;
   draftGoals: Goal[];
   deptActivities: DeptActivity[];
+  freeNodes: FreeNode[];
+  onUpdateData: (d: OGSMData) => void;
+  onUpdateFreeNode: (fn: FreeNode) => void;
   onUpdateDraftGk: (gk: GoalKPI, goalId: string) => void;
   onUpdateGoalKpis: (goalId: string, kpis: GoalKPI[]) => void;
+  onDeleteGoalKpi: (gkId: string) => void;
+  onCopyGoalKpi: (gkId: string) => void;
+  onAddGoalKpiOfType: (goalId: string, type: "direct" | "aggregate") => void;
+  onSelectNode: (id: string) => void;
   onClose: () => void;
 }
 
@@ -1407,8 +1765,15 @@ function NodeConfig({
   data,
   draftGoals,
   deptActivities,
+  freeNodes,
+  onUpdateData,
+  onUpdateFreeNode,
   onUpdateDraftGk,
   onUpdateGoalKpis,
+  onDeleteGoalKpi,
+  onCopyGoalKpi,
+  onAddGoalKpiOfType,
+  onSelectNode,
   onClose,
 }: NodeConfigProps) {
   if (!selectedNodeId) return null;
@@ -1423,9 +1788,26 @@ function NodeConfig({
           </button>
         </div>
         <div className="kpid-config-section">
-          <p className="kpid-config-hint">
-            雙擊左側樹狀文字可直接編輯組織目標。
-          </p>
+          <div className="kpid-config-label">部門目標</div>
+          <textarea
+            className="kpid-config-textarea"
+            rows={4}
+            value={data.objectives.deptO}
+            onChange={(e) =>
+              onUpdateData({
+                ...data,
+                objectives: { ...data.objectives, deptO: e.target.value },
+              })
+            }
+          />
+          {data.objectives.orgO && (
+            <>
+              <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                組織目標（唯讀）
+              </div>
+              <p className="kpid-config-hint">{data.objectives.orgO}</p>
+            </>
+          )}
         </div>
       </div>
     );
@@ -1436,36 +1818,79 @@ function NodeConfig({
     const draftGoal = draftGoals.find((x) => x.id === gid);
     if (!draftGoal) return null;
 
-    // KPI mode: full GoalKPI management panel
     if (viewMode === "kpi") {
       return (
-        <GoalKpiListPanel
+        <GoalKpiSummaryPanel
           draftGoal={draftGoal}
           allGoals={draftGoals}
           deptActivities={deptActivities}
+          onSelectGk={(gkId) => onSelectNode(`gk-${gkId}`)}
           onUpdateGoalKpis={onUpdateGoalKpis}
+          onDeleteGoalKpi={onDeleteGoalKpi}
+          onCopyGoalKpi={onCopyGoalKpi}
+          onAddGoalKpiOfType={onAddGoalKpiOfType}
           onClose={onClose}
         />
       );
     }
 
-    // Item mode: simple info panel
+    // Item mode: editable G panel
+    const goal = data.goals.find((g) => g.id === gid)!;
     return (
       <div className="kpid-node-config">
         <div className="kpid-config-header">
           <span className="kpid-config-title">
-            {draftGoal.label}｜{draftGoal.title}
+            G｜{goal.label} {goal.title}
           </span>
           <button className="kpid-config-close" onClick={onClose}>
             ✕
           </button>
         </div>
         <div className="kpid-config-section">
-          <div className="kpid-config-label">GoalKPI 數量</div>
-          <p>{draftGoal.goalKpis?.length ?? 0} 個 KPI，切換 KPI 模式可管理</p>
-          <div className="kpid-config-label">策略數量</div>
-          <p>{draftGoal.strategies.length} 個策略</p>
-          <p className="kpid-config-hint">雙擊左側標題可編輯目標名稱。</p>
+          <div className="kpid-config-label">標題 (Title)</div>
+          <textarea
+            className="kpid-config-textarea"
+            rows={3}
+            value={goal.title}
+            onChange={(e) =>
+              onUpdateData({
+                ...data,
+                goals: data.goals.map((g) =>
+                  g.id !== gid
+                    ? g
+                    : {
+                        ...g,
+                        title: e.target.value,
+                        updatedAt: new Date().toISOString(),
+                      },
+                ),
+              })
+            }
+          />
+          <div className="kpid-config-label">說明 (Description)</div>
+          <textarea
+            className="kpid-config-textarea"
+            rows={4}
+            value={goal.fullText ?? ""}
+            onChange={(e) =>
+              onUpdateData({
+                ...data,
+                goals: data.goals.map((g) =>
+                  g.id !== gid
+                    ? g
+                    : {
+                        ...g,
+                        fullText: e.target.value,
+                        updatedAt: new Date().toISOString(),
+                      },
+                ),
+              })
+            }
+          />
+          <div className="kpid-config-hint">
+            GoalKPI：{draftGoal.goalKpis?.length ?? 0} 個 | 策略：
+            {goal.strategies.length} 個
+          </div>
         </div>
       </div>
     );
@@ -1473,9 +1898,17 @@ function NodeConfig({
 
   if (selectedNodeId.startsWith("s-")) {
     const sid = selectedNodeId.slice(2);
-    const g = data.goals.find((g) => g.strategies.some((s) => s.id === sid));
-    const s = g?.strategies.find((s) => s.id === sid);
-    if (!s) return null;
+    const parentGoal = data.goals.find((g) =>
+      g.strategies.some((s) => s.id === sid),
+    );
+    const s = parentGoal?.strategies.find((s) => s.id === sid);
+    if (!s || !parentGoal) return null;
+
+    // Activities linked to this strategy
+    const linkedActs = deptActivities.filter((a) =>
+      (a.dashboardLinks ?? []).some((dl) => dl.strategyId === sid),
+    );
+
     return (
       <div className="kpid-node-config">
         <div className="kpid-config-header">
@@ -1485,15 +1918,214 @@ function NodeConfig({
           </button>
         </div>
         <div className="kpid-config-section">
-          {s.owners.length > 0 && (
+          <div className="kpid-config-label">標題 (Title)</div>
+          <textarea
+            className="kpid-config-textarea"
+            rows={3}
+            value={s.title}
+            onChange={(e) =>
+              onUpdateData({
+                ...data,
+                goals: data.goals.map((g) =>
+                  g.id !== parentGoal.id
+                    ? g
+                    : {
+                        ...g,
+                        strategies: g.strategies.map((st) =>
+                          st.id !== sid
+                            ? st
+                            : {
+                                ...st,
+                                title: e.target.value,
+                                updatedAt: new Date().toISOString(),
+                              },
+                        ),
+                      },
+                ),
+              })
+            }
+          />
+          <div className="kpid-config-label">說明 (Description)</div>
+          <textarea
+            className="kpid-config-textarea"
+            rows={3}
+            value={s.notes ?? ""}
+            onChange={(e) =>
+              onUpdateData({
+                ...data,
+                goals: data.goals.map((g) =>
+                  g.id !== parentGoal.id
+                    ? g
+                    : {
+                        ...g,
+                        strategies: g.strategies.map((st) =>
+                          st.id !== sid
+                            ? st
+                            : {
+                                ...st,
+                                notes: e.target.value,
+                                updatedAt: new Date().toISOString(),
+                              },
+                        ),
+                      },
+                ),
+              })
+            }
+          />
+          {linkedActs.length > 0 && (
             <>
-              <div className="kpid-config-label">負責人</div>
-              <p>{s.owners.join("、")}</p>
+              <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                已連結措施 M ({linkedActs.length})
+              </div>
+              {linkedActs.map((a) => (
+                <div key={a.id} className="kpid-kpi-summary-row">
+                  <span className="kpid-kpi-summary-name">
+                    {a.rawText || a.id}
+                  </span>
+                </div>
+              ))}
             </>
           )}
-          <p className="kpid-config-hint">
-            雙擊左側策略名稱可直接編輯。更多策略設定請返回 OGSM 主畫面。
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedNodeId.startsWith("m-")) {
+    const actId = selectedNodeId.slice(2);
+    const act = deptActivities.find((a) => a.id === actId);
+    if (!act) return null;
+    return (
+      <div className="kpid-node-config">
+        <div className="kpid-config-header">
+          <span className="kpid-config-title">M｜{act.rawText || "活動"}</span>
+          <button className="kpid-config-close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="kpid-config-section">
+          <div className="kpid-config-label">活動 KPI</div>
+          {act.kpis.length === 0 && (
+            <p className="kpid-config-hint">尚無 KPI</p>
+          )}
+          {act.kpis.map((kpi) => (
+            <div key={kpi.id} className="kpid-kpi-summary-row">
+              <span className="kpid-kpi-summary-name">
+                {kpi.name || kpi.label}
+              </span>
+              <span className="kpid-kpi-summary-val">
+                {kpi.actual ?? "─"}&nbsp;/&nbsp;{kpi.target ?? "─"}&nbsp;
+                {kpi.unit}
+              </span>
+              {kpi.achievementRate != null && (
+                <span
+                  className={`kpid-kpi-summary-rate${kpi.achievementRate >= 100 ? " done" : kpi.achievementRate >= 60 ? " ok" : " warn"}`}
+                >
+                  {kpi.achievementRate}%
+                </span>
+              )}
+            </div>
+          ))}
+          <p className="kpid-config-hint" style={{ marginTop: 8 }}>
+            如需編輯此活動或 KPI，請至「活動管理」頁面。
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedNodeId.startsWith("free-")) {
+    const fnId = selectedNodeId.slice(5);
+    const fn = freeNodes.find((f) => f.id === fnId);
+    if (!fn) return null;
+    const linkedActs = deptActivities.filter((a) =>
+      fn.linkedActivityIds.includes(a.id),
+    );
+    const standaloneActs = deptActivities.filter(
+      (a) =>
+        (a.frameworks ?? []).includes("standalone") &&
+        !fn.linkedActivityIds.includes(a.id),
+    );
+
+    return (
+      <div className="kpid-node-config">
+        <div className="kpid-config-header">
+          <span className="kpid-config-title">
+            其他｜{fn.name || "自由節點"}
+          </span>
+          <button className="kpid-config-close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="kpid-config-section">
+          <div className="kpid-config-label">名稱</div>
+          <input
+            className="kpid-config-input"
+            value={fn.name}
+            onChange={(e) => onUpdateFreeNode({ ...fn, name: e.target.value })}
+          />
+          <div className="kpid-config-label">說明</div>
+          <textarea
+            className="kpid-config-textarea"
+            rows={3}
+            value={fn.description ?? ""}
+            onChange={(e) =>
+              onUpdateFreeNode({ ...fn, description: e.target.value })
+            }
+          />
+          {linkedActs.length > 0 && (
+            <>
+              <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                已連結活動 ({linkedActs.length})
+              </div>
+              {linkedActs.map((a) => (
+                <div key={a.id} className="kpid-linked-row">
+                  <span className="kpid-linked-name">{a.rawText || a.id}</span>
+                  <button
+                    className="kpid-remove-btn"
+                    onClick={() =>
+                      onUpdateFreeNode({
+                        ...fn,
+                        linkedActivityIds: fn.linkedActivityIds.filter(
+                          (id) => id !== a.id,
+                        ),
+                      })
+                    }
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+          {standaloneActs.length > 0 && (
+            <>
+              <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                新增活動連結
+              </div>
+              <select
+                className="kpid-add-select"
+                value=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  onUpdateFreeNode({
+                    ...fn,
+                    linkedActivityIds: [
+                      ...fn.linkedActivityIds,
+                      e.target.value,
+                    ],
+                  });
+                }}
+              >
+                <option value="">── 選擇活動...</option>
+                {standaloneActs.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.rawText || a.id}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
       </div>
     );
@@ -1527,6 +2159,10 @@ function NodeConfig({
         allGoals={draftGoals}
         deptActivities={deptActivities}
         onUpdate={(updated) => onUpdateDraftGk(updated, draftGoal.id)}
+        onDelete={() => {
+          onDeleteGoalKpi(gkId);
+          onClose();
+        }}
         onClose={onClose}
       />
     );
@@ -1580,6 +2216,7 @@ export default function KpiDesigner({
   deptActivities,
   initialGoalId,
   onUpdateData,
+  onUpdateActivity: _onUpdateActivity,
   onAddGoal,
   onDeleteGoal,
   onAddStrategyToGoal,
@@ -1598,6 +2235,115 @@ export default function KpiDesigner({
     startX: number;
     startW: number;
   } | null>(null);
+
+  // ── FreeNodes state ────────────────────────────────────────────────────────
+  const [freeNodes, setFreeNodes] = useState<FreeNode[]>(
+    () => data.freeNodes ?? [],
+  );
+
+  const commitFreeNodes = useCallback(
+    (next: FreeNode[]) => {
+      setFreeNodes(next);
+      onUpdateData({ ...data, freeNodes: next });
+    },
+    [data, onUpdateData],
+  );
+
+  useEffect(() => {
+    setFreeNodes(data.freeNodes ?? []);
+  }, [data.freeNodes]);
+
+  const addFreeNode = useCallback(() => {
+    const fn: FreeNode = {
+      id: genId("fn"),
+      name: "新自由節點",
+      description: "",
+      linkedActivityIds: [],
+    };
+    commitFreeNodes([...(data.freeNodes ?? []), fn]);
+    setSelectedNodeId(`free-${fn.id}`);
+  }, [data.freeNodes, commitFreeNodes]);
+
+  const deleteFreeNode = useCallback(
+    (id: string) => {
+      commitFreeNodes((data.freeNodes ?? []).filter((f) => f.id !== id));
+      setSelectedNodeId((prev) => (prev === `free-${id}` ? null : prev));
+    },
+    [data.freeNodes, commitFreeNodes],
+  );
+
+  const updateFreeNode = useCallback(
+    (fn: FreeNode) => {
+      commitFreeNodes(
+        (data.freeNodes ?? []).map((f) => (f.id === fn.id ? fn : f)),
+      );
+    },
+    [data.freeNodes, commitFreeNodes],
+  );
+
+  const copyFreeNode = useCallback(
+    (id: string) => {
+      const orig = (data.freeNodes ?? []).find((f) => f.id === id);
+      if (!orig) return;
+      const copy: FreeNode = {
+        ...orig,
+        id: genId("fn"),
+        name: `${orig.name} (複製)`,
+        linkedActivityIds: [],
+      };
+      commitFreeNodes([...(data.freeNodes ?? []), copy]);
+    },
+    [data.freeNodes, commitFreeNodes],
+  );
+
+  // ── Goal handlers ──────────────────────────────────────────────────────────
+  const copyGoal = useCallback(
+    (id: string) => {
+      const orig = data.goals.find((g) => g.id === id);
+      if (!orig) return;
+      const copy: Goal = {
+        ...orig,
+        id: genId("goa"),
+        title: `${orig.title} (複製)`,
+        strategies: [],
+        goalKpis: [],
+        completionRate: 0,
+        updatedAt: new Date().toISOString(),
+      };
+      onUpdateData({ ...data, goals: [...data.goals, copy] });
+    },
+    [data, onUpdateData],
+  );
+
+  // ── Strategy handlers ──────────────────────────────────────────────────────
+  const copyStrategy = useCallback(
+    (stratId: string) => {
+      const parentGoal = data.goals.find((g) =>
+        g.strategies.some((s) => s.id === stratId),
+      );
+      const orig = parentGoal?.strategies.find((s) => s.id === stratId);
+      if (!orig || !parentGoal) return;
+      const copy: Strategy = {
+        ...orig,
+        id: genId("str"),
+        title: `${orig.title} (複製)`,
+        measures: [],
+        actionPlans: [],
+        completionRate: 0,
+        manualRate: null,
+        updatedAt: new Date().toISOString(),
+      };
+      onUpdateData({
+        ...data,
+        goals: data.goals.map((g) =>
+          g.id !== parentGoal.id
+            ? g
+            : { ...g, strategies: [...g.strategies, copy] },
+        ),
+      });
+    },
+    [data, onUpdateData],
+  );
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -1638,206 +2384,23 @@ export default function KpiDesigner({
   }, [data.goals]);
 
   const [viewMode, setViewMode] = useState<ViewMode>("item");
-  // Track previous viewMode to know when mode switches (position reset needed)
-  const prevViewModeRef = useRef<ViewMode>("item");
+  const [moduleId, setModuleId] = useState<ModuleId>(null);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(
-    buildItemNodes(data, deptActivities, selectedNodeId),
-  );
-  const [edges, setEdges, onEdgesChange] = useEdgesState(
-    buildItemEdges({ ...data, goals: draftGoals }),
-  );
-
-  // Rebuild canvas when data, draftGoals, or viewMode changes.
-  // Preserve user-moved node positions when only data changes (not mode switch).
-  useEffect(() => {
-    const modeChanged = prevViewModeRef.current !== viewMode;
-    prevViewModeRef.current = viewMode;
-    const fullData = { ...data, goals: draftGoals };
-    if (viewMode === "item") {
-      const newNodes = buildItemNodes(fullData, deptActivities, selectedNodeId);
-      if (modeChanged) {
-        setNodes(newNodes);
-      } else {
-        setNodes((prev) => {
-          const posMap = new Map(prev.map((n) => [n.id, n.position]));
-          return newNodes.map((n) =>
-            posMap.has(n.id) ? { ...n, position: posMap.get(n.id)! } : n,
-          );
-        });
-      }
-      setEdges(buildItemEdges(fullData));
-    } else {
-      const newNodes = buildKpiNodes(fullData, deptActivities, selectedNodeId);
-      if (modeChanged) {
-        setNodes(newNodes);
-      } else {
-        setNodes((prev) => {
-          const posMap = new Map(prev.map((n) => [n.id, n.position]));
-          return newNodes.map((n) =>
-            posMap.has(n.id) ? { ...n, position: posMap.get(n.id)! } : n,
-          );
-        });
-      }
-      setEdges(buildKpiEdges(fullData));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftGoals, data, viewMode]);
-
-  // Rebuild node highlights when selection changes
-  useEffect(() => {
-    setNodes((prev) =>
-      prev.map((n) => ({
-        ...n,
-        data: { ...n.data, selected: n.id === selectedNodeId },
-      })),
+  const updateDraftGk = useCallback((updatedGk: GoalKPI, goalId: string) => {
+    setDraftGoals((prev) =>
+      prev.map((g) =>
+        g.id !== goalId
+          ? g
+          : {
+              ...g,
+              goalKpis: g.goalKpis?.map((gk) =>
+                gk.id === updatedGk.id ? updatedGk : gk,
+              ),
+            },
+      ),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeId]);
-
-  const updateDraftGk = useCallback(
-    (updatedGk: GoalKPI, goalId: string) => {
-      setDraftGoals((prev) =>
-        prev.map((g) =>
-          g.id !== goalId
-            ? g
-            : {
-                ...g,
-                goalKpis: g.goalKpis?.map((gk) =>
-                  gk.id === updatedGk.id ? updatedGk : gk,
-                ),
-              },
-        ),
-      );
-      setHasDraftGkChanges(true);
-      if (updatedGk.goalKpiType !== "aggregate") {
-        setNodes((prevNodes) => {
-          const existingActIds = new Set(
-            prevNodes
-              .filter((n) => n.id.startsWith("act-"))
-              .map((n) => n.id.slice(4)),
-          );
-          const newActNodes: Node[] = updatedGk.linkedKpis
-            .map((l) => l.activityId)
-            .filter((id) => !existingActIds.has(id))
-            .map((id) => deptActivities.find((a) => a.id === id))
-            .filter((a): a is DeptActivity => Boolean(a))
-            .map((act, i) => ({
-              id: `act-${act.id}`,
-              type: "activityNode",
-              position: {
-                x: KPI_ACT_X,
-                y:
-                  prevNodes.filter((n) => n.id.startsWith("act-")).length *
-                    130 +
-                  i * 130,
-              },
-              data: { activity: act, selected: false },
-            }));
-          return [...prevNodes, ...newActNodes];
-        });
-      }
-    },
-    [deptActivities],
-  );
-
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      const { source, target } = connection;
-      if (!source || !target) return;
-      const srcGkId = source.startsWith("gk-") ? source.slice(3) : null;
-      const tgtActId = target.startsWith("act-") ? target.slice(4) : null;
-      const tgtGkId = target.startsWith("gk-") ? target.slice(3) : null;
-
-      if (srcGkId && tgtActId) {
-        const goal = draftGoals.find((g) =>
-          g.goalKpis?.some((gk) => gk.id === srcGkId),
-        );
-        const gk = goal?.goalKpis?.find((gk) => gk.id === srcGkId);
-        if (!gk || !goal || gk.goalKpiType === "aggregate") return;
-        // Use first available KPI of this activity not yet linked
-        const act = deptActivities.find((a) => a.id === tgtActId);
-        const usedKpiIds = gk.linkedKpis
-          .filter((l) => l.activityId === tgtActId)
-          .map((l) => l.kpiId);
-        const firstKpi = act?.kpis.find((k) => !usedKpiIds.includes(k.id));
-        if (!firstKpi) return;
-        updateDraftGk(
-          {
-            ...gk,
-            linkedKpis: [
-              ...gk.linkedKpis,
-              { activityId: tgtActId, kpiId: firstKpi.id },
-            ],
-          },
-          goal.id,
-        );
-      } else if (srcGkId && tgtGkId) {
-        const goal = draftGoals.find((g) =>
-          g.goalKpis?.some((gk) => gk.id === srcGkId),
-        );
-        const gk = goal?.goalKpis?.find((gk) => gk.id === srcGkId);
-        if (!gk || !goal) return;
-        if (gk.linkedGoalKpis?.some((l) => l.goalKpiId === tgtGkId)) return;
-        updateDraftGk(
-          {
-            ...gk,
-            goalKpiType: "aggregate",
-            linkedGoalKpis: [
-              ...(gk.linkedGoalKpis ?? []),
-              { goalId: goal.id, goalKpiId: tgtGkId, weight: 1 },
-            ],
-          },
-          goal.id,
-        );
-      }
-    },
-    [draftGoals, updateDraftGk, deptActivities],
-  );
-
-  const onEdgesDelete = useCallback(
-    (deletedEdges: Edge[]) => {
-      for (const edge of deletedEdges) {
-        const srcGkId = edge.source.startsWith("gk-")
-          ? edge.source.slice(3)
-          : null;
-        const tgtActId = edge.target.startsWith("act-")
-          ? edge.target.slice(4)
-          : null;
-        const tgtGkId = edge.target.startsWith("gk-")
-          ? edge.target.slice(3)
-          : null;
-        if (!srcGkId) continue;
-        const goal = draftGoals.find((g) =>
-          g.goalKpis?.some((gk) => gk.id === srcGkId),
-        );
-        const gk = goal?.goalKpis?.find((gk) => gk.id === srcGkId);
-        if (!gk || !goal) continue;
-        if (tgtActId) {
-          updateDraftGk(
-            {
-              ...gk,
-              linkedKpis: gk.linkedKpis.filter(
-                (l) => l.activityId !== tgtActId,
-              ),
-            },
-            goal.id,
-          );
-        } else if (tgtGkId) {
-          updateDraftGk(
-            {
-              ...gk,
-              linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
-                (l) => l.goalKpiId !== tgtGkId,
-              ),
-            },
-            goal.id,
-          );
-        }
-      }
-    },
-    [draftGoals, updateDraftGk],
-  );
+    setHasDraftGkChanges(true);
+  }, []);
 
   const handleSaveGkChanges = useCallback(() => {
     let newData = data;
@@ -1883,6 +2446,62 @@ export default function KpiDesigner({
     setHasDraftGkChanges(true);
   }, []);
 
+  // 新增指定套型（direct=G-sub-KPI, aggregate=G-KPI）
+  const addGoalKpiOfType = useCallback(
+    (goalId: string, type: "direct" | "aggregate") => {
+      const newGk: GoalKPI = {
+        id: genId("gk"),
+        label: type === "aggregate" ? "新 G-KPI" : "新 G-sub-KPI",
+        unit: "",
+        target: null,
+        aggregation: "AVERAGE",
+        linkedKpis: [],
+        goalKpiType: type,
+      };
+      setDraftGoals((prev) =>
+        prev.map((g) =>
+          g.id !== goalId
+            ? g
+            : { ...g, goalKpis: [...(g.goalKpis ?? []), newGk] },
+        ),
+      );
+      setHasDraftGkChanges(true);
+      // 自動切換到新 GK （需知道 id）
+      setSelectedNodeId(`gk-${newGk.id}`);
+    },
+    [],
+  );
+
+  const deleteGoalKpi = useCallback((gkId: string) => {
+    setDraftGoals((prev) =>
+      prev.map((g) => ({
+        ...g,
+        goalKpis: (g.goalKpis ?? []).filter((gk) => gk.id !== gkId),
+      })),
+    );
+    setHasDraftGkChanges(true);
+    setSelectedNodeId((prev) => (prev === `gk-${gkId}` ? null : prev));
+  }, []);
+
+  const copyGoalKpi = useCallback((gkId: string) => {
+    setDraftGoals((prev) =>
+      prev.map((g) => {
+        const idx = (g.goalKpis ?? []).findIndex((gk) => gk.id === gkId);
+        if (idx === -1) return g;
+        const src = g.goalKpis![idx];
+        const copy: GoalKPI = {
+          ...src,
+          id: genId("gk"),
+          label: src.label + " (副本)",
+        };
+        const next = [...g.goalKpis!];
+        next.splice(idx + 1, 0, copy);
+        return { ...g, goalKpis: next };
+      }),
+    );
+    setHasDraftGkChanges(true);
+  }, []);
+
   const startDrag = (
     which: "left" | "right",
     e: React.MouseEvent,
@@ -1896,38 +2515,63 @@ export default function KpiDesigner({
 
   return (
     <div className="kpid-root">
-      {/* Left: mode-dependent tree */}
-      {viewMode === "item" ? (
-        <OgsTree
-          style={{ width: leftWidth }}
-          data={data}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
-          onUpdateData={onUpdateData}
-          onAddGoal={onAddGoal}
-          onDeleteGoal={onDeleteGoal}
-          onAddStrategyToGoal={onAddStrategyToGoal}
-          onDeleteStrategy={onDeleteStrategy}
-        />
-      ) : (
-        <KpiGoalTree
-          style={{ width: leftWidth }}
-          draftGoals={draftGoals}
-          deptActivities={deptActivities}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
-          onAddGoalKpi={addGoalKpi}
-        />
-      )}
+      {/* Left: module select + panel */}
+      <div className="kpid-left-wrap" style={{ width: leftWidth }}>
+        <div className="kpid-left-module-bar">
+          <select
+            className="kpid-left-module-select"
+            value={moduleId ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setModuleId(v === "" ? null : (v as "ogsm" | "other"));
+              setSelectedNodeId(null);
+            }}
+          >
+            <option value="">── 請選擇模組 ──</option>
+            <option value="ogsm">OGSM 目標體系</option>
+            <option value="other">其他（自由節點）</option>
+          </select>
+        </div>
+        {moduleId === "ogsm" && viewMode === "kpi" ? (
+          <KpiGoalTree
+            draftGoals={draftGoals}
+            deptActivities={deptActivities}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+            onAddGoalKpi={addGoalKpi}
+            onAddGoalKpiOfType={addGoalKpiOfType}
+            onDeleteGoalKpi={deleteGoalKpi}
+            onCopyGoalKpi={copyGoalKpi}
+          />
+        ) : (
+          <NodeTypeManager
+            data={data}
+            deptActivities={deptActivities}
+            freeNodes={freeNodes}
+            selectedNodeId={selectedNodeId}
+            moduleId={moduleId}
+            onSelectNode={setSelectedNodeId}
+            onUpdateData={onUpdateData}
+            onAddGoal={onAddGoal}
+            onDeleteGoal={onDeleteGoal}
+            onCopyGoal={copyGoal}
+            onAddStrategy={onAddStrategyToGoal}
+            onDeleteStrategy={onDeleteStrategy}
+            onCopyStrategy={copyStrategy}
+            onAddFreeNode={addFreeNode}
+            onDeleteFreeNode={deleteFreeNode}
+            onCopyFreeNode={copyFreeNode}
+          />
+        )}
+      </div>
       <div
         className="kpid-resize-handle"
         onMouseDown={(e) => startDrag("left", e, leftWidth)}
       />
 
-      {/* Center: Full Canvas */}
+      {/* Center: Canvas */}
       <div className="kpid-canvas-wrap">
         <div className="kpid-canvas-toolbar">
-          <span className="kpid-canvas-title">目標編輯器 — OGSM 關係圖</span>
           <div style={{ display: "flex", gap: 4 }}>
             <button
               className={`kpid-mode-btn${viewMode === "item" ? " active" : ""}`}
@@ -1938,6 +2582,10 @@ export default function KpiDesigner({
             <button
               className={`kpid-mode-btn${viewMode === "kpi" ? " active" : ""}`}
               onClick={() => setViewMode("kpi")}
+              disabled={moduleId !== "ogsm"}
+              title={
+                moduleId !== "ogsm" ? "KPI 模式僅支援 OGSM 模組" : undefined
+              }
             >
               📊 KPI 模式
             </button>
@@ -1951,46 +2599,23 @@ export default function KpiDesigner({
             </div>
           )}
         </div>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={NODE_TYPES}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onEdgesDelete={onEdgesDelete}
-          onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-          onPaneClick={() => setSelectedNodeId(null)}
-          fitView
-          fitViewOptions={{ padding: 0.15, minZoom: 0.45 }}
-          minZoom={0.2}
-          maxZoom={2}
-          deleteKeyCode="Delete"
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={16} color="#e5e7eb" />
-          <Controls />
-          <MiniMap nodeStrokeWidth={3} zoomable pannable />
-          <Panel position="bottom-left">
-            <div className="kpid-legend">
-              <span className="kpid-legend-item" style={{ color: "#fb923c" }}>
-                ── O線
-              </span>
-              <span className="kpid-legend-item" style={{ color: "#94a3b8" }}>
-                ── G→S
-              </span>
-              <span className="kpid-legend-item" style={{ color: "#06b6d4" }}>
-                ── GK直接
-              </span>
-              <span className="kpid-legend-item" style={{ color: "#a855f7" }}>
-                ── 聚合
-              </span>
-              <span className="kpid-legend-item" style={{ color: "#3b82f6" }}>
-                ── KPI連
-              </span>
-            </div>
-          </Panel>
-        </ReactFlow>
+        {viewMode === "kpi" && moduleId === "ogsm" ? (
+          <KpiCanvas
+            draftGoals={draftGoals}
+            deptActivities={deptActivities}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+          />
+        ) : (
+          <ItemCanvas
+            data={{ ...data, goals: draftGoals, freeNodes }}
+            deptActivities={deptActivities}
+            freeNodes={freeNodes}
+            selectedNodeId={selectedNodeId}
+            moduleId={moduleId}
+            onSelectNode={setSelectedNodeId}
+          />
+        )}
       </div>
 
       {/* Right: Node Config */}
@@ -2014,8 +2639,15 @@ export default function KpiDesigner({
               data={data}
               draftGoals={draftGoals}
               deptActivities={deptActivities}
+              freeNodes={freeNodes}
+              onUpdateData={onUpdateData}
+              onUpdateFreeNode={updateFreeNode}
               onUpdateDraftGk={updateDraftGk}
               onUpdateGoalKpis={updateGoalKpis}
+              onDeleteGoalKpi={deleteGoalKpi}
+              onCopyGoalKpi={copyGoalKpi}
+              onAddGoalKpiOfType={addGoalKpiOfType}
+              onSelectNode={setSelectedNodeId}
               onClose={() => setSelectedNodeId(null)}
             />
           </div>

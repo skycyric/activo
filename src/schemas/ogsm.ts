@@ -195,6 +195,13 @@ export const DeptActivitySchema = MeasureSchema.extend({
   dashboardLinks: z.array(DashboardLinkSchema).optional(),
   /** 自由標籤，如「Q1重點」「跨部門」 */
   tags: z.array(z.string()).optional(),
+  /**
+   * 活動所屬框架列表，控制此活動可被哪些目標管理模組選取。
+   * 例：["ogsm"] = 可在 OGSM KpiDesigner 的 M/S 選取器中出現
+   *     ["standalone"] = 可掛在 FreeNode 下
+   * 空陣列或 undefined = 僅能在 ActivityPage 中看到，不出現在目標編輯器選取器
+   */
+  frameworks: z.array(z.string()).optional(),
   /** 平坦行動計畫項目（取代 actionPlans 巢狀結構） */
   planItems: z.array(ActivityPlanItemSchema).optional(),
   // ── 已棄用欄位（migration 讀取用，勿直接寫入）──────────────────────────────
@@ -298,6 +305,21 @@ export const GoalSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+// ── FreeNode ──────────────────────────────────────────────────────────────────
+
+/**
+ * 目標編輯器畫布中的自由節點（非 OGSM 層級）。
+ * 可代表：未掛任何框架的孤立任務、跨框架目標、公司政策節點等。
+ * 與 DeptActivity 透過 linkedActivityIds 連結（多對多）。
+ */
+export const FreeNodeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** 連結的 DeptActivity id 列表（活動由 ActivityPage 統一管理） */
+  linkedActivityIds: z.array(z.string()).default([]),
+});
+
 // ── OGSMData ──────────────────────────────────────────────────────────────────
 
 export const OGSMDataSchema = z.object({
@@ -309,6 +331,8 @@ export const OGSMDataSchema = z.object({
   period: z.string(),
   importedAt: z.string(),
   overallRate: z.number(),
+  /** 目標編輯器畫布中的自由節點（非 OGSM 層疊，可選） */
+  freeNodes: z.array(FreeNodeSchema).optional(),
 });
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
@@ -371,6 +395,7 @@ export type DashboardLink = z.infer<typeof DashboardLinkSchema>;
 export type ActivityPlanItem = z.infer<typeof ActivityPlanItemSchema>;
 export type DeptActivity = z.infer<typeof DeptActivitySchema>;
 export type GoalKpiLink = z.infer<typeof GoalKpiLinkSchema>;
+export type FreeNode = z.infer<typeof FreeNodeSchema>;
 export type GoalKPI = z.infer<typeof GoalKPISchema>;
 export type Strategy = Omit<z.infer<typeof StrategySchema>, "owner"> & {
   readonly owner?: string; // deprecated: parse-only, never write; use `owners`
