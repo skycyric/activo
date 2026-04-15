@@ -74,6 +74,10 @@ interface Props {
   workspace: WorkspaceData;
   isReadOnly?: boolean;
   warnDaysBefore: number;
+  /** 舊格式措施沒有 dashboardLinks，由 ActivityWithContext 傳入初始歸屬 */
+  initialPeriodId?: string;
+  initialGoalId?: string;
+  initialStrategyId?: string;
   onUpdate: (deptId: string, activity: DeptActivity) => void;
   onDelete: (deptId: string, activityId: string) => void;
   onClose: () => void;
@@ -86,6 +90,9 @@ export default function ActivityDetailPanel({
   deptId,
   workspace,
   isReadOnly = false,
+  initialPeriodId,
+  initialGoalId,
+  initialStrategyId,
   onUpdate,
   onDelete,
   onClose,
@@ -310,7 +317,11 @@ export default function ActivityDetailPanel({
               draft={draft}
               workspace={workspace}
               isReadOnly={isReadOnly}
+              deptId={deptId}
               patch={patch}
+              initialPeriodId={initialPeriodId}
+              initialGoalId={initialGoalId}
+              initialStrategyId={initialStrategyId}
             />
           )}
           {tab === "kpi" && (
@@ -367,19 +378,315 @@ export default function ActivityDetailPanel({
 
 // ─── Tab: 基本資料 ─────────────────────────────────────────────────────────────
 
+// 模組選項定義
+const FRAMEWORK_OPTIONS: { value: string; label: string }[] = [
+  { value: "ogsm", label: "OGSM目標體系" },
+  { value: "standalone", label: "其他（自由節點）" },
+];
+
 function BasicTab({
   draft,
   workspace,
   isReadOnly,
+  deptId,
   patch,
+  initialPeriodId,
+  initialGoalId,
+  initialStrategyId,
 }: {
   draft: DeptActivity;
   workspace: WorkspaceData;
   isReadOnly: boolean;
+  deptId: string;
   patch: (p: Partial<DeptActivity>) => void;
+  initialPeriodId?: string;
+  initialGoalId?: string;
+  initialStrategyId?: string;
 }) {
+  const frameworks = draft.frameworks ?? [];
+  const [dropOpen, setDropOpen] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropOpen) return;
+    const h = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node))
+        setDropOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [dropOpen]);
+
+  const toggleFramework = (value: string) => {
+    const next = frameworks.includes(value)
+      ? frameworks.filter((f) => f !== value)
+      : [...frameworks, value];
+    patch({ frameworks: next.length > 0 ? next : undefined });
+  };
+
+  // OGSM 歸屬可編輯 state（多筆歸屬）
+  const draftAny = draft as unknown as {
+    periodId?: string;
+    goalId?: string;
+    strategyId?: string;
+  };
+
+  const ogsmLinks = (draft.dashboardLinks ?? []).filter(
+    (l) => l.type === "ogsm",
+  );
+
+  const initialLinkForForm = ogsmLinks[0];
+  const [selPeriodId, setSelPeriodId] = useState(
+    initialLinkForForm?.periodId ?? draftAny.periodId ?? initialPeriodId ?? "",
+  );
+  const [selGoalId, setSelGoalId] = useState(
+    initialLinkForForm?.goalId ?? draftAny.goalId ?? initialGoalId ?? "",
+  );
+  const [selStratId, setSelStratId] = useState(
+    initialLinkForForm?.strategyId ??
+      draftAny.strategyId ??
+      initialStrategyId ??
+      "",
+  );
+
+  // 同步外部更改（切換活動時重置新增列預設值）
+  useEffect(() => {
+    const first = (draft.dashboardLinks ?? []).find((l) => l.type === "ogsm");
+    setSelPeriodId(
+      first?.periodId ?? draftAny.periodId ?? initialPeriodId ?? "",
+    );
+    setSelGoalId(first?.goalId ?? draftAny.goalId ?? initialGoalId ?? "");
+    setSelStratId(
+      first?.strategyId ?? draftAny.strategyId ?? initialStrategyId ?? "",
+    );
+  }, [
+    draft.id,
+    draftAny.periodId,
+    draftAny.goalId,
+    draftAny.strategyId,
+    initialPeriodId,
+    initialGoalId,
+    initialStrategyId,
+  ]);
+
+  // 目前部門的 periods
+  const deptPeriods =
+    workspace.departments.find((d) => d.id === deptId)?.periods ?? [];
+  const selPeriod = deptPeriods.find((p) => p.id === selPeriodId);
+  const goals = selPeriod?.ogsm.goals ?? [];
+  const selGoal = goals.find((g) => g.id === selGoalId);
+  const strategies = selGoal?.strategies ?? [];
+
+  const addOgsmLink = () => {
+    if (!selPeriodId || !selGoalId || !selStratId) return;
+    const all = draft.dashboardLinks ?? [];
+    const alreadyExists = all.some(
+      (l) =>
+        l.type === "ogsm" &&
+        l.periodId === selPeriodId &&
+        l.goalId === selGoalId &&
+        l.strategyId === selStratId,
+    );
+    if (alreadyExists) return;
+
+    patch({
+      dashboardLinks: [
+        ...all,
+        {
+          id: genId("dlink"),
+          type: "ogsm",
+          periodId: selPeriodId,
+          goalId: selGoalId,
+          strategyId: selStratId,
+          exclude: false,
+        },
+      ],
+      // 自動確保 frameworks 包含 ogsm
+      frameworks: frameworks.includes("ogsm")
+        ? frameworks
+        : [...frameworks, "ogsm"],
+    });
+
+    setSelGoalId("");
+    setSelStratId("");
+  };
+
+  const removeOgsmLink = (linkId: string) => {
+    const next = (draft.dashboardLinks ?? []).filter((l) => l.id !== linkId);
+    patch({ dashboardLinks: next.length > 0 ? next : undefined });
+  };
+
+  const selectedLabels =
+    FRAMEWORK_OPTIONS.filter((o) => frameworks.includes(o.value))
+      .map((o) => o.label)
+      .join("、") || "（未選擇）";
+
   return (
     <div className="adp-section-list">
+      {/* 模組 */}
+      <div className="adp-field">
+        <label className="adp-field-label">模組</label>
+        {isReadOnly ? (
+          <span className="adp-value">
+            {frameworks.length > 0
+              ? FRAMEWORK_OPTIONS.filter((o) => frameworks.includes(o.value))
+                  .map((o) => o.label)
+                  .join("、")
+              : "其他"}
+          </span>
+        ) : (
+          <div className="adp-fw-dropdown" ref={dropRef}>
+            <button
+              type="button"
+              className="adp-fw-trigger"
+              onClick={() => setDropOpen((v) => !v)}
+            >
+              <span>{selectedLabels}</span>
+              <span className="adp-fw-caret">{dropOpen ? "▴" : "▾"}</span>
+            </button>
+            {dropOpen && (
+              <div className="adp-fw-menu">
+                {FRAMEWORK_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="adp-fw-option">
+                    <input
+                      type="checkbox"
+                      checked={frameworks.includes(opt.value)}
+                      onChange={() => toggleFramework(opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* OGSM 歸屬 */}
+      <div className="adp-field">
+        <label className="adp-field-label">OGSM 歸屬</label>
+        {isReadOnly ? (
+          ogsmLinks.length > 0 ? (
+            <div className="adp-fw-attribution">
+              {ogsmLinks.map((link) => {
+                const period = workspace.departments
+                  .flatMap((d) => d.periods)
+                  .find((p) => p.id === link.periodId);
+                const goal = period?.ogsm.goals.find(
+                  (g) => g.id === link.goalId,
+                );
+                const strategy = goal?.strategies.find(
+                  (s) => s.id === link.strategyId,
+                );
+                return (
+                  <span key={link.id} className="adp-fw-attribution-item">
+                    {period ? `${period.year} ${period.halfYear} / ` : ""}
+                    {goal?.label ? `${goal.label} ` : ""}
+                    {strategy ? strategy.title : (goal?.title ?? "(未對應)")}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="adp-value">—</span>
+          )
+        ) : (
+          <div className="adp-ogsm-selects">
+            {ogsmLinks.length > 0 && (
+              <div className="adp-ogsm-link-list">
+                {ogsmLinks.map((link) => {
+                  const period = workspace.departments
+                    .flatMap((d) => d.periods)
+                    .find((p) => p.id === link.periodId);
+                  const goal = period?.ogsm.goals.find(
+                    (g) => g.id === link.goalId,
+                  );
+                  const strategy = goal?.strategies.find(
+                    (s) => s.id === link.strategyId,
+                  );
+                  return (
+                    <div key={link.id} className="adp-ogsm-link-row">
+                      <span className="adp-ogsm-link-text">
+                        {period
+                          ? `${period.year} ${period.halfYear}`
+                          : "未知期別"}{" "}
+                        / {goal?.label ? `${goal.label} ` : ""}
+                        {strategy
+                          ? strategy.title
+                          : (goal?.title ?? "(未對應)")}
+                      </span>
+                      <button
+                        type="button"
+                        className="adp-ogsm-link-remove"
+                        onClick={() => removeOgsmLink(link.id)}
+                        title="移除此歸屬"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <select
+              className="adp-select"
+              value={selPeriodId}
+              onChange={(e) => {
+                setSelPeriodId(e.target.value);
+                setSelGoalId("");
+                setSelStratId("");
+              }}
+            >
+              <option value="">期別…</option>
+              {deptPeriods.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.year} {p.halfYear}
+                </option>
+              ))}
+            </select>
+            <select
+              className="adp-select"
+              value={selGoalId}
+              disabled={!selPeriodId}
+              onChange={(e) => {
+                setSelGoalId(e.target.value);
+                setSelStratId("");
+              }}
+            >
+              <option value="">目標…</option>
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.label ? `${g.label} ` : ""}
+                  {g.title}
+                </option>
+              ))}
+            </select>
+            <select
+              className="adp-select"
+              value={selStratId}
+              disabled={!selGoalId}
+              onChange={(e) => setSelStratId(e.target.value)}
+            >
+              <option value="">策略…</option>
+              {strategies.map((s, si) => (
+                <option key={s.id} value={s.id}>
+                  S{si + 1} {s.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="adp-btn-sm"
+              disabled={!selPeriodId || !selGoalId || !selStratId}
+              onClick={addOgsmLink}
+            >
+              ＋ 新增歸屬
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 活動名稱 */}
       <div className="adp-field">
         <label className="adp-field-label">活動名稱</label>

@@ -7,6 +7,8 @@ import {
   type ActionPlan,
   type PlanItem,
   type DeptActivity,
+  type DashboardLink,
+  type ActivityDashboardLink,
   WorkspaceDataSchema,
   OGSMDataSchema,
 } from "../schemas/ogsm";
@@ -493,7 +495,187 @@ export function migrateToActivityFirst(ws: WorkspaceData): boolean {
   return changed;
 }
 
-function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+/**
+ * FrameworksV1 遷移：將 dept.activities 中尚未設定 frameworks 的活動
+ * 補設為 ["ogsm"]（歷史資料皆為 OGSM 相關活動）。
+ */
+export function migrateFrameworksV1(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      if (!activity.frameworks || activity.frameworks.length === 0) {
+        activity.frameworks = ["ogsm"];
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
+function periodSortValue(year: number, halfYear: "H1" | "H2"): number {
+  return year * 10 + (halfYear === "H1" ? 1 : 2);
+}
+
+/**
+ * TimelineV1：
+ * 1) 對 OGSM dashboardLinks 依 periodId+goalId+strategyId 去重
+ * 2) 補齊 lifecycleStartPeriodId（取最早歸屬期別）
+ * 3) 若有 OGSM 歸屬則自動補齊 frameworks 包含 ogsm
+ */
+export function migrateTimelineV1(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    const periodById = new Map(dept.periods.map((p) => [p.id, p]));
+    for (const activity of dept.activities ?? []) {
+      const links = activity.dashboardLinks ?? [];
+      if (links.length > 0) {
+        const nextLinks: typeof links = [];
+        const seen = new Set<string>();
+        for (const link of links) {
+          if (link.type !== "ogsm") {
+            nextLinks.push(link.id ? link : { ...link, id: genId("dlink") });
+            continue;
+          }
+          const key = `${link.periodId ?? ""}|${link.goalId ?? ""}|${link.strategyId ?? ""}`;
+          if (seen.has(key)) {
+            changed = true;
+            continue;
+          }
+          seen.add(key);
+          nextLinks.push(link.id ? link : { ...link, id: genId("dlink") });
+          if (!link.id) changed = true;
+        }
+        if (nextLinks.length !== links.length) changed = true;
+        activity.dashboardLinks = nextLinks.length > 0 ? nextLinks : undefined;
+      }
+
+      const ogsmLinks = (activity.dashboardLinks ?? []).filter(
+        (l) => l.type === "ogsm" && !!l.periodId,
+      );
+      if (ogsmLinks.length > 0) {
+        if (!(activity.frameworks ?? []).includes("ogsm")) {
+          activity.frameworks = [...(activity.frameworks ?? []), "ogsm"];
+          changed = true;
+        }
+        const sorted = [...ogsmLinks]
+          .map((l) => ({ link: l, period: periodById.get(l.periodId ?? "") }))
+          .filter((x) => !!x.period)
+          .sort(
+            (a, b) =>
+              periodSortValue(a.period!.year, a.period!.halfYear) -
+              periodSortValue(b.period!.year, b.period!.halfYear),
+          );
+        const earliestPeriodId = sorted[0]?.link.periodId;
+        if (
+          earliestPeriodId &&
+          activity.lifecycleStartPeriodId !== earliestPeriodId
+        ) {
+          activity.lifecycleStartPeriodId = earliestPeriodId;
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+function activityLinkKey(link: {
+  activityId: string;
+  type: string;
+  periodId?: string;
+  goalId?: string;
+  strategyId?: string;
+  exclude?: boolean;
+}): string {
+  return [
+    link.activityId,
+    link.type,
+    link.periodId ?? "",
+    link.goalId ?? "",
+    link.strategyId ?? "",
+    link.exclude ? "1" : "0",
+  ].join("|");
+}
+
+function sortById<T extends { id: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * RelationalV1：
+ * - 建立並維護 departments[].activityLinks（關聯表）
+ * - 與既有 activities[].dashboardLinks 雙向同步（相容期）
+ */
+export function syncRelationalLinksV1(ws: WorkspaceData): boolean {
+  let changed = false;
+
+  for (const dept of ws.departments) {
+    const activities = dept.activities ?? [];
+    const activityIds = new Set(activities.map((a) => a.id));
+    const merged = new Map<string, ActivityDashboardLink>();
+
+    // Seed from existing relation table (drop broken foreign keys)
+    for (const rel of dept.activityLinks ?? []) {
+      if (!activityIds.has(rel.activityId)) {
+        changed = true;
+        continue;
+      }
+      const normalized: ActivityDashboardLink = {
+        ...rel,
+        id: rel.id || genId("dlink"),
+      };
+      const key = activityLinkKey(normalized);
+      if (!merged.has(key)) merged.set(key, normalized);
+      else changed = true;
+    }
+
+    // Merge links from activity records into relation table
+    for (const activity of activities) {
+      for (const link of activity.dashboardLinks ?? []) {
+        const normalized: ActivityDashboardLink = {
+          ...link,
+          id: link.id || genId("dlink"),
+          activityId: activity.id,
+        };
+        const key = activityLinkKey(normalized);
+        if (!merged.has(key)) {
+          merged.set(key, normalized);
+          changed = true;
+        }
+      }
+    }
+
+    const mergedLinks = sortById(Array.from(merged.values()));
+    const prevLinks = sortById([...(dept.activityLinks ?? [])]);
+    if (JSON.stringify(prevLinks) !== JSON.stringify(mergedLinks)) {
+      dept.activityLinks = mergedLinks.length > 0 ? mergedLinks : undefined;
+      changed = true;
+    }
+
+    // Hydrate compatibility field: activity.dashboardLinks from relation table
+    for (const activity of activities) {
+      const relForActivity = mergedLinks
+        .filter((l) => l.activityId === activity.id)
+        .map(({ activityId: _activityId, ...link }): DashboardLink => link);
+      const nextDashboardLinks =
+        relForActivity.length > 0 ? sortById(relForActivity) : undefined;
+      const prevDashboardLinks = activity.dashboardLinks
+        ? sortById(activity.dashboardLinks)
+        : undefined;
+      if (
+        JSON.stringify(prevDashboardLinks ?? []) !==
+        JSON.stringify(nextDashboardLinks ?? [])
+      ) {
+        activity.dashboardLinks = nextDashboardLinks;
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
   let changed = false;
   // One-time heavy migrations — gated by _migratedPhase2 so they run only once
   if (!ws._migratedPhase2) {
@@ -527,6 +709,21 @@ function normalizeWorkspaceData(ws: WorkspaceData): boolean {
     ws._migratedV3 = true;
     changed = true;
   }
+  if (!ws._migratedFrameworksV1) {
+    if (migrateFrameworksV1(ws)) changed = true;
+    ws._migratedFrameworksV1 = true;
+    changed = true;
+  }
+  if (!ws._migratedTimelineV1) {
+    if (migrateTimelineV1(ws)) changed = true;
+    ws._migratedTimelineV1 = true;
+    changed = true;
+  }
+  if (!ws._migratedRelationalV1) {
+    ws._migratedRelationalV1 = true;
+    changed = true;
+  }
+  if (syncRelationalLinksV1(ws)) changed = true;
   // Always-run invariant: ensure owners is always an array regardless of migration state.
   // Guards against externally-modified or imported files where owners may be missing.
   for (const dept of ws.departments) {

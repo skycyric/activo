@@ -44,17 +44,19 @@ const VIEWS: { id: ActivityView; label: string; icon: string }[] = [
 
 interface Props {
   workspace: WorkspaceData;
+  activeDeptId: string;
   readOnlyDeptIds?: string[];
   onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
   onDeleteActivity: (deptId: string, activityId: string) => void;
   onAddActivity: (deptId: string, activity: DeptActivity) => void;
   onJumpToActivity: (deptId: string, activityId: string) => void;
-  /** 從外部（DetailPanel M tab）預先開啟某活動 */
+  /** 從外部（DetailPanel M tab）預先開啟某活動 ID */
   initialSelectedActivityId?: string | null;
 }
 
 export default function ActivityPage({
   workspace,
+  activeDeptId,
   readOnlyDeptIds,
   onUpdateActivity,
   onDeleteActivity,
@@ -118,6 +120,7 @@ export default function ActivityPage({
     const result: ActivityWithContext[] = [];
     for (const dept of workspace.departments) {
       const isReadOnly = readOnlyDeptIds?.includes(dept.id) ?? false;
+      const isCrossDept = dept.id !== activeDeptId;
 
       // 建立 OGSM 上下文查找表："periodId|goalId|strategyId" → 顯示標籤
       type OgsmCtx = {
@@ -142,21 +145,48 @@ export default function ActivityPage({
       if (dept.activities && dept.activities.length > 0) {
         // ─ Activity-first 路徑（遷移後）────────────────────────────────
         for (const activity of dept.activities) {
-          const link = activity.dashboardLinks?.find((l) => l.type === "ogsm");
-          const ctx = link
-            ? ogsmCtx.get(`${link.periodId}|${link.goalId}|${link.strategyId}`)
-            : undefined;
+          const ogsmLinks = (activity.dashboardLinks ?? []).filter(
+            (l) => l.type === "ogsm",
+          );
+          const firstLink = ogsmLinks[0];
+          const ogsmCtxList = ogsmLinks
+            .map((link) =>
+              ogsmCtx.get(`${link.periodId}|${link.goalId}|${link.strategyId}`),
+            )
+            .filter(
+              (
+                x,
+              ): x is {
+                periodLabel: string;
+                goalTitle: string;
+                strategyTitle: string;
+              } => !!x,
+            );
+          const unique = (vals: string[]) =>
+            Array.from(new Set(vals.filter(Boolean)));
           result.push({
             ...activity,
+            // 相容未遷移資料：有 dashboardLink 但 frameworks 未設則補為 ogsm
+            frameworks:
+              activity.frameworks && activity.frameworks.length > 0
+                ? activity.frameworks
+                : ogsmLinks.length > 0
+                  ? ["ogsm"]
+                  : undefined,
             deptId: dept.id,
             deptName: dept.name,
-            isReadOnly,
-            periodId: link?.periodId ?? "",
-            periodLabel: ctx?.periodLabel ?? "",
-            goalId: link?.goalId ?? "",
-            goalTitle: ctx?.goalTitle ?? "",
-            strategyId: link?.strategyId ?? "",
-            strategyTitle: ctx?.strategyTitle ?? "",
+            isReadOnly: isReadOnly || isCrossDept,
+            // 相容既有欄位：保留第一筆 id 做篩選；文字顯示改為多筆合併
+            periodId: firstLink?.periodId ?? "",
+            periodLabel: unique(ogsmCtxList.map((c) => c.periodLabel)).join(
+              "、",
+            ),
+            goalId: firstLink?.goalId ?? "",
+            goalTitle: unique(ogsmCtxList.map((c) => c.goalTitle)).join("、"),
+            strategyId: firstLink?.strategyId ?? "",
+            strategyTitle: unique(ogsmCtxList.map((c) => c.strategyTitle)).join(
+              "、",
+            ),
           });
         }
       } else {
@@ -166,8 +196,13 @@ export default function ActivityPage({
           for (const goal of period.ogsm.goals) {
             for (const strategy of goal.strategies) {
               for (const measure of strategy.measures) {
+                const mRaw = measure as unknown as { frameworks?: string[] };
                 result.push({
                   ...measure,
+                  // 舊格式 measures 必屬於 OGSM
+                  frameworks: mRaw.frameworks?.length
+                    ? mRaw.frameworks
+                    : ["ogsm"],
                   deptId: dept.id,
                   deptName: dept.name,
                   periodId: period.id,
@@ -176,7 +211,7 @@ export default function ActivityPage({
                   goalTitle: goal.title,
                   strategyId: strategy.id,
                   strategyTitle: strategy.title,
-                  isReadOnly,
+                  isReadOnly: isReadOnly || isCrossDept,
                 });
               }
             }
@@ -185,7 +220,7 @@ export default function ActivityPage({
       }
     }
     return result;
-  }, [workspace, readOnlyDeptIds]);
+  }, [workspace, readOnlyDeptIds, activeDeptId]);
 
   // Apply filters
   const filtered = useMemo<ActivityWithContext[]>(() => {
@@ -218,9 +253,62 @@ export default function ActivityPage({
         ];
         if (!ownerList.includes(filters.owner)) return false;
       }
-      if (filters.goalId && a.goalId !== filters.goalId) return false;
-      if (filters.strategyId && a.strategyId !== filters.strategyId)
-        return false;
+
+      // Multi-attribution filtering: check if ANY link matches period/goal/strategy
+      if (
+        filters.periodId ||
+        filters.goalId ||
+        filters.strategyId ||
+        (filters.framework === "ogsm" ? false : true)
+      ) {
+        // Need to check against actual dashboardLinks, not flattened first-link fields
+        const ogsmLinks = (a.dashboardLinks ?? []).filter(
+          (l) => l.type === "ogsm",
+        );
+
+        if (filters.framework === "ogsm") {
+          // OGSM framework: match if ANY link has matching period/goal/strategy
+          let hasMatch = false;
+          if (ogsmLinks.length > 0) {
+            if (!filters.periodId && !filters.goalId && !filters.strategyId) {
+              // No OGSM filters specified, just needs OGSM framework
+              hasMatch = true;
+            } else {
+              hasMatch = ogsmLinks.some((link) => {
+                if (filters.periodId && link.periodId !== filters.periodId)
+                  return false;
+                if (filters.goalId && link.goalId !== filters.goalId)
+                  return false;
+                if (
+                  filters.strategyId &&
+                  link.strategyId !== filters.strategyId
+                )
+                  return false;
+                return true;
+              });
+            }
+          }
+          if (!hasMatch) return false;
+        }
+      }
+
+      if (filters.framework) {
+        const fw = a.frameworks ?? [];
+        const hasOgsmLink = (a.dashboardLinks ?? []).some(
+          (l) => l.type === "ogsm",
+        );
+        if (filters.framework === "_none") {
+          // 「未分類」= 沒有任何 framework、沒有 OGSM dashboardLink、也非舊格式 OGSM 措施
+          if (fw.length > 0 || hasOgsmLink || a.strategyId) return false;
+        } else if (filters.framework === "ogsm") {
+          // 相容舊資料：有 dashboardLink 或 strategyId（舊格式 strategy.measures[] 路徑）也算 OGSM
+          if (!fw.includes("ogsm") && !hasOgsmLink && !a.strategyId)
+            return false;
+        } else {
+          if (!fw.includes(filters.framework)) return false;
+        }
+      }
+
       if (filters.status && a.status !== filters.status) return false;
       if (filters.startFrom && a.startDate && a.startDate < filters.startFrom)
         return false;
@@ -250,6 +338,8 @@ export default function ActivityPage({
   const selectedActivity = selectedActivityId
     ? (allActivities.find((a) => a.id === selectedActivityId) ?? null)
     : null;
+
+  const isActiveDeptReadOnly = readOnlyDeptIds?.includes(activeDeptId) ?? false;
 
   return (
     <div className="activity-page">
@@ -281,6 +371,8 @@ export default function ActivityPage({
           <button
             className="activity-add-btn"
             onClick={() => setShowAddModal(true)}
+            disabled={isActiveDeptReadOnly}
+            title={isActiveDeptReadOnly ? "目前部門為唯讀" : "新增活動"}
           >
             ＋ 新增活動
           </button>
@@ -290,7 +382,6 @@ export default function ActivityPage({
       {/* Filters */}
       <ActivityFilters
         workspace={workspace}
-        allActivities={allActivities}
         filters={filters}
         onChange={setFilters}
       />
@@ -350,6 +441,9 @@ export default function ActivityPage({
             workspace={workspace}
             isReadOnly={selectedActivity.isReadOnly}
             warnDaysBefore={7}
+            initialPeriodId={selectedActivity.periodId || undefined}
+            initialGoalId={selectedActivity.goalId || undefined}
+            initialStrategyId={selectedActivity.strategyId || undefined}
             onUpdate={(deptId, act) => {
               onUpdateActivity(deptId, act);
             }}
@@ -366,6 +460,7 @@ export default function ActivityPage({
       {showAddModal && (
         <ActivityAddModal
           workspace={workspace}
+          fixedDeptId={activeDeptId}
           onAdd={onAddActivity}
           onClose={() => setShowAddModal(false)}
         />

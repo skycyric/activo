@@ -37,13 +37,21 @@ const EMPTY_FORM: FormData = {
 
 interface Props {
   workspace: WorkspaceData;
+  fixedDeptId?: string;
   onAdd: (deptId: string, activity: DeptActivity) => void;
   onClose: () => void;
 }
 
-export default function ActivityAddModal({ workspace, onAdd, onClose }: Props) {
-  const [form, setForm] = useState<FormData>(EMPTY_FORM);
-  const [showOgsmLink, setShowOgsmLink] = useState(false);
+export default function ActivityAddModal({
+  workspace,
+  fixedDeptId,
+  onAdd,
+  onClose,
+}: Props) {
+  const [form, setForm] = useState<FormData>(() => ({
+    ...EMPTY_FORM,
+    deptId: fixedDeptId ?? "",
+  }));
 
   const set = <K extends keyof FormData>(key: K, value: FormData[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -64,7 +72,7 @@ export default function ActivityAddModal({ workspace, onAdd, onClose }: Props) {
     const assistUnits = form.assistUnits.length ? form.assistUnits : undefined;
 
     const dashboardLinks: NonNullable<DeptActivity["dashboardLinks"]> =
-      showOgsmLink && form.periodId && form.goalId && form.stratId
+      form.periodId && form.goalId && form.stratId
         ? [
             {
               id: genId("dlink"),
@@ -110,24 +118,32 @@ export default function ActivityAddModal({ workspace, onAdd, onClose }: Props) {
           {/* 選部門 */}
           <label className="act-modal-label">
             部門 <span className="act-required">*</span>
-            <select
-              className="act-modal-select"
-              value={form.deptId}
-              onChange={(e) => {
-                set("deptId", e.target.value);
-                set("periodId", "");
-                set("goalId", "");
-                set("stratId", "");
-              }}
-              autoFocus
-            >
-              <option value="">-- 請選擇 --</option>
-              {depts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+            {fixedDeptId ? (
+              <input
+                className="act-modal-input"
+                value={depts.find((d) => d.id === form.deptId)?.name ?? ""}
+                readOnly
+              />
+            ) : (
+              <select
+                className="act-modal-select"
+                value={form.deptId}
+                onChange={(e) => {
+                  set("deptId", e.target.value);
+                  set("periodId", "");
+                  set("goalId", "");
+                  set("stratId", "");
+                }}
+                autoFocus
+              >
+                <option value="">-- 請選擇 --</option>
+                {depts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
 
           {/* 活動名稱 */}
@@ -195,69 +211,59 @@ export default function ActivityAddModal({ workspace, onAdd, onClose }: Props) {
             />
           </label>
 
-          {/* OGSM 連結（可展開） */}
+          {/* OGSM 連結（選填） */}
           <div className="act-modal-label act-modal-label-full">
-            <button
-              type="button"
-              className="act-modal-ogsm-toggle"
-              onClick={() => setShowOgsmLink((v) => !v)}
-            >
-              {showOgsmLink ? "▾" : "▸"} OGSM 連結（選填）
-            </button>
-
-            {showOgsmLink && (
-              <div className="act-modal-step-content">
-                <div className="act-modal-breadcrumb">
-                  連結後此活動的 KPI 將計入對應策略的完成率
-                </div>
-                <select
-                  className="act-modal-select"
-                  value={form.periodId}
-                  onChange={(e) => {
-                    set("periodId", e.target.value);
-                    set("goalId", "");
-                    set("stratId", "");
-                  }}
-                  disabled={!form.deptId}
-                >
-                  <option value="">選期別…</option>
-                  {periods.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.year} {p.halfYear}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="act-modal-select"
-                  value={form.goalId}
-                  onChange={(e) => {
-                    set("goalId", e.target.value);
-                    set("stratId", "");
-                  }}
-                  disabled={!form.periodId}
-                >
-                  <option value="">選目標…</option>
-                  {goals.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.label} {g.title}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="act-modal-select"
-                  value={form.stratId}
-                  onChange={(e) => set("stratId", e.target.value)}
-                  disabled={!form.goalId}
-                >
-                  <option value="">選策略…</option>
-                  {strategies.map((s, si) => (
-                    <option key={s.id} value={s.id}>
-                      S{si + 1} {s.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="act-modal-breadcrumb">
+              OGSM 連結（選填）：連結後此活動的 KPI 將計入對應策略的完成率
+            </div>
+            <div className="act-modal-step-content">
+              <select
+                className="act-modal-select"
+                value={form.periodId}
+                onChange={(e) => {
+                  set("periodId", e.target.value);
+                  set("goalId", "");
+                  set("stratId", "");
+                }}
+                disabled={!form.deptId}
+              >
+                <option value="">選期別…</option>
+                {periods.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.year} {p.halfYear}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="act-modal-select"
+                value={form.goalId}
+                onChange={(e) => {
+                  set("goalId", e.target.value);
+                  set("stratId", "");
+                }}
+                disabled={!form.periodId}
+              >
+                <option value="">選目標…</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.label} {g.title}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="act-modal-select"
+                value={form.stratId}
+                onChange={(e) => set("stratId", e.target.value)}
+                disabled={!form.goalId}
+              >
+                <option value="">選策略…</option>
+                {strategies.map((s, si) => (
+                  <option key={s.id} value={s.id}>
+                    S{si + 1} {s.title}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

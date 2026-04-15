@@ -157,11 +157,23 @@ export const DashboardLinkSchema = z.object({
   /** 儀表板類型，目前支援 "ogsm"，設計為可延伸字串 */
   type: z.string(),
   // ── OGSM 專屬欄位 ──────────────────────────────────────────────────────────
+  /**
+   * 期別 id。語意上建議使用 YYYY-H1 / YYYY-H2（例如 2026-H1），
+   * 但為相容舊資料，仍允許既有任意 id 字串。
+   */
   periodId: z.string().optional(),
   goalId: z.string().optional(),
   strategyId: z.string().optional(),
   /** true = 本活動不計入此連結儀表板的指標計算 */
   exclude: z.boolean().default(false),
+});
+
+/**
+ * 關聯式模型：活動與儀表板之間的連結表（Department 層）。
+ * 以 activityId 作外鍵，對應 dept.activities[].id。
+ */
+export const ActivityDashboardLinkSchema = DashboardLinkSchema.extend({
+  activityId: z.string(),
 });
 
 // ── ActivityPlanItem ──────────────────────────────────────────────────────────
@@ -204,6 +216,10 @@ export const DeptActivitySchema = MeasureSchema.extend({
   frameworks: z.array(z.string()).optional(),
   /** 平坦行動計畫項目（取代 actionPlans 巢狀結構） */
   planItems: z.array(ActivityPlanItemSchema).optional(),
+  /** 活動生命週期起始期別（跨年/跨H活動用；僅資料結構，不影響 KPI 計算） */
+  lifecycleStartPeriodId: z.string().optional(),
+  /** 活動生命週期結束期別；未結束可為 undefined */
+  lifecycleEndPeriodId: z.string().optional(),
   // ── 已棄用欄位（migration 讀取用，勿直接寫入）──────────────────────────────
   /** @deprecated 使用 dashboardLinks 取代 */
   ogsmLink: OgsmLinkSchema.optional(),
@@ -350,6 +366,8 @@ export const DepartmentSchema = z.object({
   periods: z.array(PeriodDataSchema),
   /** 部門直屬活動清單（activity-first 架構的核心） */
   activities: z.array(DeptActivitySchema).optional(),
+  /** 關聯式模型：活動與儀表板關係表（V1 導入，與 activities[].dashboardLinks 並存相容） */
+  activityLinks: z.array(ActivityDashboardLinkSchema).optional(),
 });
 
 export const TeamMemberSchema = z.object({
@@ -377,6 +395,12 @@ export const WorkspaceDataSchema = z.object({
   _migratedActivityFirst: z.boolean().optional(),
   /** true = 已執行 V3 遷移：ogsmLink→dashboardLinks, actionPlans→planItems */
   _migratedV3: z.boolean().optional(),
+  /** true = 已執行 FrameworksV1 遷移：dept.activities 中無 frameworks 的補設 ["ogsm"] */
+  _migratedFrameworksV1: z.boolean().optional(),
+  /** true = 已執行 TimelineV1：多筆 OGSM 歸屬去重 + lifecycle 欄位補值 */
+  _migratedTimelineV1: z.boolean().optional(),
+  /** true = 已執行 RelationalV1：建立 departments[].activityLinks 並與 activities[].dashboardLinks 同步 */
+  _migratedRelationalV1: z.boolean().optional(),
   warnDaysBefore: z.number().optional(),
 });
 
@@ -392,6 +416,7 @@ export type MeasureStatus = z.infer<typeof MeasureStatusSchema>;
 export type Measure = z.infer<typeof MeasureSchema>;
 export type OgsmLink = z.infer<typeof OgsmLinkSchema>;
 export type DashboardLink = z.infer<typeof DashboardLinkSchema>;
+export type ActivityDashboardLink = z.infer<typeof ActivityDashboardLinkSchema>;
 export type ActivityPlanItem = z.infer<typeof ActivityPlanItemSchema>;
 export type DeptActivity = z.infer<typeof DeptActivitySchema>;
 export type GoalKpiLink = z.infer<typeof GoalKpiLinkSchema>;

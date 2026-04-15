@@ -7,6 +7,7 @@ import type {
   DeptActivity,
   FreeNode,
   KPI,
+  PeriodData,
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { computeGoalKpiResult } from "../utils/goalKpi";
@@ -17,14 +18,25 @@ import { computeKpiAchievement } from "../utils/kpiCalc";
 interface Props {
   data: OGSMData;
   deptActivities: DeptActivity[];
+  availablePeriods?: PeriodData[];
   initialGoalId?: string;
+  isReadOnly?: boolean;
+  periodId?: string;
+  onSwitchPeriod?: (periodId: string) => void;
+  onAddPeriod?: (halfYear: "H1" | "H2", year: number) => void;
+  onCopyPeriod?: (
+    sourcePeriodId: string,
+    halfYear: "H1" | "H2",
+    year: number,
+  ) => void;
+  onDeletePeriod?: (periodId: string) => void;
   onUpdateData: (d: OGSMData) => void;
-  onUpdateActivity?: (activity: DeptActivity) => void;
+  onDraftStateChange?: (hasDraft: boolean) => void;
+  onUpdateActivity?: (act: DeptActivity) => void;
   onAddGoal: () => void;
   onDeleteGoal: (id: string) => void;
   onAddStrategyToGoal: (goalId: string) => void;
   onDeleteStrategy: (stratId: string) => void;
-  onClose: () => void;
 }
 
 type ViewMode = "item" | "kpi";
@@ -36,6 +48,9 @@ interface ItemCanvasProps {
   data: OGSMData;
   deptActivities: DeptActivity[];
   freeNodes: FreeNode[];
+  periods: PeriodData[];
+  activePeriodId?: string;
+  onSwitchPeriod?: (periodId: string) => void;
   selectedNodeId: string | null;
   moduleId: ModuleId;
   onSelectNode: (id: string) => void;
@@ -44,6 +59,9 @@ interface ItemCanvasProps {
 function ItemCanvas({
   data,
   freeNodes,
+  periods,
+  activePeriodId,
+  onSwitchPeriod,
   selectedNodeId,
   moduleId,
   onSelectNode,
@@ -135,6 +153,33 @@ function ItemCanvas({
                   )}
                 </span>
               </div>
+
+              {periods.length > 0 && (
+                <div
+                  className="org-h-tabs"
+                  role="tablist"
+                  aria-label="OGSM half-year"
+                >
+                  {periods.map((p) => {
+                    const isActive = p.id === activePeriodId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        className={`org-h-tab ${isActive ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSwitchPeriod?.(p.id);
+                        }}
+                      >
+                        {p.year}-{p.halfYear}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <ul className="org-children">
                 {data.goals.map((g) => (
@@ -1349,6 +1394,17 @@ interface NodeTypeManagerProps {
   data: OGSMData;
   deptActivities: DeptActivity[];
   freeNodes: FreeNode[];
+  periods?: PeriodData[];
+  activePeriodId?: string;
+  onSwitchPeriod?: (periodId: string) => void;
+  isReadOnly?: boolean;
+  onAddPeriod?: (halfYear: "H1" | "H2", year: number) => void;
+  onCopyPeriod?: (
+    sourcePeriodId: string,
+    halfYear: "H1" | "H2",
+    year: number,
+  ) => void;
+  onDeletePeriod?: (periodId: string) => void;
   selectedNodeId: string | null;
   moduleId: ModuleId;
   onSelectNode: (id: string) => void;
@@ -1369,6 +1425,13 @@ function NodeTypeManager({
   data,
   deptActivities: _deptActivities,
   freeNodes,
+  periods = [],
+  activePeriodId,
+  onSwitchPeriod,
+  isReadOnly = false,
+  onAddPeriod,
+  onCopyPeriod,
+  onDeletePeriod,
   selectedNodeId,
   moduleId,
   onSelectNode,
@@ -1388,6 +1451,11 @@ function NodeTypeManager({
   const [addingStratFor, setAddingStratFor] = React.useState<string | null>(
     null,
   );
+  const [periodForm, setPeriodForm] = React.useState<{
+    mode: "add" | "copy";
+    year: number;
+    halfYear: "H1" | "H2";
+  } | null>(null);
 
   const toggle = (key: string) =>
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1408,15 +1476,175 @@ function NodeTypeManager({
             <span className="ntm-count-badge">1</span>
           </div>
           {!collapsed["o"] && (
-            <div
-              className={`ntm-item-row${selectedNodeId === "o" ? " selected" : ""}`}
-              onClick={() => onSelectNode("o")}
-            >
-              <span className="ntm-type-badge o">O</span>
-              <span className="ntm-item-label">
-                {data.objectives.deptO || "（未設定）"}
-              </span>
-            </div>
+            <>
+              <div
+                className={`ntm-item-row${selectedNodeId === "o" ? " selected" : ""}`}
+                onClick={() => onSelectNode("o")}
+              >
+                <span className="ntm-type-badge o">O</span>
+                <span className="ntm-item-label">
+                  {data.objectives.deptO || "（未設定）"}
+                </span>
+              </div>
+              {(periods.length > 0 || !isReadOnly) && (
+                <div
+                  className="ntm-h-tabs"
+                  role="tablist"
+                  aria-label="left panel half-year tabs"
+                >
+                  {periods.map((p) => {
+                    const isActive = p.id === activePeriodId;
+                    return (
+                      <span key={p.id} className="ntm-h-tab-wrap">
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          className={`ntm-h-tab ${isActive ? "active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSwitchPeriod?.(p.id);
+                          }}
+                        >
+                          {p.year}-{p.halfYear}
+                        </button>
+                        {!isReadOnly && periods.length > 1 && (
+                          <button
+                            className="ntm-period-del-btn"
+                            title={`刪除 ${p.year} ${p.halfYear}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeletePeriod?.(p.id);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  {!isReadOnly && activePeriodId && (
+                    <button
+                      className="ntm-period-copy-btn"
+                      title="複製目前期間到新期間"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const activeP = periods.find(
+                          (p) => p.id === activePeriodId,
+                        );
+                        if (activeP) {
+                          const nextHalf: "H1" | "H2" =
+                            activeP.halfYear === "H1" ? "H2" : "H1";
+                          const nextYear =
+                            activeP.halfYear === "H2"
+                              ? activeP.year + 1
+                              : activeP.year;
+                          setPeriodForm({
+                            mode: "copy",
+                            year: nextYear,
+                            halfYear: nextHalf,
+                          });
+                        }
+                      }}
+                    >
+                      ⧉
+                    </button>
+                  )}
+                  {!isReadOnly && (
+                    <button
+                      className="ntm-period-add-btn"
+                      title="新增空白期間"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const lastP = periods[periods.length - 1];
+                        const nextHalf: "H1" | "H2" = lastP
+                          ? lastP.halfYear === "H1"
+                            ? "H2"
+                            : "H1"
+                          : "H1";
+                        const nextYear = lastP
+                          ? lastP.halfYear === "H2"
+                            ? lastP.year + 1
+                            : lastP.year
+                          : new Date().getFullYear();
+                        setPeriodForm({
+                          mode: "add",
+                          year: nextYear,
+                          halfYear: nextHalf,
+                        });
+                      }}
+                    >
+                      ＋
+                    </button>
+                  )}
+                </div>
+              )}
+              {periodForm && (
+                <div className="ntm-period-form">
+                  <span className="ntm-period-form-title">
+                    {periodForm.mode === "add" ? "新增期間" : "複製期間"}
+                  </span>
+                  <input
+                    type="number"
+                    className="ntm-period-year-input"
+                    value={periodForm.year}
+                    min={2020}
+                    max={2099}
+                    onChange={(e) =>
+                      setPeriodForm((f) =>
+                        f
+                          ? {
+                              ...f,
+                              year: parseInt(e.target.value) || f.year,
+                            }
+                          : null,
+                      )
+                    }
+                  />
+                  <div className="ntm-period-half-btns">
+                    {(["H1", "H2"] as const).map((h) => (
+                      <button
+                        key={h}
+                        className={`ntm-period-half-btn${periodForm.halfYear === h ? " active" : ""}`}
+                        onClick={() =>
+                          setPeriodForm((f) =>
+                            f ? { ...f, halfYear: h } : null,
+                          )
+                        }
+                      >
+                        {h}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="ntm-period-form-actions">
+                    <button
+                      className="ntm-period-confirm-btn"
+                      onClick={() => {
+                        if (periodForm.mode === "add") {
+                          onAddPeriod?.(periodForm.halfYear, periodForm.year);
+                        } else {
+                          if (activePeriodId)
+                            onCopyPeriod?.(
+                              activePeriodId,
+                              periodForm.halfYear,
+                              periodForm.year,
+                            );
+                        }
+                        setPeriodForm(null);
+                      }}
+                    >
+                      {periodForm.mode === "add" ? "新增" : "複製"}
+                    </button>
+                    <button
+                      className="ntm-period-cancel-btn"
+                      onClick={() => setPeriodForm(null)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* ── G Section ─────────────────────────────────── */}
@@ -2086,6 +2314,8 @@ interface NodeConfigProps {
   draftGoals: Goal[];
   deptActivities: DeptActivity[];
   freeNodes: FreeNode[];
+  periodId?: string;
+  isReadOnly?: boolean;
   onUpdateData: (d: OGSMData) => void;
   onUpdateFreeNode: (fn: FreeNode) => void;
   onUpdateDraftGk: (gk: GoalKPI, goalId: string) => void;
@@ -2094,6 +2324,7 @@ interface NodeConfigProps {
   onCopyGoalKpi: (gkId: string) => void;
   onAddGoalKpiOfType: (goalId: string, type: "direct" | "aggregate") => void;
   onSelectNode: (id: string) => void;
+  onUpdateActivity?: (act: DeptActivity) => void;
   onClose: () => void;
 }
 
@@ -2104,6 +2335,8 @@ function NodeConfig({
   draftGoals,
   deptActivities,
   freeNodes,
+  periodId,
+  isReadOnly = false,
   onUpdateData,
   onUpdateFreeNode,
   onUpdateDraftGk,
@@ -2112,6 +2345,7 @@ function NodeConfig({
   onCopyGoalKpi,
   onAddGoalKpiOfType,
   onSelectNode,
+  onUpdateActivity,
   onClose,
 }: NodeConfigProps) {
   if (!selectedNodeId) return null;
@@ -2242,9 +2476,14 @@ function NodeConfig({
     const s = parentGoal?.strategies.find((s) => s.id === sid);
     if (!s || !parentGoal) return null;
 
-    // Activities linked to this strategy
+    // Activities linked to this strategy (scoped to current period if provided)
     const linkedActs = deptActivities.filter((a) =>
-      (a.dashboardLinks ?? []).some((dl) => dl.strategyId === sid),
+      (a.dashboardLinks ?? []).some(
+        (dl) =>
+          dl.type === "ogsm" &&
+          dl.strategyId === sid &&
+          (!periodId || dl.periodId === periodId),
+      ),
     );
 
     return (
@@ -2320,10 +2559,98 @@ function NodeConfig({
                   <span className="kpid-kpi-summary-name">
                     {a.rawText || a.id}
                   </span>
+                  {!isReadOnly && onUpdateActivity && (
+                    <button
+                      className="kpid-remove-btn"
+                      title="統除連結"
+                      onClick={() => {
+                        const other = (a.dashboardLinks ?? []).filter(
+                          (l) =>
+                            !(
+                              l.type === "ogsm" &&
+                              l.strategyId === sid &&
+                              (!periodId || l.periodId === periodId)
+                            ),
+                        );
+                        onUpdateActivity({
+                          ...a,
+                          dashboardLinks: other.length ? other : undefined,
+                        });
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               ))}
             </>
           )}
+          {!isReadOnly &&
+            onUpdateActivity &&
+            (() => {
+              const unlinkable = deptActivities.filter(
+                (a) =>
+                  !(a.dashboardLinks ?? []).some(
+                    (l) =>
+                      l.type === "ogsm" &&
+                      l.strategyId === sid &&
+                      (!periodId || l.periodId === periodId),
+                  ),
+              );
+              if (unlinkable.length === 0) return null;
+              const goalId = parentGoal.id;
+              return (
+                <>
+                  <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                    新增活動連結
+                  </div>
+                  <select
+                    className="kpid-add-select"
+                    value=""
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      const target = deptActivities.find(
+                        (a) => a.id === e.target.value,
+                      );
+                      if (!target) return;
+                      const allLinks = target.dashboardLinks ?? [];
+                      const exists = allLinks.some(
+                        (l) =>
+                          l.type === "ogsm" &&
+                          l.periodId === (periodId ?? "") &&
+                          l.goalId === goalId &&
+                          l.strategyId === sid,
+                      );
+                      if (exists) return;
+                      onUpdateActivity({
+                        ...target,
+                        dashboardLinks: [
+                          ...allLinks,
+                          {
+                            id: genId("dlink"),
+                            type: "ogsm",
+                            periodId: periodId ?? "",
+                            goalId,
+                            strategyId: sid,
+                            exclude: false,
+                          },
+                        ],
+                        frameworks: (target.frameworks ?? []).includes("ogsm")
+                          ? target.frameworks
+                          : [...(target.frameworks ?? []), "ogsm"],
+                      });
+                    }}
+                  >
+                    <option value="">── 選擇活動連結……</option>
+                    {unlinkable.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.rawText || a.id}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              );
+            })()}
         </div>
       </div>
     );
@@ -2552,20 +2879,43 @@ function NodeConfig({
 export default function KpiDesigner({
   data,
   deptActivities,
+  availablePeriods = [],
   initialGoalId,
+  isReadOnly = false,
+  periodId,
+  onSwitchPeriod,
+  onAddPeriod,
+  onCopyPeriod,
+  onDeletePeriod,
   onUpdateData,
-  onUpdateActivity: _onUpdateActivity,
+  onDraftStateChange,
+  onUpdateActivity,
   onAddGoal,
   onDeleteGoal,
   onAddStrategyToGoal,
   onDeleteStrategy,
-  onClose: _onClose,
 }: Props) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     initialGoalId ? `g-${initialGoalId}` : null,
   );
   const [draftGoals, setDraftGoals] = useState<Goal[]>(() => data.goals);
   const [hasDraftGkChanges, setHasDraftGkChanges] = useState(false);
+  /** Tracks which goal IDs have uncommitted local GoalKPI changes (Bug 4: prevent remote sync overwrite) */
+  const draftGoalIds = useRef<Set<string>>(new Set());
+
+  // Notify parent whenever draft state changes (used for navigation guard)
+  useEffect(() => {
+    onDraftStateChange?.(hasDraftGkChanges);
+  }, [hasDraftGkChanges, onDraftStateChange]);
+
+  // Guard onUpdateData in read-only mode
+  const safeUpdateData = useCallback(
+    (d: OGSMData) => {
+      if (isReadOnly) return;
+      onUpdateData(d);
+    },
+    [isReadOnly, onUpdateData],
+  );
   const [leftWidth, setLeftWidth] = useState(280);
   const [rightWidth, setRightWidth] = useState(320);
   const dragging = useRef<{
@@ -2582,9 +2932,9 @@ export default function KpiDesigner({
   const commitFreeNodes = useCallback(
     (next: FreeNode[]) => {
       setFreeNodes(next);
-      onUpdateData({ ...data, freeNodes: next });
+      safeUpdateData({ ...data, freeNodes: next });
     },
-    [data, onUpdateData],
+    [data, safeUpdateData],
   );
 
   useEffect(() => {
@@ -2637,20 +2987,24 @@ export default function KpiDesigner({
   // ── Goal handlers ──────────────────────────────────────────────────────────
   const copyGoal = useCallback(
     (id: string) => {
-      const orig = data.goals.find((g) => g.id === id);
+      // Bug 3 fix: use draftGoals to capture unsaved GoalKPI changes in the copy
+      const orig = draftGoals.find((g) => g.id === id);
       if (!orig) return;
       const copy: Goal = {
         ...orig,
         id: genId("goa"),
-        title: `${orig.title} (複製)`,
+        title: `${orig.title} (副本)`,
         strategies: [],
-        goalKpis: [],
+        goalKpis: (orig.goalKpis ?? []).map((gk) => ({
+          ...gk,
+          id: genId("gk"),
+        })),
         completionRate: 0,
         updatedAt: new Date().toISOString(),
       };
-      onUpdateData({ ...data, goals: [...data.goals, copy] });
+      safeUpdateData({ ...data, goals: [...data.goals, copy] });
     },
-    [data, onUpdateData],
+    [draftGoals, data, safeUpdateData],
   );
 
   // ── Strategy handlers ──────────────────────────────────────────────────────
@@ -2671,7 +3025,7 @@ export default function KpiDesigner({
         manualRate: null,
         updatedAt: new Date().toISOString(),
       };
-      onUpdateData({
+      safeUpdateData({
         ...data,
         goals: data.goals.map((g) =>
           g.id !== parentGoal.id
@@ -2716,7 +3070,12 @@ export default function KpiDesigner({
       data.goals.map((g) => {
         const draft = prev.find((d) => d.id === g.id);
         if (!draft) return g;
-        return { ...g, goalKpis: draft.goalKpis };
+        // Bug 4 fix: only preserve local draft goalKpis if this goal has uncommitted
+        // local changes; otherwise accept the incoming remote version
+        if (draftGoalIds.current.has(g.id)) {
+          return { ...g, goalKpis: draft.goalKpis };
+        }
+        return g;
       }),
     );
   }, [data.goals]);
@@ -2737,9 +3096,11 @@ export default function KpiDesigner({
             },
       ),
     );
+    draftGoalIds.current.add(goalId);
     setHasDraftGkChanges(true);
   }, []);
 
+  // Bug 1: draft guard is handled in App.tsx via tryCloseKpiDesigner + onDraftStateChange
   const handleSaveGkChanges = useCallback(() => {
     let newData = data;
     for (const dg of draftGoals) {
@@ -2754,13 +3115,15 @@ export default function KpiDesigner({
       }
     }
     onUpdateData(newData);
+    draftGoalIds.current.clear();
     setHasDraftGkChanges(false);
-  }, [draftGoals, data, onUpdateData]);
+  }, [draftGoals, data, onUpdateData, isReadOnly]);
 
   const updateGoalKpis = useCallback((goalId: string, kpis: GoalKPI[]) => {
     setDraftGoals((prev) =>
       prev.map((g) => (g.id !== goalId ? g : { ...g, goalKpis: kpis })),
     );
+    draftGoalIds.current.add(goalId);
     setHasDraftGkChanges(true);
   }, []);
 
@@ -2781,6 +3144,7 @@ export default function KpiDesigner({
           : { ...g, goalKpis: [...(g.goalKpis ?? []), newGk] },
       ),
     );
+    draftGoalIds.current.add(goalId);
     setHasDraftGkChanges(true);
   }, []);
 
@@ -2803,6 +3167,7 @@ export default function KpiDesigner({
             : { ...g, goalKpis: [...(g.goalKpis ?? []), newGk] },
         ),
       );
+      draftGoalIds.current.add(goalId);
       setHasDraftGkChanges(true);
       // 自動切換到新 GK （需知道 id）
       setSelectedNodeId(`gk-${newGk.id}`);
@@ -2812,10 +3177,15 @@ export default function KpiDesigner({
 
   const deleteGoalKpi = useCallback((gkId: string) => {
     setDraftGoals((prev) =>
-      prev.map((g) => ({
-        ...g,
-        goalKpis: (g.goalKpis ?? []).filter((gk) => gk.id !== gkId),
-      })),
+      prev.map((g) => {
+        if ((g.goalKpis ?? []).some((gk) => gk.id === gkId)) {
+          draftGoalIds.current.add(g.id);
+        }
+        return {
+          ...g,
+          goalKpis: (g.goalKpis ?? []).filter((gk) => gk.id !== gkId),
+        };
+      }),
     );
     setHasDraftGkChanges(true);
     setSelectedNodeId((prev) => (prev === `gk-${gkId}` ? null : prev));
@@ -2826,6 +3196,7 @@ export default function KpiDesigner({
       prev.map((g) => {
         const idx = (g.goalKpis ?? []).findIndex((gk) => gk.id === gkId);
         if (idx === -1) return g;
+        draftGoalIds.current.add(g.id);
         const src = g.goalKpis![idx];
         const copy: GoalKPI = {
           ...src,
@@ -2853,144 +3224,166 @@ export default function KpiDesigner({
 
   return (
     <div className="kpid-root">
+      {/* Bug 2 fix: read-only banner */}
+      {isReadOnly && (
+        <div className="kpid-readonly-banner">
+          👁 檢視模式：此部門為唯讀，無法編輯
+        </div>
+      )}
       {/* Left: module select + panel */}
-      <div className="kpid-left-wrap" style={{ width: leftWidth }}>
-        <div className="kpid-left-module-bar">
-          <select
-            className="kpid-left-module-select"
-            value={moduleId ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              setModuleId(v === "" ? null : (v as "ogsm" | "other"));
-              setSelectedNodeId(null);
-            }}
-          >
-            <option value="">── 請選擇模組 ──</option>
-            <option value="ogsm">OGSM 目標體系</option>
-            <option value="other">其他（自由節點）</option>
-          </select>
-        </div>
-        {moduleId === "ogsm" && viewMode === "kpi" ? (
-          <KpiGoalTree
-            draftGoals={draftGoals}
-            deptActivities={deptActivities}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
-            onAddGoalKpi={addGoalKpi}
-            onAddGoalKpiOfType={addGoalKpiOfType}
-            onDeleteGoalKpi={deleteGoalKpi}
-            onCopyGoalKpi={copyGoalKpi}
-          />
-        ) : (
-          <NodeTypeManager
-            data={data}
-            deptActivities={deptActivities}
-            freeNodes={freeNodes}
-            selectedNodeId={selectedNodeId}
-            moduleId={moduleId}
-            onSelectNode={setSelectedNodeId}
-            onUpdateData={onUpdateData}
-            onAddGoal={onAddGoal}
-            onDeleteGoal={onDeleteGoal}
-            onCopyGoal={copyGoal}
-            onAddStrategy={onAddStrategyToGoal}
-            onDeleteStrategy={onDeleteStrategy}
-            onCopyStrategy={copyStrategy}
-            onAddFreeNode={addFreeNode}
-            onDeleteFreeNode={deleteFreeNode}
-            onCopyFreeNode={copyFreeNode}
-          />
-        )}
-      </div>
-      <div
-        className="kpid-resize-handle"
-        onMouseDown={(e) => startDrag("left", e, leftWidth)}
-      />
-
-      {/* Center: Canvas */}
-      <div className="kpid-canvas-wrap">
-        <div className="kpid-canvas-toolbar">
-          <div style={{ display: "flex", gap: 4 }}>
-            <button
-              className={`kpid-mode-btn${viewMode === "item" ? " active" : ""}`}
-              onClick={() => setViewMode("item")}
+      <div className="kpid-root-inner">
+        <div className="kpid-left-wrap" style={{ width: leftWidth }}>
+          <div className="kpid-left-module-bar">
+            <select
+              className="kpid-left-module-select"
+              value={moduleId ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                setModuleId(v === "" ? null : (v as "ogsm" | "other"));
+                setSelectedNodeId(null);
+              }}
             >
-              📋 項目模式
-            </button>
-            <button
-              className={`kpid-mode-btn${viewMode === "kpi" ? " active" : ""}`}
-              onClick={() => setViewMode("kpi")}
-              disabled={moduleId !== "ogsm"}
-              title={
-                moduleId !== "ogsm" ? "KPI 模式僅支援 OGSM 模組" : undefined
-              }
-            >
-              📊 KPI 模式
-            </button>
+              <option value="">── 請選擇模組 ──</option>
+              <option value="ogsm">OGSM 目標體系</option>
+              <option value="other">其他（自由節點）</option>
+            </select>
           </div>
-          {hasDraftGkChanges && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span className="kpid-unsaved-badge">KPI 未儲存</span>
-              <button className="kpid-save-btn" onClick={handleSaveGkChanges}>
-                💾 儲存 KPI 變更
-              </button>
-            </div>
-          )}
-        </div>
-        {viewMode === "kpi" && moduleId === "ogsm" ? (
-          <KpiCanvas
-            draftGoals={draftGoals}
-            deptActivities={deptActivities}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
-          />
-        ) : (
-          <ItemCanvas
-            data={{ ...data, goals: draftGoals, freeNodes }}
-            deptActivities={deptActivities}
-            freeNodes={freeNodes}
-            selectedNodeId={selectedNodeId}
-            moduleId={moduleId}
-            onSelectNode={setSelectedNodeId}
-          />
-        )}
-      </div>
-
-      {/* Right: Node Config */}
-      {selectedNodeId && (
-        <>
-          <div
-            className="kpid-resize-handle"
-            onMouseDown={(e) => startDrag("right", e, rightWidth)}
-          />
-          <div
-            style={{
-              width: rightWidth,
-              flexShrink: 0,
-              display: "flex",
-              overflow: "hidden",
-            }}
-          >
-            <NodeConfig
-              selectedNodeId={selectedNodeId}
-              viewMode={viewMode}
-              data={data}
+          {moduleId === "ogsm" && viewMode === "kpi" ? (
+            <KpiGoalTree
               draftGoals={draftGoals}
               deptActivities={deptActivities}
-              freeNodes={freeNodes}
-              onUpdateData={onUpdateData}
-              onUpdateFreeNode={updateFreeNode}
-              onUpdateDraftGk={updateDraftGk}
-              onUpdateGoalKpis={updateGoalKpis}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={setSelectedNodeId}
+              onAddGoalKpi={addGoalKpi}
+              onAddGoalKpiOfType={addGoalKpiOfType}
               onDeleteGoalKpi={deleteGoalKpi}
               onCopyGoalKpi={copyGoalKpi}
-              onAddGoalKpiOfType={addGoalKpiOfType}
-              onSelectNode={setSelectedNodeId}
-              onClose={() => setSelectedNodeId(null)}
             />
+          ) : (
+            <NodeTypeManager
+              data={data}
+              deptActivities={deptActivities}
+              freeNodes={freeNodes}
+              periods={availablePeriods}
+              activePeriodId={periodId}
+              onSwitchPeriod={onSwitchPeriod}
+              isReadOnly={isReadOnly}
+              onAddPeriod={onAddPeriod}
+              onCopyPeriod={onCopyPeriod}
+              onDeletePeriod={onDeletePeriod}
+              selectedNodeId={selectedNodeId}
+              moduleId={moduleId}
+              onSelectNode={setSelectedNodeId}
+              onUpdateData={safeUpdateData}
+              onAddGoal={onAddGoal}
+              onDeleteGoal={onDeleteGoal}
+              onCopyGoal={copyGoal}
+              onAddStrategy={onAddStrategyToGoal}
+              onDeleteStrategy={onDeleteStrategy}
+              onCopyStrategy={copyStrategy}
+              onAddFreeNode={addFreeNode}
+              onDeleteFreeNode={deleteFreeNode}
+              onCopyFreeNode={copyFreeNode}
+            />
+          )}
+        </div>
+        <div
+          className="kpid-resize-handle"
+          onMouseDown={(e) => startDrag("left", e, leftWidth)}
+        />
+
+        {/* Center: Canvas */}
+        <div className="kpid-canvas-wrap">
+          <div className="kpid-canvas-toolbar">
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                className={`kpid-mode-btn${viewMode === "item" ? " active" : ""}`}
+                onClick={() => setViewMode("item")}
+              >
+                📋 項目模式
+              </button>
+              <button
+                className={`kpid-mode-btn${viewMode === "kpi" ? " active" : ""}`}
+                onClick={() => setViewMode("kpi")}
+                disabled={moduleId !== "ogsm"}
+                title={
+                  moduleId !== "ogsm" ? "KPI 模式僅支援 OGSM 模組" : undefined
+                }
+              >
+                📊 KPI 模式
+              </button>
+            </div>
+            {hasDraftGkChanges && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span className="kpid-unsaved-badge">KPI 未儲存</span>
+                <button className="kpid-save-btn" onClick={handleSaveGkChanges}>
+                  💾 儲存 KPI 變更
+                </button>
+              </div>
+            )}
           </div>
-        </>
-      )}
+          {viewMode === "kpi" && moduleId === "ogsm" ? (
+            <KpiCanvas
+              draftGoals={draftGoals}
+              deptActivities={deptActivities}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={setSelectedNodeId}
+            />
+          ) : (
+            <ItemCanvas
+              data={{ ...data, goals: draftGoals, freeNodes }}
+              deptActivities={deptActivities}
+              freeNodes={freeNodes}
+              periods={availablePeriods}
+              activePeriodId={periodId}
+              onSwitchPeriod={onSwitchPeriod}
+              selectedNodeId={selectedNodeId}
+              moduleId={moduleId}
+              onSelectNode={setSelectedNodeId}
+            />
+          )}
+        </div>
+
+        {/* Right: Node Config */}
+        {selectedNodeId && (
+          <>
+            <div
+              className="kpid-resize-handle"
+              onMouseDown={(e) => startDrag("right", e, rightWidth)}
+            />
+            <div
+              style={{
+                width: rightWidth,
+                flexShrink: 0,
+                display: "flex",
+                overflow: "hidden",
+              }}
+            >
+              <NodeConfig
+                selectedNodeId={selectedNodeId}
+                viewMode={viewMode}
+                data={data}
+                draftGoals={draftGoals}
+                deptActivities={deptActivities}
+                freeNodes={freeNodes}
+                periodId={periodId}
+                isReadOnly={isReadOnly}
+                onUpdateData={onUpdateData}
+                onUpdateFreeNode={updateFreeNode}
+                onUpdateDraftGk={updateDraftGk}
+                onUpdateGoalKpis={updateGoalKpis}
+                onDeleteGoalKpi={deleteGoalKpi}
+                onCopyGoalKpi={copyGoalKpi}
+                onAddGoalKpiOfType={addGoalKpiOfType}
+                onSelectNode={setSelectedNodeId}
+                onUpdateActivity={onUpdateActivity}
+                onClose={() => setSelectedNodeId(null)}
+              />
+            </div>
+          </>
+        )}
+      </div>
+      {/* /kpid-root-inner */}
     </div>
   );
 }

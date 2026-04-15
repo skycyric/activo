@@ -18,11 +18,27 @@
             "importedAt": "2026-04-10T02:45:07.823Z",
             "overallRate": 0
           }
+        },
+        {
+          "id": "period_mnsazgxc_000_7526b7c0_h2",
+          "halfYear": "H2",
+          "year": 2026,
+          "ogsm": {
+            "objectives": {
+              "orgO": "",
+              "deptO": ""
+            },
+            "goals": [],
+            "period": "2026 H1",
+            "importedAt": "2026-04-10T02:45:07.823Z",
+            "overallRate": 0
+          }
         }
       ]
     }
   ],
   "teams": [],
   "version": 1,
-  "savedAt": "2026-04-10T02:45:07.824Z"
+  "savedAt": "2026-04-10T02:45:07.824Z",
+  "_migratedRelationalV1": true
 }

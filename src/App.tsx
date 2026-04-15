@@ -19,13 +19,11 @@ import {
   importJSON,
   readFileAsText,
   validateOrWarn,
+  normalizeWorkspaceData,
 } from "./utils/storage";
 import { WorkspaceDataSchema } from "./schemas/ogsm";
 import {
   isFileSystemAccessSupported,
-  peekDataFile,
-  hasSavedHandle,
-  authorizeDataFile,
   readDataFile,
   readDataFileMeta,
   writeDataFile,
@@ -155,6 +153,20 @@ export default function App() {
   const [kpiDesignerGoalId, setKpiDesignerGoalId] = useState<string | null>(
     null,
   );
+  /** Tracks whether KpiDesigner has unsaved GoalKPI draft changes */
+  const kpiDesignerHasDraft = useRef(false);
+  /** Call this instead of setShowKpiDesigner(false) to respect unsaved KPI drafts */
+  const tryCloseKpiDesigner = useCallback((thenFn?: () => void) => {
+    if (
+      kpiDesignerHasDraft.current &&
+      !window.confirm("KPI 有未儲存的變更，確認離開將會遺失。確定離開？")
+    ) {
+      return;
+    }
+    setShowKpiDesigner(false);
+    setKpiDesignerGoalId(null);
+    thenFn?.();
+  }, []);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -163,8 +175,6 @@ export default function App() {
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("unlinked");
   const [syncError, setSyncError] = useState("");
-  const authInProgressRef = useRef(false);
-  const pendingClickHandlerRef = useRef<EventListener | null>(null);
 
   // ─── Multi-file mode state ────────────────────────────────────────────
   const [deptFiles, setDeptFiles] = useState<DeptFileState[]>([]);
@@ -235,6 +245,7 @@ export default function App() {
             readDataFileMeta(handle),
           ]);
           ws = JSON.parse(text);
+          normalizeWorkspaceData(ws);
           lastModified = lm;
         } catch {
           // Skip files that can't be read
@@ -305,6 +316,7 @@ export default function App() {
         throw new Error("檔案格式不符：不是有效的工作區格式");
       }
       validateOrWarn(WorkspaceDataSchema, remote, "applyHandle");
+      normalizeWorkspaceData(remote);
       loadedFileVersionRef.current = remote.version ?? null;
       loadedFileLastModifiedRef.current = lastModified;
       setWorkspace(remote);
@@ -320,33 +332,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // On mount: query-only check; if needs re-grant, listen for first user click
+  // On mount: restore folder handles only (no single-file mode)
   useEffect(() => {
     if (!fsSupported) return;
     (async () => {
-      const handle = await peekDataFile();
-      if (handle) {
-        await applyHandle(handle);
-      } else {
-        const savedExists = await hasSavedHandle();
-        if (savedExists) {
-          // Handle saved but needs user gesture to re-grant — auto-fire on first click
-          setSyncStatus("pending");
-          const handler: EventListener = () => {
-            if (authInProgressRef.current) return;
-            authInProgressRef.current = true;
-            authorizeDataFile()
-              .then(async (h) => {
-                if (h) await applyHandle(h);
-              })
-              .finally(() => {
-                authInProgressRef.current = false;
-              });
-          };
-          pendingClickHandlerRef.current = handler;
-          document.addEventListener("click", handler, { once: true });
-        }
-      }
       // Restore directory handle for conflict-copy scanning (permission may already be granted)
       const dirHandle = await peekDataFolder();
       if (dirHandle) dirHandleRef.current = dirHandle;
@@ -357,11 +346,6 @@ export default function App() {
         await loadRootFolderIntoState(rootHandle);
       }
     })();
-    return () => {
-      if (pendingClickHandlerRef.current) {
-        document.removeEventListener("click", pendingClickHandlerRef.current);
-      }
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -799,13 +783,21 @@ export default function App() {
   const handleConflictConfirm = useCallback(async () => {
     const onDisk = conflictDiskWsRef.current;
     if (!onDisk || !fileHandleRef.current) return;
-    const { workspace: merged } = mergeWorkspaces(
-      workspace,
-      onDisk,
-      conflictResolutions,
-    );
     setSyncStatus("saving");
     try {
+      // 解衝突後重讀：使用者解決衝突期間磁碟可能已再次被他人更新
+      let freshDisk = onDisk;
+      try {
+        const freshText = await readDataFile(fileHandleRef.current);
+        freshDisk = JSON.parse(freshText);
+      } catch {
+        // best-effort：讀不到就沿用原衝突快照
+      }
+      const { workspace: merged } = mergeWorkspaces(
+        workspace,
+        freshDisk,
+        conflictResolutions,
+      );
       const payload: WorkspaceData = {
         ...merged,
         version: (merged.version ?? 1) + 1,
@@ -882,9 +874,17 @@ export default function App() {
       ),
     );
     try {
+      // 解衝突後重讀：使用者解決衝突期間磁碟可能已再次被他人更新
+      let freshDisk = onDisk;
+      try {
+        const freshText = await readDataFile(entry.handle);
+        freshDisk = JSON.parse(freshText);
+      } catch {
+        // best-effort：讀不到就沿用原衝突快照
+      }
       const { workspace: merged } = mergeWorkspaces(
         entry.workspace,
-        onDisk,
+        freshDisk,
         conflictDeptResolutions,
       );
       const payload: WorkspaceData = {
@@ -1487,6 +1487,13 @@ export default function App() {
 
   const handleSwitchDept = useCallback(
     (deptId: string) => {
+      if (
+        showKpiDesigner &&
+        kpiDesignerHasDraft.current &&
+        !window.confirm("KPI 有未儲存的變更，切換部門將會遺失。確定切換？")
+      ) {
+        return;
+      }
       const dept = effectiveWorkspace.departments.find((d) => d.id === deptId);
       if (!dept) return;
       setActiveDeptId(deptId);
@@ -1494,8 +1501,12 @@ export default function App() {
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
       setFilterOwner("all");
+      if (showKpiDesigner) {
+        // 切部門後回到目標編輯器的目標樹起點
+        setKpiDesignerGoalId(null);
+      }
     },
-    [effectiveWorkspace],
+    [effectiveWorkspace, showKpiDesigner],
   );
 
   // --- Period handlers ---
@@ -1598,7 +1609,13 @@ export default function App() {
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
     },
-    [workspace, updateWorkspace],
+    [
+      workspace,
+      updateWorkspace,
+      isMultiFileMode,
+      deptFiles,
+      updateDeptWorkspace,
+    ],
   );
 
   const handleCopyPeriod = useCallback(
@@ -1711,6 +1728,11 @@ export default function App() {
     setSelectedStrategyId(null);
     setFilterOwner("all");
   }, []);
+
+  // Sidebar is now navigation-only; keep these handlers available for future admin entry points.
+  void handleAddDept;
+  void handleRenameDept;
+  void handleDeleteDept;
 
   // --- OGSM Data handlers ---
 
@@ -1906,10 +1928,15 @@ export default function App() {
   );
 
   const handleToggleExcludeFromOgsm = useCallback(
-    (activityId: string, exclude: boolean, strategyId: string) => {
+    (
+      deptId: string,
+      activityId: string,
+      exclude: boolean,
+      strategyId: string,
+    ) => {
       const patchDepts = (deps: typeof workspace.departments) =>
         deps.map((d) =>
-          d.id !== activeDeptId
+          d.id !== deptId
             ? d
             : {
                 ...d,
@@ -1929,10 +1956,10 @@ export default function App() {
         );
       if (isMultiFileMode) {
         const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === activeDeptId,
+          (f) => f.workspace.departments[0]?.id === deptId,
         );
         if (!entry || entry.isReadOnly) return;
-        updateDeptWorkspace(activeDeptId, {
+        updateDeptWorkspace(deptId, {
           ...entry.workspace,
           departments: patchDepts(entry.workspace.departments),
         });
@@ -1944,7 +1971,6 @@ export default function App() {
       }
     },
     [
-      activeDeptId,
       isMultiFileMode,
       deptFiles,
       workspace,
@@ -2348,9 +2374,14 @@ export default function App() {
           setSelectedStrategyId(stratId);
           setPendingDetailNav({ tab: "plans", measureId });
         }}
+        onNavigateToActivity={(actId) => {
+          setPendingActivityDetailId(actId);
+          setShowActivityPage(true);
+          setShowHomePage(false);
+        }}
         onEditObjective={handleEditObjective}
         onAddGoal={handleAddGoal}
-        isReadOnly={isActiveDeptReadOnly}
+        isReadOnly={true}
         deptActivities={effectiveDeptActivities}
       />
     ) : (
@@ -2372,7 +2403,7 @@ export default function App() {
           onFilterOwner={setFilterOwner}
           teams={teams}
           warnDaysBefore={workspace.warnDaysBefore ?? 7}
-          isReadOnly={isActiveDeptReadOnly}
+          isReadOnly={true}
           deptActivities={effectiveDeptActivities}
         />
         {selectedStrategy && (
@@ -2392,9 +2423,11 @@ export default function App() {
             initialTab={pendingDetailNav?.tab}
             initialWarnFilter={pendingDetailNav?.warnFilter}
             initialMeasureId={pendingDetailNav?.measureId}
-            isReadOnly={isActiveDeptReadOnly}
+            isReadOnly={true}
             linkedDeptActivities={linkedDeptActivities}
-            onToggleExcludeFromOgsm={handleToggleExcludeFromOgsm}
+            onToggleExcludeFromOgsm={(actId, exc, stratId) =>
+              handleToggleExcludeFromOgsm(activeDeptId, actId, exc, stratId)
+            }
             onNavigateToActivityPage={() => {
               setShowActivityPage(true);
               setShowDeptSettings(false);
@@ -2428,10 +2461,11 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
-                    setShowHomePage(true);
-                    setShowActivityPage(false);
-                    setShowDeptSettings(false);
-                    setShowKpiDesigner(false);
+                    tryCloseKpiDesigner(() => {
+                      setShowHomePage(true);
+                      setShowActivityPage(false);
+                      setShowDeptSettings(false);
+                    });
                     setMenuOpen(false);
                   }}
                 >
@@ -2440,10 +2474,11 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
-                    setShowActivityPage(true);
-                    setShowHomePage(false);
-                    setShowDeptSettings(false);
-                    setShowKpiDesigner(false);
+                    tryCloseKpiDesigner(() => {
+                      setShowActivityPage(true);
+                      setShowHomePage(false);
+                      setShowDeptSettings(false);
+                    });
                     setMenuOpen(false);
                   }}
                 >
@@ -2452,10 +2487,11 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
-                    setShowHomePage(false);
-                    setShowActivityPage(false);
-                    setShowDeptSettings(false);
-                    setShowKpiDesigner(false);
+                    tryCloseKpiDesigner(() => {
+                      setShowHomePage(false);
+                      setShowActivityPage(false);
+                      setShowDeptSettings(false);
+                    });
                     setMenuOpen(false);
                   }}
                 >
@@ -2464,12 +2500,13 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
-                    setShowDeptSettings(true);
-                    setShowHomePage(false);
-                    setShowActivityPage(false);
-                    setShowKpiDesigner(false);
-                    setSelectedGoalId(null);
-                    setSelectedStrategyId(null);
+                    tryCloseKpiDesigner(() => {
+                      setShowDeptSettings(true);
+                      setShowHomePage(false);
+                      setShowActivityPage(false);
+                      setSelectedGoalId(null);
+                      setSelectedStrategyId(null);
+                    });
                     setMenuOpen(false);
                   }}
                 >
@@ -2781,25 +2818,7 @@ export default function App() {
               data={data}
               selectedGoalId={selectedGoalId}
               selectedStrategyId={selectedStrategyId}
-              isActivityPage={showActivityPage}
-              isHomePage={showHomePage}
-              readOnlyDeptIds={
-                isMultiFileMode
-                  ? (deptFiles
-                      .filter((f) => f.isReadOnly)
-                      .map((f) => f.workspace.departments[0]?.id)
-                      .filter(Boolean) as string[])
-                  : undefined
-              }
-              onSwitchDept={handleSwitchDept}
-              onAddDept={handleAddDept}
-              showAddDeptButton={!isMultiFileMode || isAdmin}
-              onRenameDept={handleRenameDept}
-              onDeleteDept={handleDeleteDept}
               onSwitchPeriod={handleSwitchPeriod}
-              onAddPeriod={handleAddPeriod}
-              onCopyPeriod={handleCopyPeriod}
-              onDeletePeriod={handleDeletePeriod}
               onSelectGoal={(id) => {
                 setSelectedGoalId(id);
                 setSelectedStrategyId(null);
@@ -2815,36 +2834,35 @@ export default function App() {
                 setShowActivityPage(false);
                 setShowHomePage(false);
               }}
-              onSelectActivities={() => {
-                setShowActivityPage(true);
-                setShowDeptSettings(false);
-                setShowHomePage(false);
-                setSelectedGoalId(null);
-                setSelectedStrategyId(null);
-              }}
-              onSelectHome={() => {
-                setShowHomePage(true);
-                setShowActivityPage(false);
-                setShowDeptSettings(false);
-                setSelectedGoalId(null);
-                setSelectedStrategyId(null);
-              }}
             />
           )}
         {showKpiDesigner ? (
           <KpiDesigner
             data={data}
             deptActivities={effectiveDeptActivities}
+            availablePeriods={activeDept?.periods ?? []}
             initialGoalId={kpiDesignerGoalId ?? undefined}
+            isReadOnly={isActiveDeptReadOnly}
+            periodId={activePeriodId}
+            onSwitchPeriod={handleSwitchPeriod}
             onUpdateData={updateData}
+            onDraftStateChange={(hasDraft) => {
+              kpiDesignerHasDraft.current = hasDraft;
+            }}
+            onUpdateActivity={(act) =>
+              handleUpdateDeptActivity(activeDeptId, act)
+            }
             onAddGoal={handleAddGoal}
             onDeleteGoal={handleDeleteGoal}
             onAddStrategyToGoal={handleAddStrategyToGoal}
             onDeleteStrategy={handleDeleteStrategyById}
-            onClose={() => {
-              setShowKpiDesigner(false);
-              setKpiDesignerGoalId(null);
-            }}
+            onAddPeriod={(halfYear, year) =>
+              handleAddPeriod(activeDeptId, halfYear, year)
+            }
+            onCopyPeriod={(srcId, halfYear, year) =>
+              handleCopyPeriod(activeDeptId, srcId, halfYear, year)
+            }
+            onDeletePeriod={(pid) => handleDeletePeriod(activeDeptId, pid)}
           />
         ) : showHomePage ? (
           <HomePage
@@ -2889,6 +2907,7 @@ export default function App() {
         ) : showActivityPage ? (
           <ActivityPage
             workspace={effectiveWorkspace}
+            activeDeptId={activeDeptId}
             readOnlyDeptIds={
               isMultiFileMode
                 ? (deptFiles

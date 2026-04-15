@@ -3,7 +3,6 @@ import type {
   OGSMData,
   Goal,
   Strategy,
-  Measure,
   GoalKPI,
   DeptActivity,
 } from "../schemas/ogsm";
@@ -23,6 +22,7 @@ interface Props {
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
   isReadOnly?: boolean;
+  onNavigateToActivity?: (activityId: string) => void;
   /** V3 架構：部門活動清單，供 GoalKPI 計算使用 */
   deptActivities?: DeptActivity[];
 }
@@ -127,6 +127,7 @@ export default function OverviewPage({
   onSelectGoal,
   onSelectStrategy,
   onSelectMeasure,
+  onNavigateToActivity,
   onEditObjective,
   onAddGoal,
   isReadOnly = false,
@@ -139,18 +140,99 @@ export default function OverviewPage({
     "overdue" | "warning" | null
   >(null);
 
+  const strategyMeta = new Map<
+    string,
+    { goalId: string; goalTitle: string; stratTitle: string }
+  >();
+  for (const g of data.goals) {
+    for (const s of g.strategies) {
+      strategyMeta.set(s.id, {
+        goalId: g.id,
+        goalTitle: g.title,
+        stratTitle: s.title,
+      });
+    }
+  }
+
+  type ActivityWithCtx = DeptActivity & {
+    goalId: string;
+    stratId: string;
+    displayName: string;
+    actionDone: number;
+    actionTotal: number;
+  };
+
+  const activityItemsFromDept: ActivityWithCtx[] = deptActivities
+    .flatMap((a) => {
+      const ogsmLinks = (a.dashboardLinks ?? []).filter(
+        (l) =>
+          l.type === "ogsm" &&
+          !l.exclude &&
+          !!l.goalId &&
+          !!l.strategyId &&
+          strategyMeta.has(l.strategyId),
+      );
+      if (ogsmLinks.length === 0) return [];
+      const link = ogsmLinks[0];
+      const pm =
+        (a.planItems ?? []).length > 0
+          ? (a.planItems ?? [])
+          : (a.actionPlans ?? []).flatMap((p) => p.items);
+      const actionDone = pm.filter((i) => i.completed).length;
+      const actionTotal = pm.length;
+      return [
+        {
+          ...a,
+          goalId: link.goalId!,
+          stratId: link.strategyId!,
+          displayName: a.rawText || "（未命名活動）",
+          actionDone,
+          actionTotal,
+        },
+      ];
+    })
+    .filter((x) => !!x.goalId && !!x.stratId);
+
   // 全頁警告計畫項目（逾期 / 即將到期）
   type WarnItemCtx = {
     itemId: string;
-    measureName: string; // 連結活動名稱（Measure.rawText），無連結時為策略名
+    measureName: string;
     description: string; // PlanItem.description
     notes: string; // PlanItem.notes
     plannedEndDate: string;
     warnType: "overdue" | "warning";
     goalId: string;
     stratId: string;
+    activityId?: string;
   };
-  const allWarnItems: WarnItemCtx[] = data.goals.flatMap((g) =>
+
+  const warnItemsFromDept: WarnItemCtx[] = activityItemsFromDept.flatMap(
+    (a) => {
+      const planItems =
+        (a.planItems ?? []).length > 0
+          ? (a.planItems ?? [])
+          : (a.actionPlans ?? []).flatMap((p) => p.items);
+      return planItems.flatMap((item) => {
+        const w = getPlanItemWarning(item, warnDaysBefore);
+        if (!w) return [];
+        return [
+          {
+            itemId: item.id,
+            measureName: a.displayName,
+            description: item.description,
+            notes: item.notes ?? "",
+            plannedEndDate: item.plannedEndDate ?? "",
+            warnType: w,
+            goalId: a.goalId,
+            stratId: a.stratId,
+            activityId: a.id,
+          },
+        ];
+      });
+    },
+  );
+
+  const warnItemsLegacy: WarnItemCtx[] = data.goals.flatMap((g) =>
     g.strategies.flatMap((s) =>
       s.actionPlans.flatMap((p) =>
         p.items.flatMap((item) => {
@@ -171,12 +253,17 @@ export default function OverviewPage({
               warnType: w,
               goalId: g.id,
               stratId: s.id,
+              activityId: linkedMeasure?.id,
             },
           ];
         }),
       ),
     ),
   );
+
+  const allWarnItems: WarnItemCtx[] =
+    warnItemsFromDept.length > 0 ? warnItemsFromDept : warnItemsLegacy;
+
   const overdueItems = allWarnItems.filter((x) => x.warnType === "overdue");
   const nearItems = allWarnItems.filter((x) => x.warnType === "warning");
 
@@ -189,12 +276,12 @@ export default function OverviewPage({
   const oKpiTotal = oKpiItems.length;
   const oKpiDone = oKpiItems.filter((k) => k.done).length;
 
-  const mKpiItems = data.goals.flatMap((g) =>
-    g.strategies.flatMap((s) =>
-      s.measures.flatMap((m) =>
-        (m.kpis ?? []).map((k) => ({ done: (k.achievementRate ?? 0) >= 100 })),
-      ),
-    ),
+  const mKpiItems = (
+    activityItemsFromDept.length > 0
+      ? activityItemsFromDept
+      : data.goals.flatMap((g) => g.strategies.flatMap((s) => s.measures))
+  ).flatMap((m) =>
+    (m.kpis ?? []).map((k) => ({ done: (k.achievementRate ?? 0) >= 100 })),
   );
   const mKpiTotal = mKpiItems.length;
   const mKpiDone = mKpiItems.filter((k) => k.done).length;
@@ -210,17 +297,8 @@ export default function OverviewPage({
   const gPctTotal = gPctItems.length;
   const gPctDone = gPctItems.filter((k) => k.done).length;
 
-  // 活動統計：以 Measure 為單位，含 Goal/Strategy 來源資訊供展開清單使用
-  type MeasureWithCtx = Measure & {
-    goalTitle: string;
-    goalId: string;
-    stratTitle: string;
-    stratId: string;
-    displayName: string;
-    actionDone: number;
-    actionTotal: number;
-  };
-  const allMeasuresWithCtx: MeasureWithCtx[] = data.goals.flatMap((g) =>
+  // 活動統計：優先 dept.activities，舊資料 fallback 到 strategy.measures
+  const allMeasuresLegacy = data.goals.flatMap((g) =>
     g.strategies.flatMap((s) =>
       s.measures.map((m) => {
         const linkedItems = s.actionPlans
@@ -228,9 +306,7 @@ export default function OverviewPage({
           .filter((i) => i.linkedMeasureId === m.id);
         return {
           ...m,
-          goalTitle: g.title,
           goalId: g.id,
-          stratTitle: s.title,
           stratId: s.id,
           displayName: m.rawText || "（未命名活動）",
           actionDone: linkedItems.filter((i) => i.completed).length,
@@ -239,6 +315,12 @@ export default function OverviewPage({
       }),
     ),
   );
+
+  const allMeasuresWithCtx =
+    activityItemsFromDept.length > 0
+      ? activityItemsFromDept
+      : allMeasuresLegacy;
+
   const oPlanNotStarted = allMeasuresWithCtx.filter(
     (m) => (m.status ?? "not-started") === "not-started",
   );
@@ -451,7 +533,9 @@ export default function OverviewPage({
                         key={m.id}
                         className="ov-status-list-item"
                         onClick={() =>
-                          onSelectMeasure(m.goalId, m.stratId, m.id)
+                          onNavigateToActivity
+                            ? onNavigateToActivity(m.id)
+                            : onSelectMeasure(m.goalId, m.stratId, m.id)
                         }
                         title="點擊開啟行動項目"
                       >
@@ -515,10 +599,14 @@ export default function OverviewPage({
                   <div
                     key={x.itemId}
                     className="ov-warn-list-item"
-                    onClick={() =>
-                      onSelectStrategy(x.goalId, x.stratId, x.warnType)
-                    }
-                    title="點擊跳到行動計畫"
+                    onClick={() => {
+                      if (x.activityId && onNavigateToActivity) {
+                        onNavigateToActivity(x.activityId);
+                        return;
+                      }
+                      onSelectStrategy(x.goalId, x.stratId, x.warnType);
+                    }}
+                    title="點擊跳到活動或行動計畫"
                   >
                     <span className="ov-warn-list-measure">
                       {x.measureName}

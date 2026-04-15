@@ -21,6 +21,39 @@
 
 ---
 
+## Phase D — ActivityFilters 多期間篩選 ✅ 已完成
+
+### 實現內容
+
+**檔案修改**：
+
+- `src/components/activity/ActivityFilters.tsx`
+  - 於 `ActivityFilterState` 加入 `periodId: string` 欄位
+  - 於 Cascade reset 邏輯加入 periodId 清除規則
+  - 新增 `periodMap` 用於期間去重及排序
+  - 修改策略查詢以尊重 `filters.periodId` 範圍
+  - 新增期間選擇器（僅在 framework=ogsm 時顯示）
+  - 期間選擇 → 自動清除目標/策略篩選（Cascade）
+
+- `src/components/ActivityPage.tsx`
+  - 重寫篩選邏輯，支援**多屬性匹配**
+  - 改變策略：若用戶選 periodId/goalId/strategyId，檢查 ANY ogsmLink 匹配（非只看 firstLink）
+  - 邏輯：`ogsmLinks.some(link => /* periodId/goalId/strategyId 都符合 */)`
+  - 保持向後相容：預先舊數據（無 dashboardLinks）仍使用 fallback 路徑
+
+### 用戶體驗變化
+
+- **期間欄位可用**：選擇期間後，目標/策略下拉菜單會自動縮小範圍（Cascade）
+- **跨期活動篩選**：同一活動若屬於多個期間，用戶選某期間時，活動會顯示（若有任何屬性匹配該期間）
+- **向後相容**：舊活動（只有單筆 ogsm link）篩選邏輯不變
+
+### 驗證
+
+✓ TypeScript 編譯：無錯誤  
+✓ 生產構建：成功（124 模組，gzip 193.82 kB）
+
+---
+
 ## Phase 5 — ActivityDetailPanel（日常填值 UI）✅ 已完成
 
 ### 5A：KPI Schema 升級 ✅

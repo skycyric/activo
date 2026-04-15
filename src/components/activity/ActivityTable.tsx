@@ -79,6 +79,7 @@ export default function ActivityTable({
   });
 
   const updateStatus = (act: ActivityWithContext, status: MeasureStatus) => {
+    if (act.isReadOnly) return;
     onUpdateActivity(act.deptId, {
       ...act,
       status,
@@ -238,6 +239,7 @@ export default function ActivityTable({
                   <select
                     className={`act-status-select ${si.cls}`}
                     value={act.status ?? "not-started"}
+                    disabled={act.isReadOnly}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) =>
                       updateStatus(act, e.target.value as MeasureStatus)

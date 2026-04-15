@@ -44,6 +44,7 @@ export default function ActivityCard({
   const overdue = isOverdue(act.endDate) && act.status !== "completed";
 
   const updateStatus = (status: MeasureStatus) => {
+    if (act.isReadOnly) return;
     onUpdateActivity(act.deptId, {
       ...act,
       status,
@@ -87,6 +88,7 @@ export default function ActivityCard({
         <select
           className={`act-status-select act-card-status ${si.cls}`}
           value={act.status ?? "not-started"}
+          disabled={act.isReadOnly}
           onChange={(e) => updateStatus(e.target.value as MeasureStatus)}
         >
           {ALL_STATUSES.map((s) => (

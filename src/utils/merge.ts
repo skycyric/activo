@@ -22,6 +22,8 @@ import type {
   Goal,
   Strategy,
   Measure,
+  DeptActivity,
+  FreeNode,
   Team,
   Department,
   PeriodData,
@@ -220,6 +222,17 @@ export function detectConflicts(
 
         if (lg.updatedAt && rg.updatedAt && lg.updatedAt !== rg.updatedAt) {
           const diffs = goalDiffs(lg, rg);
+          // goalKpis: KPI 設計差異（整題比較）
+          const lgKpis = lg.goalKpis ?? [];
+          const rgKpis = rg.goalKpis ?? [];
+          if (JSON.stringify(lgKpis) !== JSON.stringify(rgKpis)) {
+            diffs.push({
+              field: "goalKpis",
+              label: "KPI 設計",
+              localVal: lgKpis.length > 0 ? `${lgKpis.length} 層 KPI` : "(空)",
+              remoteVal: rgKpis.length > 0 ? `${rgKpis.length} 層 KPI` : "(空)",
+            });
+          }
           if (diffs.length > 0) {
             entries.push({
               id: lg.id,
@@ -427,6 +440,19 @@ function fieldMergeGoal(
     merged.updatedAt = rg.updatedAt;
   }
 
+  // goalKpis: 整題 LWW — winner 方的 KPI 計是設計勝出（原子替換）
+  const lgKpis = lg.goalKpis ?? [];
+  const rgKpis = rg.goalKpis ?? [];
+  if (JSON.stringify(lgKpis) !== JSON.stringify(rgKpis)) {
+    if (isEmpty(lgKpis) && !isEmpty(rgKpis)) {
+      merged.goalKpis = rgKpis;
+      changed = true;
+    } else if (!isEmpty(lgKpis) && !isEmpty(rgKpis) && winner === rg) {
+      merged.goalKpis = rgKpis;
+      changed = true;
+    }
+  }
+
   return { merged, changed };
 }
 
@@ -466,6 +492,38 @@ function fieldMergeTeam(
   }
 
   return { merged, changed };
+}
+
+// DeptActivity 層級合併：逐筆 by id + newerOf updatedAt（同 Measure 邏輯）
+function mergeDeptActivities(
+  local: DeptActivity[],
+  remote: DeptActivity[],
+  deleted: Set<string>,
+): { activities: DeptActivity[]; count: number } {
+  const safeLocal = local ?? [];
+  const filtered = safeLocal.filter((a) => !deleted.has(a.id));
+  const map = new Map<string, DeptActivity>(filtered.map((a) => [a.id, a]));
+  let count = safeLocal.length - filtered.length;
+
+  for (const ra of remote ?? []) {
+    if (deleted.has(ra.id)) {
+      if (map.delete(ra.id)) count++;
+      continue;
+    }
+    const la = map.get(ra.id);
+    if (!la) {
+      map.set(ra.id, ra);
+      count++;
+    } else {
+      const winner = newerOf(la, ra);
+      if (winner !== la) {
+        map.set(ra.id, winner);
+        count++;
+      }
+    }
+  }
+
+  return { activities: Array.from(map.values()), count };
 }
 
 // Measure 層級合併：逐筆 by id，newerOf per measure
@@ -669,9 +727,28 @@ function mergePeriods(
         deleted,
         resolutions,
       );
-      if (gc > 0) {
-        map.set(rp.id, { ...lp, ogsm: { ...lp.ogsm, goals } });
-        count += gc;
+      // freeNodes: union by id，同 id 遠端版優先（FreeNode 無 updatedAt）
+      const lfn = lp.ogsm.freeNodes ?? [];
+      const rfn = rp.ogsm.freeNodes ?? [];
+      const fnMap = new Map<string, FreeNode>(lfn.map((n) => [n.id, n]));
+      let fnCount = 0;
+      for (const rn of rfn) {
+        if (!fnMap.has(rn.id)) {
+          fnMap.set(rn.id, rn);
+          fnCount++;
+        } else if (JSON.stringify(fnMap.get(rn.id)) !== JSON.stringify(rn)) {
+          fnMap.set(rn.id, rn);
+          fnCount++;
+        }
+      }
+      const mergedFreeNodes = Array.from(fnMap.values());
+      const totalCount = gc + fnCount;
+      if (totalCount > 0) {
+        map.set(rp.id, {
+          ...lp,
+          ogsm: { ...lp.ogsm, goals, freeNodes: mergedFreeNodes },
+        });
+        count += totalCount;
       }
     }
   }
@@ -700,9 +777,15 @@ function mergeDepts(
         deleted,
         resolutions,
       );
-      if (pc > 0) {
-        map.set(rd.id, { ...ld, periods });
-        count += pc;
+      const { activities: mergedActivities, count: ac } = mergeDeptActivities(
+        ld.activities ?? [],
+        rd.activities ?? [],
+        deleted,
+      );
+      const totalCount = pc + ac;
+      if (totalCount > 0) {
+        map.set(rd.id, { ...ld, periods, activities: mergedActivities });
+        count += totalCount;
       }
     }
   }

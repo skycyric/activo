@@ -1,10 +1,11 @@
 import type { WorkspaceData } from "../../schemas/ogsm";
-import type { ActivityWithContext } from "../ActivityPage";
 
 export interface ActivityFilterState {
   deptId: string;
   teamId: string;
   owner: string;
+  framework: string;
+  periodId: string;
   goalId: string;
   strategyId: string;
   status: string;
@@ -17,6 +18,8 @@ export const EMPTY_ACTIVITY_FILTERS: ActivityFilterState = {
   deptId: "",
   teamId: "",
   owner: "",
+  framework: "",
+  periodId: "",
   goalId: "",
   strategyId: "",
   status: "",
@@ -32,16 +35,21 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "已完成",
 };
 
+const FRAMEWORK_OPTIONS: { value: string; label: string }[] = [
+  { value: "ogsm", label: "OGSM目標體系" },
+  { value: "standalone", label: "其他（自由節點）" },
+];
+
+const FRAMEWORK_NONE = "_none";
+
 interface Props {
   workspace: WorkspaceData;
-  allActivities: ActivityWithContext[];
   filters: ActivityFilterState;
   onChange: (f: ActivityFilterState) => void;
 }
 
 export default function ActivityFilters({
   workspace,
-  allActivities,
   filters,
   onChange,
 }: Props) {
@@ -49,9 +57,19 @@ export default function ActivityFilters({
     const next = { ...filters, [key]: value };
     // Cascade reset on narrowing
     if (key === "deptId") {
+      next.periodId = "";
       next.goalId = "";
       next.strategyId = "";
       next.teamId = "";
+    }
+    if (key === "framework" && value !== "ogsm") {
+      next.periodId = "";
+      next.goalId = "";
+      next.strategyId = "";
+    }
+    if (key === "periodId") {
+      next.goalId = "";
+      next.strategyId = "";
     }
     if (key === "goalId") {
       next.strategyId = "";
@@ -85,10 +103,34 @@ export default function ActivityFilters({
   }
   const goals = Array.from(goalMap.values());
 
+  // Periods deduped by id, narrowed by framework=ogsm
+  const periodMap = new Map<
+    string,
+    { id: string; year: number; halfYear: string; label: string }
+  >();
+  if (filters.framework === "ogsm") {
+    for (const dept of sourceDepts) {
+      for (const period of dept.periods) {
+        if (!periodMap.has(period.id)) {
+          periodMap.set(period.id, {
+            id: period.id,
+            year: period.year,
+            halfYear: period.halfYear,
+            label: `${period.year} ${period.halfYear}`,
+          });
+        }
+      }
+    }
+  }
+  const periods = Array.from(periodMap.values()).sort(
+    (a, b) => a.year - b.year || a.halfYear.localeCompare(b.halfYear),
+  );
+
   // Strategies deduped by id, narrowed by goalId if set
   const stratMap = new Map<string, { id: string; title: string }>();
   for (const dept of sourceDepts) {
     for (const period of dept.periods) {
+      if (filters.periodId && period.id !== filters.periodId) continue;
       for (const g of period.ogsm.goals) {
         if (filters.goalId && g.id !== filters.goalId) continue;
         for (const s of g.strategies) {
@@ -100,14 +142,15 @@ export default function ActivityFilters({
   }
   const strategies = Array.from(stratMap.values());
 
-  // Owners from visible activities — include both a.owner and a.owners[]
+  // Owners should come from team settings (single source of truth), not activity data.
+  const ownerSourceTeams = filters.teamId
+    ? teams.filter((t) => t.id === filters.teamId)
+    : teams;
   const owners = Array.from(
     new Set(
-      allActivities
-        .flatMap((a) => [
-          a.owner ?? "",
-          ...((a as { owners?: string[] }).owners ?? []),
-        ])
+      ownerSourceTeams
+        .flatMap((t) => t.members ?? [])
+        .map((m) => m.name?.trim() ?? "")
         .filter(Boolean),
     ),
   ).sort();
@@ -161,33 +204,68 @@ export default function ActivityFilters({
           ))}
         </select>
 
-        {/* 目標 */}
+        {/* 模組 */}
         <select
           className="activity-filter-select"
-          value={filters.goalId}
-          onChange={(e) => set("goalId", e.target.value)}
+          value={filters.framework}
+          onChange={(e) => set("framework", e.target.value)}
         >
-          <option value="">所有目標</option>
-          {goals.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.label} {g.title}
+          <option value="">所有模組</option>
+          {FRAMEWORK_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
             </option>
           ))}
+          <option value={FRAMEWORK_NONE}>其他</option>
         </select>
 
-        {/* 策略 */}
-        <select
-          className="activity-filter-select"
-          value={filters.strategyId}
-          onChange={(e) => set("strategyId", e.target.value)}
-        >
-          <option value="">所有策略</option>
-          {strategies.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
-            </option>
-          ))}
-        </select>
+        {/* 期間 - 只在選擇 OGSM 模組時顯示 */}
+        {filters.framework === "ogsm" && (
+          <select
+            className="activity-filter-select"
+            value={filters.periodId}
+            onChange={(e) => set("periodId", e.target.value)}
+          >
+            <option value="">所有期間</option>
+            {periods.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* 目標 - 只在選擇 OGSM 模組時顯示 */}
+        {filters.framework === "ogsm" && (
+          <select
+            className="activity-filter-select"
+            value={filters.goalId}
+            onChange={(e) => set("goalId", e.target.value)}
+          >
+            <option value="">所有目標</option>
+            {goals.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label} {g.title}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* 策略 - 只在選擇 OGSM 模組時顯示 */}
+        {filters.framework === "ogsm" && (
+          <select
+            className="activity-filter-select"
+            value={filters.strategyId}
+            onChange={(e) => set("strategyId", e.target.value)}
+          >
+            <option value="">所有策略</option>
+            {strategies.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+              </option>
+            ))}
+          </select>
+        )}
 
         {/* 狀態 */}
         <select
