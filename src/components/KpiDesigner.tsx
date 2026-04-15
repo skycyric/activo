@@ -10,6 +10,7 @@ import type {
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { computeGoalKpiResult } from "../utils/goalKpi";
+import { computeKpiAchievement } from "../utils/kpiCalc";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -187,6 +188,40 @@ function ItemCanvas({
 /** G-KPI = aggregate 或 pct_activity（達標活動比率），G-sub-KPI = 其餘直接值型 */
 function isGKpi(gk: GoalKPI): boolean {
   return gk.goalKpiType === "aggregate" || gk.type === "pct_activity";
+}
+
+/** 計算一個 G-sub-KPI 下各連結活動的達標數 / 總數 */
+function getSubGkActivityStats(
+  subGk: GoalKPI,
+  deptActivities: DeptActivity[],
+): { metCount: number; totalCount: number } {
+  // 先收集所有有效 actId（totalCount 含沒有 rate 資料的活動）
+  const allActIds = new Set<string>();
+  const actRates = new Map<string, number[]>();
+  for (const link of subGk.linkedKpis) {
+    const actId =
+      link.activityId ||
+      ((link as unknown as Record<string, string>).measureId ?? "");
+    if (!actId) continue;
+    allActIds.add(actId);
+    const act = deptActivities.find((a) => a.id === actId);
+    const kpi = act?.kpis.find((k) => k.id === link.kpiId);
+    if (!kpi) continue;
+    const r =
+      computeKpiAchievement(kpi, act?.kpis ?? []) ?? kpi.achievementRate;
+    if (r == null) continue;
+    if (!actRates.has(actId)) actRates.set(actId, []);
+    actRates.get(actId)!.push(r);
+  }
+  const threshold = subGk.target ?? 0;
+  let metCount = 0;
+  for (const actId of allActIds) {
+    const rates = actRates.get(actId);
+    if (!rates || rates.length === 0) continue; // 無資料 → 未達標
+    const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
+    if (avg >= threshold) metCount++;
+  }
+  return { metCount, totalCount: allActIds.size };
 }
 
 // ─── KPI Computation Tree ────────────────────────────────────────────────────
@@ -387,36 +422,52 @@ function GkCard({
         </span>
       </div>
       <div className="kpid-gk-rate">
-        {result.rate !== null ? (
-          <strong
-            style={{
-              color:
-                result.rate >= 100
-                  ? "#16a34a"
-                  : result.rate >= 60
-                    ? "#d97706"
-                    : "#dc2626",
-            }}
-          >
-            {result.rate}%
-          </strong>
+        {gk.type === "pct_activity" ? (
+          <>
+            <strong
+              style={{
+                color:
+                  result.actual != null && result.actual >= (gk.target ?? 60)
+                    ? "#16a34a"
+                    : result.actual != null &&
+                        result.actual >= (gk.target ?? 60) * 0.6
+                      ? "#d97706"
+                      : "#dc2626",
+              }}
+            >
+              {result.actual != null ? `${result.actual}%` : "─"}
+            </strong>
+            {" / 目標 "}
+            {gk.target ?? "─"}%
+          </>
         ) : (
-          "─"
-        )}{" "}
-        / 目標 {gk.target ?? "─"} {gk.unit}
-      </div>
-      {gk.type === "pct_activity"
-        ? result.metCount != null && (
-            <div className="kpid-gk-actval">
-              {result.metCount}&nbsp;/&nbsp;{result.totalCount}&nbsp;活動達標
-            </div>
-          )
-        : (result.actual != null || result.target != null) && (
-            <div className="kpid-gk-actval">
-              實際 {result.actual ?? "─"} / 目標 {result.target ?? "─"}
+          <>
+            <strong
+              style={{
+                color:
+                  result.rate != null
+                    ? result.rate >= 100
+                      ? "#16a34a"
+                      : result.rate >= 60
+                        ? "#d97706"
+                        : "#dc2626"
+                    : undefined,
+              }}
+            >
+              {result.actual ?? "─"}
               {gk.unit ? ` ${gk.unit}` : ""}
-            </div>
-          )}
+            </strong>
+            {" / 目標 "}
+            {gk.target ?? "─"}
+            {gk.unit ? ` ${gk.unit}` : ""}
+          </>
+        )}
+      </div>
+      {gk.type === "pct_activity" && result.metCount != null && (
+        <div className="kpid-gk-actval">
+          {result.metCount}&nbsp;/&nbsp;{result.totalCount}&nbsp;活動達標
+        </div>
+      )}
       {hasLinks && (
         <button
           className="kpid-ctree-toggle"
@@ -574,6 +625,8 @@ function GoalKpiConfigPanel({
   const isPctActivity = gk.type === "pct_activity";
   const [kpiSearch, setKpiSearch] = useState("");
   const [kpiPickerOpen, setKpiPickerOpen] = useState(false);
+  const [gkSearch, setGkSearch] = useState("");
+  const [gkPickerOpen, setGkPickerOpen] = useState(false);
   return (
     <div className="kpid-node-config">
       {/* Header */}
@@ -627,162 +680,339 @@ function GoalKpiConfigPanel({
         </div>
       </div>
 
-      {/* Links */}
+      {/* ── pct_activity：搜尋選取 G-sub-KPI ─────────────────── */}
       {isPctActivity ? (
-        // G-KPI pct_activity: 選取 G-sub-KPI 作為門檻
         <div className="kpid-config-section">
-          <div className="kpid-config-label">選取 G-sub-KPI 門檻</div>
-          <div className="kpid-config-hint">
-            勾選後會統計「有多少活動同時達到所選 KPI 門檻」
-          </div>
-          {(gk.thresholdGoalKpiIds ?? []).length === 0 && (
-            <div className="kpid-empty-links">尚未選取任何 G-sub-KPI</div>
-          )}
-          {(gk.thresholdGoalKpiIds ?? []).map((gkId) => {
-            const subGk = (draftGoal.goalKpis ?? []).find((g) => g.id === gkId);
-            return (
-              <div key={gkId} className="kpid-linked-row">
-                <span className="kpid-linked-name" title={subGk?.label ?? gkId}>
-                  {subGk?.label ?? gkId}
-                </span>
-                {subGk && (
-                  <span
-                    style={{ fontSize: 10, color: "#94a3b8", marginRight: 4 }}
-                  >
-                    目標 {subGk.target ?? "─"} {subGk.unit}
-                  </span>
-                )}
-                <button
-                  className="kpid-remove-btn"
-                  onClick={() =>
-                    onUpdate({
-                      ...gk,
-                      thresholdGoalKpiIds: (
-                        gk.thresholdGoalKpiIds ?? []
-                      ).filter((id) => id !== gkId),
-                    })
-                  }
-                >
-                  ✕
-                </button>
+          <div className="kpid-kpi-link-picker">
+            <div className="kpid-config-label" style={{ marginBottom: 4 }}>
+              連結 G-sub-KPI
+            </div>
+            <input
+              className="g-kpi-link-search"
+              placeholder="🔍 點擊搜尋並選擇 G-sub-KPI..."
+              value={gkSearch}
+              onChange={(e) => setGkSearch(e.target.value)}
+              onFocus={() => setGkPickerOpen(true)}
+              onBlur={() => setTimeout(() => setGkPickerOpen(false), 150)}
+            />
+            {gkPickerOpen && (
+              <div
+                className="kpid-kpi-link-list"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {(() => {
+                  const q = gkSearch.trim().toLowerCase();
+                  const available = (draftGoal.goalKpis ?? []).filter(
+                    (subGk) => !isGKpi(subGk),
+                  );
+                  const filtered = q
+                    ? available.filter((sg) =>
+                        sg.label.toLowerCase().includes(q),
+                      )
+                    : available;
+                  const isSelected = (sg: GoalKPI) =>
+                    (gk.thresholdGoalKpiIds ?? []).includes(sg.id);
+                  const sorted = [
+                    ...filtered.filter(isSelected),
+                    ...filtered.filter((sg) => !isSelected(sg)),
+                  ];
+                  if (sorted.length === 0)
+                    return (
+                      <div className="g-kpi-link-empty">
+                        {q ? "找不到符合結果" : "此目標沒有 G-sub-KPI"}
+                      </div>
+                    );
+                  return sorted.map((subGk) => {
+                    const selected = isSelected(subGk);
+                    const stats = getSubGkActivityStats(subGk, deptActivities);
+                    return (
+                      <label
+                        key={subGk.id}
+                        className={`g-kpi-link-item${selected ? " linked" : ""}`}
+                        onClick={() => {
+                          const ids = gk.thresholdGoalKpiIds ?? [];
+                          onUpdate({
+                            ...gk,
+                            thresholdGoalKpiIds: selected
+                              ? ids.filter((id) => id !== subGk.id)
+                              : [...ids, subGk.id],
+                          });
+                        }}
+                      >
+                        <input type="checkbox" checked={selected} readOnly />
+                        <span className="g-kpi-link-m">{subGk.label}</span>
+                        <span className="g-kpi-link-k">
+                          {subGk.target != null
+                            ? `門檻 ${subGk.target}${subGk.unit ? ` ${subGk.unit}` : ""}`
+                            : ""}
+                        </span>
+                        {stats.totalCount > 0 && (
+                          <span className="g-kpi-link-val">
+                            {stats.metCount}/{stats.totalCount} 活動達標
+                          </span>
+                        )}
+                      </label>
+                    );
+                  });
+                })()}
               </div>
-            );
-          })}
-          <select
-            className="kpid-add-select"
-            value=""
-            onChange={(e) => {
-              const id = e.target.value;
-              if (!id) return;
-              if ((gk.thresholdGoalKpiIds ?? []).includes(id)) return;
-              onUpdate({
-                ...gk,
-                thresholdGoalKpiIds: [...(gk.thresholdGoalKpiIds ?? []), id],
-              });
-            }}
-          >
-            <option value="">── 新增 G-sub-KPI...</option>
-            {(draftGoal.goalKpis ?? [])
-              .filter(
-                (subGk) =>
-                  !isGKpi(subGk) &&
-                  subGk.id !== gk.id &&
-                  !(gk.thresholdGoalKpiIds ?? []).includes(subGk.id),
-              )
-              .map((subGk) => (
-                <option key={subGk.id} value={subGk.id}>
-                  {subGk.label}
-                  {subGk.target != null
-                    ? ` (目標 ${subGk.target} ${subGk.unit})`
-                    : ""}
-                </option>
-              ))}
-          </select>
+            )}
+          </div>
+
+          {/* 已選取 G-sub-KPI 實績 */}
+          {(gk.thresholdGoalKpiIds ?? []).length > 0 && (
+            <div className="kpid-linked-summary">
+              <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                G-sub-KPI 實績
+              </div>
+              {(gk.thresholdGoalKpiIds ?? []).map((gkId) => {
+                const subGk = (draftGoal.goalKpis ?? []).find(
+                  (g) => g.id === gkId,
+                );
+                if (!subGk) return null;
+                const stats = getSubGkActivityStats(subGk, deptActivities);
+                const pct =
+                  stats.totalCount > 0
+                    ? Math.round((stats.metCount / stats.totalCount) * 100)
+                    : null;
+                return (
+                  <div key={gkId} className="kpid-kpi-summary-row">
+                    <span className="kpid-kpi-summary-name">{subGk.label}</span>
+                    <span className="kpid-kpi-summary-val">
+                      {stats.metCount}&nbsp;/&nbsp;{stats.totalCount}
+                      &nbsp;活動達標
+                    </span>
+                    {pct != null && (
+                      <span
+                        className={`kpid-kpi-summary-rate${pct >= 100 ? " done" : pct >= 60 ? " ok" : " warn"}`}
+                      >
+                        {pct}%
+                      </span>
+                    )}
+                    <button
+                      className="kpid-remove-btn"
+                      onClick={() =>
+                        onUpdate({
+                          ...gk,
+                          thresholdGoalKpiIds: (
+                            gk.thresholdGoalKpiIds ?? []
+                          ).filter((id) => id !== gkId),
+                        })
+                      }
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : isAgg ? (
+        /* ── aggregate：搜尋選取 GoalKPI ──────────────────────── */
         <div className="kpid-config-section">
-          <div className="kpid-config-label">聚合來源 GoalKPI</div>
-          {(gk.linkedGoalKpis ?? []).map((link, idx) => {
-            const srcGoal = allGoals.find((g) => g.id === link.goalId);
-            const srcGk = srcGoal?.goalKpis?.find(
-              (g) => g.id === link.goalKpiId,
-            );
-            return (
-              <div key={link.goalKpiId} className="kpid-linked-row">
-                <span
-                  className="kpid-linked-name"
-                  title={`${srcGoal?.label} / ${srcGk?.label}`}
-                >
-                  {srcGoal?.label}&nbsp;/&nbsp;
-                  {srcGk?.label ?? link.goalKpiId}
-                </span>
-                <input
-                  type="number"
-                  className="kpid-weight-input"
-                  step={0.05}
-                  min={0}
-                  max={1}
-                  value={link.weight}
-                  onChange={(e) => {
-                    const w = parseFloat(e.target.value);
-                    onUpdate({
-                      ...gk,
-                      linkedGoalKpis: (gk.linkedGoalKpis ?? []).map((l, i) =>
-                        i === idx ? { ...l, weight: isNaN(w) ? 0 : w } : l,
-                      ),
-                    });
-                  }}
-                />
-                <button
-                  className="kpid-remove-btn"
-                  onClick={() =>
-                    onUpdate({
-                      ...gk,
-                      linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
-                        (_, i) => i !== idx,
-                      ),
-                    })
-                  }
-                >
-                  ✕
-                </button>
+          <div className="kpid-kpi-link-picker">
+            <div className="kpid-config-label" style={{ marginBottom: 4 }}>
+              連結 GoalKPI
+            </div>
+            <input
+              className="g-kpi-link-search"
+              placeholder="🔍 點擊搜尋並選擇 GoalKPI..."
+              value={gkSearch}
+              onChange={(e) => setGkSearch(e.target.value)}
+              onFocus={() => setGkPickerOpen(true)}
+              onBlur={() => setTimeout(() => setGkPickerOpen(false), 150)}
+            />
+            {gkPickerOpen && (
+              <div
+                className="kpid-kpi-link-list"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {(() => {
+                  const q = gkSearch.trim().toLowerCase();
+                  const available = allGoals.flatMap((goal) =>
+                    (goal.goalKpis ?? [])
+                      .filter((subGk) => subGk.id !== gk.id)
+                      .map((subGk) => ({ goal, subGk })),
+                  );
+                  const filtered = q
+                    ? available.filter(
+                        ({ goal, subGk }) =>
+                          goal.label.toLowerCase().includes(q) ||
+                          subGk.label.toLowerCase().includes(q),
+                      )
+                    : available;
+                  const isLinked = (subGk: GoalKPI) =>
+                    (gk.linkedGoalKpis ?? []).some(
+                      (l) => l.goalKpiId === subGk.id,
+                    );
+                  const sorted = [
+                    ...filtered.filter(({ subGk }) => isLinked(subGk)),
+                    ...filtered.filter(({ subGk }) => !isLinked(subGk)),
+                  ];
+                  if (sorted.length === 0)
+                    return (
+                      <div className="g-kpi-link-empty">
+                        {q ? "找不到符合結果" : "沒有可連結的 GoalKPI"}
+                      </div>
+                    );
+                  return sorted.map(({ goal, subGk }) => {
+                    const linked = isLinked(subGk);
+                    const subResult = computeGoalKpiResult(
+                      subGk,
+                      goal,
+                      deptActivities,
+                      allGoals,
+                    );
+                    const rate = subResult.rate;
+                    return (
+                      <label
+                        key={`${goal.id}::${subGk.id}`}
+                        className={`g-kpi-link-item${linked ? " linked" : ""}`}
+                        onClick={() => {
+                          if (linked) {
+                            onUpdate({
+                              ...gk,
+                              linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
+                                (l) => l.goalKpiId !== subGk.id,
+                              ),
+                            });
+                          } else {
+                            onUpdate({
+                              ...gk,
+                              goalKpiType: "aggregate",
+                              linkedGoalKpis: [
+                                ...(gk.linkedGoalKpis ?? []),
+                                {
+                                  goalId: goal.id,
+                                  goalKpiId: subGk.id,
+                                  weight: 1,
+                                },
+                              ],
+                            });
+                          }
+                        }}
+                      >
+                        <input type="checkbox" checked={linked} readOnly />
+                        <span className="g-kpi-link-m">{goal.label}</span>
+                        <span className="g-kpi-link-k">{subGk.label}</span>
+                        {rate != null && (
+                          <span className="g-kpi-link-val">{rate}%</span>
+                        )}
+                      </label>
+                    );
+                  });
+                })()}
               </div>
-            );
-          })}
-          <select
-            className="kpid-add-select"
-            value=""
-            onChange={(e) => {
-              const [goalId, goalKpiId] = e.target.value.split("::");
-              if (!goalId) return;
-              if (gk.linkedGoalKpis?.some((l) => l.goalKpiId === goalKpiId))
-                return;
-              onUpdate({
-                ...gk,
-                goalKpiType: "aggregate",
-                linkedGoalKpis: [
-                  ...(gk.linkedGoalKpis ?? []),
-                  { goalId, goalKpiId, weight: 1 },
-                ],
-              });
-            }}
-          >
-            <option value="">── 新增連結 GoalKPI...</option>
-            {allGoals.flatMap((g) =>
-              (g.goalKpis ?? [])
-                .filter((subGk) => subGk.id !== gk.id)
-                .map((subGk) => (
-                  <option
-                    key={`${g.id}::${subGk.id}`}
-                    value={`${g.id}::${subGk.id}`}
-                  >
-                    {g.label} / {subGk.label}
-                  </option>
-                )),
             )}
-          </select>
+          </div>
+
+          {/* 已選取 GoalKPI 實績 + 權重 */}
+          {(gk.linkedGoalKpis ?? []).length > 0 && (
+            <div className="kpid-linked-summary">
+              <div className="kpid-config-label" style={{ marginTop: 8 }}>
+                GoalKPI 實績
+              </div>
+              {(gk.linkedGoalKpis ?? []).map((link, idx) => {
+                const srcGoal = allGoals.find((g) => g.id === link.goalId);
+                const srcGk = srcGoal?.goalKpis?.find(
+                  (g) => g.id === link.goalKpiId,
+                );
+                const subResult =
+                  srcGk && srcGoal
+                    ? computeGoalKpiResult(
+                        srcGk,
+                        srcGoal,
+                        deptActivities,
+                        allGoals,
+                      )
+                    : null;
+                const rate = subResult?.rate ?? null;
+                return (
+                  <div key={link.goalKpiId} className="kpid-kpi-summary-row">
+                    <span className="kpid-kpi-summary-name">
+                      {srcGoal?.label}&nbsp;/&nbsp;
+                      {srcGk?.label ?? link.goalKpiId}
+                    </span>
+                    <span
+                      className="kpid-kpi-summary-val"
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#94a3b8",
+                          flexShrink: 0,
+                        }}
+                      >
+                        權重
+                      </span>
+                      <input
+                        type="number"
+                        className="kpid-weight-input"
+                        step={0.05}
+                        min={0}
+                        max={1}
+                        value={link.weight}
+                        onChange={(e) => {
+                          const w = parseFloat(e.target.value);
+                          onUpdate({
+                            ...gk,
+                            linkedGoalKpis: (gk.linkedGoalKpis ?? []).map(
+                              (l, i) =>
+                                i === idx
+                                  ? { ...l, weight: isNaN(w) ? 0 : w }
+                                  : l,
+                            ),
+                          });
+                        }}
+                      />
+                    </span>
+                    {rate != null && (
+                      <span
+                        className={`kpid-kpi-summary-rate${rate >= 100 ? " done" : rate >= 60 ? " ok" : " warn"}`}
+                      >
+                        {rate}%
+                      </span>
+                    )}
+                    <button
+                      className="kpid-remove-btn"
+                      onClick={() =>
+                        onUpdate({
+                          ...gk,
+                          linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
+                            (_, i) => i !== idx,
+                          ),
+                        })
+                      }
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 權重加總提示 */}
+          {(gk.linkedGoalKpis ?? []).length > 0 &&
+            (() => {
+              const sum = (gk.linkedGoalKpis ?? []).reduce(
+                (a, l) => a + l.weight,
+                0,
+              );
+              const pct = Math.round(sum * 100);
+              return Math.abs(sum - 1) > 0.01 ? (
+                <div className="kpid-weight-warn">
+                  警告：權重加總 = {pct}%，建議調整至 100%
+                </div>
+              ) : (
+                <div className="kpid-weight-ok">✓ 權重加總 = {pct}%</div>
+              );
+            })()}
         </div>
       ) : (
+        /* ── G-sub-KPI：搜尋選取 M KPI ────────────────────────── */
         <div className="kpid-config-section">
           <div className="kpid-kpi-link-picker">
             <div className="kpid-config-label" style={{ marginBottom: 4 }}>
@@ -892,24 +1122,6 @@ function GoalKpiConfigPanel({
               </div>
             )}
           </div>
-          {(() => {
-            const linkedActIds = new Set(
-              gk.linkedKpis.map(
-                (l) =>
-                  l.activityId ||
-                  ((l as unknown as Record<string, string>).measureId ?? ""),
-              ),
-            );
-            const unlinked = deptActivities.filter(
-              (a) => !linkedActIds.has(a.id) && a.kpis.length > 0,
-            );
-            if (unlinked.length === 0) return null;
-            return (
-              <div className="kpid-unlinked-hint">
-                {unlinked.length} 個活動含有 KPI 尚未連結
-              </div>
-            );
-          })()}
           {gk.linkedKpis.length > 0 && (
             <div className="kpid-linked-summary">
               <div className="kpid-config-label" style={{ marginTop: 8 }}>
@@ -951,25 +1163,6 @@ function GoalKpiConfigPanel({
         </div>
       )}
 
-      {/* Aggregate weight sum warning */}
-      {isAgg &&
-        (gk.linkedGoalKpis ?? []).length > 0 &&
-        (() => {
-          const sum = (gk.linkedGoalKpis ?? []).reduce(
-            (a, l) => a + l.weight,
-            0,
-          );
-          const pct = Math.round(sum * 100);
-          if (Math.abs(sum - 1) > 0.01) {
-            return (
-              <div className="kpid-weight-warn">
-                警告：權重加總 = {pct}%，建議調整至 100%
-              </div>
-            );
-          }
-          return <div className="kpid-weight-ok">✓ 權重加總 = {pct}%</div>;
-        })()}
-
       {/* Preview computed rate */}
       {(() => {
         if (!draftGoal) return null;
@@ -987,7 +1180,7 @@ function GoalKpiConfigPanel({
                 <div className="kpid-preview-row">
                   <span>達標活動數</span>
                   <strong>
-                    {result.metCount ?? "─"} / {result.totalCount}
+                    {result.metCount ?? "─"}&nbsp;/&nbsp;{result.totalCount}
                   </strong>
                 </div>
                 <div className="kpid-preview-row">
@@ -996,7 +1189,87 @@ function GoalKpiConfigPanel({
                     {result.actual != null ? `${result.actual}%` : "─"}
                   </strong>
                 </div>
+                {(result.activities ?? []).length > 0 &&
+                  (() => {
+                    const metActs = (result.activities ?? []).filter(
+                      (a) => a.met,
+                    );
+                    const unmetActs = (result.activities ?? []).filter(
+                      (a) => !a.met,
+                    );
+                    return (
+                      <div className="kpid-preview-act-list">
+                        {metActs.length > 0 && (
+                          <>
+                            <div className="kpid-preview-act-section met">
+                              ✓ 達標 ({metActs.length})
+                            </div>
+                            {metActs.map((a) => (
+                              <div
+                                key={a.activityId}
+                                className="kpid-preview-act-row met"
+                              >
+                                <span
+                                  className="kpid-preview-act-name"
+                                  title={a.measureRawText}
+                                >
+                                  {a.measureRawText}
+                                </span>
+                                <span className="kpid-preview-act-rate met">
+                                  {a.displayRate != null
+                                    ? `${a.displayRate}%`
+                                    : "─"}
+                                  {a.chosenTarget != null && (
+                                    <span className="kpid-preview-act-thresh">
+                                      &nbsp;≥{a.chosenTarget}%
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {unmetActs.length > 0 && (
+                          <>
+                            <div className="kpid-preview-act-section unmet">
+                              ✗ 未達標 ({unmetActs.length})
+                            </div>
+                            {unmetActs.map((a) => (
+                              <div
+                                key={a.activityId}
+                                className="kpid-preview-act-row unmet"
+                              >
+                                <span
+                                  className="kpid-preview-act-name"
+                                  title={a.measureRawText}
+                                >
+                                  {a.measureRawText}
+                                </span>
+                                <span className="kpid-preview-act-rate unmet">
+                                  {a.displayRate != null
+                                    ? `${a.displayRate}%`
+                                    : "無資料"}
+                                  {a.chosenTarget != null && (
+                                    <span className="kpid-preview-act-thresh">
+                                      &nbsp;≥{a.chosenTarget}%
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
               </>
+            ) : isAgg ? (
+              <div className="kpid-preview-row">
+                <span>加權平均達成率</span>
+                <strong>
+                  {result.actual != null ? `${result.actual}%` : "─"}
+                </strong>
+              </div>
             ) : (
               <>
                 {(() => {
@@ -1045,22 +1318,24 @@ function GoalKpiConfigPanel({
                 </div>
               </>
             )}
-            <div className="kpid-preview-row">
-              <span>達成率</span>
-              <strong
-                className={
-                  result.rate != null
-                    ? result.rate >= 100
-                      ? "rate-done"
-                      : result.rate >= 60
-                        ? "rate-ok"
-                        : "rate-warn"
-                    : ""
-                }
-              >
-                {result.rate != null ? `${result.rate}%` : "─"}
-              </strong>
-            </div>
+            {isAgg && (
+              <div className="kpid-preview-row">
+                <span>達成率</span>
+                <strong
+                  className={
+                    result.rate != null
+                      ? result.rate >= 100
+                        ? "rate-done"
+                        : result.rate >= 60
+                          ? "rate-ok"
+                          : "rate-warn"
+                      : ""
+                  }
+                >
+                  {result.rate != null ? `${result.rate}%` : "─"}
+                </strong>
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1392,148 +1667,185 @@ function KpiGoalTree({
   onCopyGoalKpi,
   style,
 }: KpiGoalTreeProps) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
   return (
     <div className="kpid-ogs-tree" style={style}>
       <div className="kpid-tree-section-label">KPI 模式 — 目標 GoalKPI</div>
       <div className="kpid-tree-g-list">
         {draftGoals.map((g) => {
           const gkpis = g.goalKpis ?? [];
+          const aggKpis = gkpis.filter(isGKpi);
+          const directKpis = gkpis.filter((gk) => !isGKpi(gk));
+          const gkpiKey = `${g.id}-gkpi`;
+          const subKey = `${g.id}-sub`;
+
+          const renderGkRow = (gk: GoalKPI) => {
+            const result = computeGoalKpiResult(
+              gk,
+              g,
+              deptActivities,
+              draftGoals,
+            );
+            const isPct = gk.type === "pct_activity";
+            const isAggType = gk.goalKpiType === "aggregate";
+
+            let badgeText: string;
+            let badgeClass: string;
+            if (isPct) {
+              const pct = result.actual ?? 0;
+              const tgt = gk.target ?? 60;
+              badgeClass =
+                pct >= tgt ? " done" : pct >= tgt * 0.6 ? " ok" : " warn";
+              badgeText =
+                result.actual != null
+                  ? `${result.actual}% / ${gk.target ?? "─"}%`
+                  : "─";
+            } else if (isAggType) {
+              const rate = result.rate;
+              badgeClass =
+                rate !== null
+                  ? rate >= 100
+                    ? " done"
+                    : rate >= 60
+                      ? " ok"
+                      : " warn"
+                  : "";
+              badgeText = rate !== null ? `${rate}%` : "─";
+            } else {
+              const rate = result.rate;
+              badgeClass =
+                rate !== null
+                  ? rate >= 100
+                    ? " done"
+                    : rate >= 60
+                      ? " ok"
+                      : " warn"
+                  : "";
+              badgeText =
+                result.actual != null || result.target != null
+                  ? `${result.actual ?? "─"}${gk.unit ? ` ${gk.unit}` : ""} / ${result.target ?? "─"}${gk.unit ? ` ${gk.unit}` : ""}`
+                  : "─";
+            }
+
+            return (
+              <div
+                key={gk.id}
+                className={`kpid-tree-gk-full-row${selectedNodeId === `gk-${gk.id}` ? " selected" : ""}`}
+                onClick={() => onSelectNode(`gk-${gk.id}`)}
+              >
+                <div className="kpid-tree-gk-row-main">
+                  <span className="kpid-tree-gk-fullname" title={gk.label}>
+                    {gk.isHeadline && (
+                      <span className="kpid-tree-gk-star">★ </span>
+                    )}
+                    {gk.label}
+                  </span>
+                  <span className={`kpid-tree-gk-pct${badgeClass}`}>
+                    {badgeText}
+                  </span>
+                  <div className="ntm-item-actions kpid-tree-gk-actions">
+                    <button
+                      className="ntm-action-btn"
+                      title="複製"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCopyGoalKpi(gk.id);
+                      }}
+                    >
+                      ⧉
+                    </button>
+                    <button
+                      className="ntm-action-btn del"
+                      title="刪除"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteGoalKpi(gk.id);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                {isPct && result.metCount != null && (
+                  <div className="kpid-tree-gk-row-vals">
+                    {result.metCount}&nbsp;/&nbsp;{result.totalCount}
+                    &nbsp;活動達標
+                  </div>
+                )}
+              </div>
+            );
+          };
+
           return (
             <div key={g.id} className="kpid-tree-g-item">
+              {/* G header — click to select */}
               <div
                 className={`kpid-tree-g-header${selectedNodeId === `g-${g.id}` ? " selected" : ""}`}
                 onClick={() => onSelectNode(`g-${g.id}`)}
               >
                 <span className="kpid-tree-g-label">{g.label}</span>
                 <span className="kpid-tree-g-title">{g.title}</span>
-                <div className="kpid-tree-actions">
-                  <button
-                    className="kpid-tree-add-btn"
-                    title="新增 G-sub-KPI"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddGoalKpiOfType(g.id, "direct");
-                    }}
-                  >
-                    sub＋
-                  </button>
-                  <button
-                    className="kpid-tree-add-btn"
-                    title="新增 G-KPI"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddGoalKpiOfType(g.id, "aggregate");
-                    }}
-                  >
-                    G-KPI＋
-                  </button>
-                </div>
               </div>
-              {gkpis.length > 0 ? (
+
+              {/* G-KPI section */}
+              <div
+                className="ntm-section-header kpid-tree-sub-header"
+                onClick={() => toggle(gkpiKey)}
+              >
+                <button className="ntm-collapse-btn">
+                  {collapsed.has(gkpiKey) ? "▶" : "▼"}
+                </button>
+                <span className="ntm-section-label">G-KPI</span>
+                <span className="ntm-count-badge">{aggKpis.length}</span>
+                <button
+                  className="ntm-add-btn"
+                  title="新增 G-KPI"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddGoalKpiOfType(g.id, "aggregate");
+                  }}
+                >
+                  ＋
+                </button>
+              </div>
+              {!collapsed.has(gkpiKey) && aggKpis.length > 0 && (
                 <div className="kpid-tree-gk-rows">
-                  {(() => {
-                    const aggKpis = gkpis.filter(isGKpi);
-                    const directKpis = gkpis.filter((gk) => !isGKpi(gk));
-                    const renderGkRow = (gk: GoalKPI) => {
-                      const result = computeGoalKpiResult(
-                        gk,
-                        g,
-                        deptActivities,
-                        draftGoals,
-                      );
-                      const rate = result.rate;
-                      const rateClass =
-                        rate !== null
-                          ? rate >= 100
-                            ? " done"
-                            : rate >= 60
-                              ? " ok"
-                              : " warn"
-                          : "";
-                      return (
-                        <div
-                          key={gk.id}
-                          className={`kpid-tree-gk-full-row${selectedNodeId === `gk-${gk.id}` ? " selected" : ""}`}
-                          onClick={() => onSelectNode(`gk-${gk.id}`)}
-                        >
-                          <div className="kpid-tree-gk-row-main">
-                            <span
-                              className="kpid-tree-gk-fullname"
-                              title={gk.label}
-                            >
-                              {gk.isHeadline && (
-                                <span className="kpid-tree-gk-star">★ </span>
-                              )}
-                              {gk.label}
-                            </span>
-                            <span className={`kpid-tree-gk-pct${rateClass}`}>
-                              {rate !== null ? `${rate}%` : "─"}
-                            </span>
-                            <div className="ntm-item-actions kpid-tree-gk-actions">
-                              <button
-                                className="ntm-action-btn"
-                                title="複製"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onCopyGoalKpi(gk.id);
-                                }}
-                              >
-                                ⧉
-                              </button>
-                              <button
-                                className="ntm-action-btn del"
-                                title="刪除"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeleteGoalKpi(gk.id);
-                                }}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </div>
-                          {gk.type === "pct_activity"
-                            ? result.metCount != null && (
-                                <div className="kpid-tree-gk-row-vals">
-                                  {result.metCount}&nbsp;/&nbsp;
-                                  {result.totalCount}&nbsp;活動達標
-                                </div>
-                              )
-                            : (result.actual != null ||
-                                result.target != null) && (
-                                <div className="kpid-tree-gk-row-vals">
-                                  實際 {result.actual ?? "─"} / 目標{" "}
-                                  {result.target ?? "─"}
-                                  {gk.unit ? ` ${gk.unit}` : ""}
-                                </div>
-                              )}
-                        </div>
-                      );
-                    };
-                    return (
-                      <>
-                        {aggKpis.length > 0 && (
-                          <>
-                            <div className="kpid-tree-gk-subhead">G-KPI</div>
-                            {aggKpis.map(renderGkRow)}
-                          </>
-                        )}
-                        {directKpis.length > 0 && (
-                          <>
-                            <div
-                              className={`kpid-tree-gk-subhead${aggKpis.length > 0 ? " sub" : ""}`}
-                            >
-                              G-sub-KPI
-                            </div>
-                            {directKpis.map(renderGkRow)}
-                          </>
-                        )}
-                      </>
-                    );
-                  })()}
+                  {aggKpis.map(renderGkRow)}
                 </div>
-              ) : (
-                <div className="kpid-tree-gk-none">尚無 GoalKPI</div>
+              )}
+
+              {/* G-sub-KPI section */}
+              <div
+                className="ntm-section-header kpid-tree-sub-header"
+                onClick={() => toggle(subKey)}
+              >
+                <button className="ntm-collapse-btn">
+                  {collapsed.has(subKey) ? "▶" : "▼"}
+                </button>
+                <span className="ntm-section-label">G-sub-KPI</span>
+                <span className="ntm-count-badge">{directKpis.length}</span>
+                <button
+                  className="ntm-add-btn"
+                  title="新增 G-sub-KPI"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddGoalKpiOfType(g.id, "direct");
+                  }}
+                >
+                  ＋
+                </button>
+              </div>
+              {!collapsed.has(subKey) && directKpis.length > 0 && (
+                <div className="kpid-tree-gk-rows">
+                  {directKpis.map(renderGkRow)}
+                </div>
               )}
             </div>
           );
@@ -1605,15 +1917,44 @@ function GoalKpiSummaryPanel({
 
   const renderGkRow = (gk: GoalKPI) => {
     const r = results.find((x) => x.gk.id === gk.id)?.result;
-    const rate = r?.rate ?? null;
-    const rateClass =
-      rate !== null
-        ? rate >= 100
-          ? " done"
-          : rate >= 60
-            ? " ok"
-            : " warn"
-        : "";
+    const isPct = gk.type === "pct_activity";
+    const isAggType = gk.goalKpiType === "aggregate";
+
+    let rateText: string;
+    let rateClass: string;
+    if (isPct) {
+      const pct = r?.actual ?? 0;
+      const tgt = gk.target ?? 60;
+      rateClass = pct >= tgt ? " done" : pct >= tgt * 0.6 ? " ok" : " warn";
+      rateText =
+        r?.actual != null ? `${r.actual}% / ${gk.target ?? "─"}%` : "─";
+    } else if (isAggType) {
+      const rate = r?.rate ?? null;
+      rateClass =
+        rate !== null
+          ? rate >= 100
+            ? " done"
+            : rate >= 60
+              ? " ok"
+              : " warn"
+          : "";
+      rateText = rate !== null ? `${rate}%` : "─";
+    } else {
+      const rate = r?.rate ?? null;
+      rateClass =
+        rate !== null
+          ? rate >= 100
+            ? " done"
+            : rate >= 60
+              ? " ok"
+              : " warn"
+          : "";
+      rateText =
+        r && (r.actual !== null || r.target !== null)
+          ? `${r.actual ?? "─"}${gk.unit ? ` ${gk.unit}` : ""} / ${r.target ?? "─"}${gk.unit ? ` ${gk.unit}` : ""}`
+          : "─";
+    }
+
     return (
       <div
         key={gk.id}
@@ -1627,15 +1968,12 @@ function GoalKpiSummaryPanel({
           {gk.isHeadline && <span className="kpid-tree-gk-star">★ </span>}
           {gk.label}
         </span>
-        {r && (r.actual !== null || r.target !== null) && (
+        {isPct && r?.metCount != null && (
           <span className="kpid-gks-vals">
-            {r.actual ?? "─"}&nbsp;/&nbsp;{r.target ?? "─"}
-            {gk.unit ? ` ${gk.unit}` : ""}
+            {r.metCount}&nbsp;/&nbsp;{r.totalCount}&nbsp;活動達標
           </span>
         )}
-        <span className={`kpid-gks-rate${rateClass}`}>
-          {rate !== null ? `${rate}%` : "─"}
-        </span>
+        <span className={`kpid-gks-rate${rateClass}`}>{rateText}</span>
         <div className="ntm-item-actions kpid-gks-row-actions">
           <button
             className="ntm-action-btn"

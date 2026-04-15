@@ -204,14 +204,14 @@ export function computeGoalKpiResult(
       let met = false;
       let displayRate: number | null = null;
       if (chosen) {
+        // 只對「選中的 threshold G-sub-KPI」的 linkedKpis 計算 rate，
+        // 避免多個 threshold 引用同一 KPI 時重複計算。
+        const chosenThreshGk = goalKpis.find((g) => g.id === chosen.threshGkId);
         const rates: number[] = [];
-        for (const threshId of gk.thresholdGoalKpiIds ?? []) {
-          const threshGk = goalKpis.find((g) => g.id === threshId);
-          if (!threshGk) continue;
-          for (const link of threshGk.linkedKpis) {
+        if (chosenThreshGk) {
+          for (const link of chosenThreshGk.linkedKpis) {
             const actId = getLinkActivityId(link);
             if (actId !== entry.measureId) continue;
-            if (!chosen.kpiIds.includes(link.kpiId)) continue;
             const act = deptActivities.find((a) => a.id === actId);
             const k = act?.kpis.find((k) => k.id === link.kpiId);
             if (!k) continue;

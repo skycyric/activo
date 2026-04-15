@@ -8408,6 +8408,59 @@ body,
   color: #6b7280;
   font-weight: 400;
 }
+.kpid-preview-act-list {
+  margin-top: 6px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 6px;
+}
+.kpid-preview-act-section {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 4px 0 2px;
+  margin-top: 2px;
+}
+.kpid-preview-act-section.met {
+  color: #16a34a;
+}
+.kpid-preview-act-section.unmet {
+  color: #dc2626;
+}
+.kpid-preview-act-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.kpid-preview-act-row:hover {
+  background: #f3f4f6;
+}
+.kpid-preview-act-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #374151;
+}
+.kpid-preview-act-rate {
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 11px;
+}
+.kpid-preview-act-rate.met {
+  color: #16a34a;
+}
+.kpid-preview-act-rate.unmet {
+  color: #dc2626;
+}
+.kpid-preview-act-thresh {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 10px;
+}
 .rate-done {
   color: #16a34a;
 }
@@ -8466,6 +8519,14 @@ body,
 }
 .kpid-tree-g-item {
   margin-bottom: 2px;
+}
+/* G-KPI / G-sub-KPI section header: matches ntm-section-header but indented */
+.kpid-tree-sub-header {
+  padding-left: 22px !important;
+  border-top: none !important;
+}
+.kpid-tree-sub-header + .kpid-tree-gk-rows {
+  padding-left: 22px;
 }
 .kpid-tree-g-header {
   display: flex;
