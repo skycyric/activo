@@ -2334,6 +2334,7 @@ export default function App() {
       <>
         <StrategyList
           goal={selectedGoal}
+          allGoals={data.goals}
           strategies={filteredStrategies}
           selectedStrategyId={selectedStrategyId}
           onSelectStrategy={(id, warnFilter) => {

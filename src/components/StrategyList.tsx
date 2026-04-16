@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   Goal,
   GoalKPI,
@@ -8,9 +8,11 @@ import type {
 } from "../schemas/ogsm";
 import { countStrategyWarnings } from "../utils/planWarnings";
 import { computeGoalKpiResult } from "../utils/goalKpi";
+import { computeKpiAchievement } from "../utils/kpiCalc";
 
 interface Props {
   goal: Goal | null;
+  allGoals?: Goal[];
   strategies: Strategy[];
   selectedStrategyId: string | null;
   onSelectStrategy: (id: string, warnFilter?: "overdue" | "warning") => void;
@@ -23,6 +25,98 @@ interface Props {
   warnDaysBefore: number;
   isReadOnly?: boolean;
   deptActivities?: DeptActivity[];
+}
+
+function isGKpi(gk: GoalKPI): boolean {
+  return (
+    gk.goalKpiType === "aggregate" || (gk.type ?? "value") === "pct_activity"
+  );
+}
+
+function getKpiColor(rate: number | null): string {
+  if (rate === null) return "#6b7280";
+  if (rate >= 100) return "#10b981";
+  if (rate >= 70) return "#6366f1";
+  if (rate >= 40) return "#f59e0b";
+  return "#ef4444";
+}
+
+function formatMetricValue(
+  value: number | null,
+  isRateMode: boolean,
+  unit?: string,
+): string {
+  if (value === null) return "--";
+  const formatted = Number.isInteger(value)
+    ? value.toLocaleString()
+    : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (isRateMode) return `${formatted}%`;
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function getActivityId(link: { activityId?: string }): string {
+  return link.activityId || ((link as Record<string, string>).measureId ?? "");
+}
+
+function getGoalKpiMeta(gk: GoalKPI): string {
+  const gkType = gk.type ?? "value";
+  if (gk.goalKpiType === "aggregate") {
+    return `aggregate | 來源 ${(gk.linkedGoalKpis ?? []).length}`;
+  }
+  if (gkType === "pct_activity") {
+    return `pct_activity | 門檻 ${(gk.thresholdGoalKpiIds ?? []).length}`;
+  }
+  if (gkType === "progress") {
+    return `progress | 連結 ${gk.linkedKpis.length}`;
+  }
+  return `${gk.aggregation} | 連結 ${gk.linkedKpis.length}`;
+}
+
+function getSubKpiSources(gk: GoalKPI, deptActivities: DeptActivity[]) {
+  const groups = new Map<
+    string,
+    {
+      activityId: string;
+      activityName: string;
+      items: Array<{
+        kpiId: string;
+        name: string;
+        actual: number | null | undefined;
+        target: number | null | undefined;
+        unit?: string;
+        rate: number | null;
+      }>;
+    }
+  >();
+
+  for (const link of gk.linkedKpis) {
+    const activityId = getActivityId(link);
+    if (!activityId) continue;
+    const activity = deptActivities.find((item) => item.id === activityId);
+    const kpi = activity?.kpis.find((item) => item.id === link.kpiId);
+    const rate = kpi
+      ? (computeKpiAchievement(kpi, activity?.kpis ?? []) ??
+        kpi.achievementRate ??
+        null)
+      : null;
+    if (!groups.has(activityId)) {
+      groups.set(activityId, {
+        activityId,
+        activityName: activity?.rawText || "（未命名活動）",
+        items: [],
+      });
+    }
+    groups.get(activityId)!.items.push({
+      kpiId: link.kpiId,
+      name: kpi?.name || kpi?.label || "(未知 KPI)",
+      actual: kpi?.actual,
+      target: kpi?.target,
+      unit: kpi?.unit,
+      rate,
+    });
+  }
+
+  return Array.from(groups.values());
 }
 
 function StrategyRow({
@@ -116,6 +210,7 @@ function StrategyRow({
 
 export default function StrategyList({
   goal,
+  allGoals = [],
   strategies,
   selectedStrategyId,
   onSelectStrategy,
@@ -125,9 +220,9 @@ export default function StrategyList({
   warnDaysBefore,
   deptActivities = [],
 }: Props) {
-  const [showActivityBreakdown, setShowActivityBreakdown] = useState<
-    string | null
-  >(null);
+  const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(
+    null,
+  );
 
   if (!goal) {
     return (
@@ -142,20 +237,20 @@ export default function StrategyList({
   }
 
   const goalKpis = goal.goalKpis ?? [];
-  const computeGoalKpi = (gk: GoalKPI) =>
-    computeGoalKpiResult(gk, goal, deptActivities);
-
-  const activityKpis = goalKpis.filter(
-    (gk) => (gk.type ?? "value") === "pct_activity",
-  );
-  const headlineKpis = goalKpis.filter(
-    (gk) => (gk.type ?? "value") !== "pct_activity" && gk.isHeadline,
-  );
-  const detailKpis = goalKpis.filter(
-    (gk) => (gk.type ?? "value") !== "pct_activity" && !gk.isHeadline,
+  const previewGoals = allGoals.length > 0 ? allGoals : [goal];
+  const goalKpiPreviews = useMemo(
+    () =>
+      goalKpis.map((gk) => ({
+        gk,
+        result: computeGoalKpiResult(gk, goal, deptActivities, previewGoals),
+      })),
+    [goalKpis, goal, deptActivities, previewGoals],
   );
 
-  const renderGkCard = (gk: GoalKPI) => {
+  const gKpiPreviews = goalKpiPreviews.filter(({ gk }) => isGKpi(gk));
+  const subGKpiPreviews = goalKpiPreviews.filter(({ gk }) => !isGKpi(gk));
+
+  const renderPreviewCard = (gk: GoalKPI, section: "gkpi" | "subgkpi") => {
     const {
       actual,
       target,
@@ -164,53 +259,49 @@ export default function StrategyList({
       metCount,
       totalCount,
       activities,
-    } = computeGoalKpi(gk);
-    const kColor =
-      rate === null
-        ? "#6b7280"
-        : rate >= 100
-          ? "#10b981"
-          : rate >= 70
-            ? "#6366f1"
-            : rate >= 40
-              ? "#f59e0b"
-              : "#ef4444";
+    } =
+      goalKpiPreviews.find((item) => item.gk.id === gk.id)?.result ??
+      computeGoalKpiResult(gk, goal, deptActivities, previewGoals);
+    const kColor = getKpiColor(rate);
     const gkType = gk.type ?? "value";
+    const isExpanded = expandedPreviewId === gk.id;
+    const subSources =
+      section === "subgkpi" ? getSubKpiSources(gk, deptActivities) : [];
 
     return (
-      <div key={gk.id} className="g-kpi-card">
+      <div
+        key={gk.id}
+        className={`g-kpi-card${section === "subgkpi" ? " g-kpi-card-sub" : ""}`}
+      >
         <div className="g-kpi-card-top">
           <div className="g-kpi-card-left">
-            <span className="g-kpi-name">{gk.label}</span>
-            <span className="g-kpi-meta">
-              {gkType === "pct_activity"
-                ? "活動達標率"
-                : gkType === "progress"
-                  ? "進度"
-                  : gk.aggregation === "SUM"
-                    ? "加總"
-                    : "平均"}{" "}
-              {gkType === "pct_activity"
-                ? `門檻 ${(gk.thresholdGoalKpiIds ?? []).length}`
-                : `連結 ${gk.linkedKpis.length}`}
-            </span>
+            <div className="g-kpi-name-row">
+              <span className="g-kpi-name">{gk.label}</span>
+              <span
+                className={`g-kpi-kind-chip ${section === "gkpi" ? "gkpi" : "subgkpi"}`}
+              >
+                {section === "gkpi" ? "G-KPI" : "G-sub-KPI"}
+              </span>
+              {gk.isHeadline && (
+                <span className="g-kpi-headline-chip">主要</span>
+              )}
+            </div>
+            <span className="g-kpi-meta">{getGoalKpiMeta(gk)}</span>
           </div>
           <div className="g-kpi-card-right">
             <span className="g-kpi-value">
               <span className="g-kpi-val-label">實際</span>
-              {actual !== null ? actual.toLocaleString() : "--"}
-              {isRateMode ? "%" : actual !== null ? ` ${gk.unit}` : ""}{" "}
+              {formatMetricValue(actual, isRateMode, gk.unit)}
               {gkType === "pct_activity" && metCount !== null && (
-                <span style={{ fontSize: 11, color: "#6b7280" }}>
-                  {metCount}/{totalCount}{" "}
+                <span className="g-kpi-inline-hint">
+                  {metCount}/{totalCount} 活動達標
                 </span>
               )}
               <span className="g-kpi-val-sep">/</span>
               <span className="g-kpi-val-label">目標</span>
-              {target !== null ? target.toLocaleString() : "--"}
-              {isRateMode ? "%" : ` ${gk.unit}`}
+              {formatMetricValue(target, isRateMode, gk.unit)}
             </span>
-            {gkType !== "pct_activity" && (
+            {(gkType !== "pct_activity" || section === "subgkpi") && (
               <span className="g-kpi-rate" style={{ color: kColor }}>
                 {rate !== null ? `${rate}%` : "--"}
               </span>
@@ -247,15 +338,14 @@ export default function StrategyList({
                 <button
                   className="g-kpi-activity-toggle"
                   onClick={() =>
-                    setShowActivityBreakdown(
-                      showActivityBreakdown === gk.id ? null : gk.id,
+                    setExpandedPreviewId((current) =>
+                      current === gk.id ? null : gk.id,
                     )
                   }
                 >
-                  {showActivityBreakdown === gk.id ? "▲ 隱藏" : "▶ 顯示"}{" "}
-                  活動明細
+                  {isExpanded ? "▲ 隱藏" : "▶ 顯示"} 活動明細
                 </button>
-                {showActivityBreakdown === gk.id && (
+                {isExpanded && (
                   <div className="g-kpi-activity-list">
                     {activities.map((a) => (
                       <div
@@ -288,6 +378,63 @@ export default function StrategyList({
             )}
           </div>
         )}
+
+        {section === "subgkpi" && subSources.length > 0 && (
+          <div className="g-subkpi-breakdown">
+            <button
+              className="g-kpi-activity-toggle"
+              onClick={() =>
+                setExpandedPreviewId((current) =>
+                  current === gk.id ? null : gk.id,
+                )
+              }
+            >
+              {isExpanded ? "▲ 隱藏" : "▶ 顯示"} 來源明細
+            </button>
+            {isExpanded && (
+              <div className="g-subkpi-source-list">
+                {subSources.map((group) => (
+                  <div key={group.activityId} className="g-subkpi-source-group">
+                    <div className="g-subkpi-source-title">
+                      {group.activityName}
+                    </div>
+                    <div className="g-subkpi-source-items">
+                      {group.items.map((item) => (
+                        <div
+                          key={`${group.activityId}-${item.kpiId}`}
+                          className="g-subkpi-source-item"
+                        >
+                          <span className="g-subkpi-source-name">
+                            {item.name}
+                          </span>
+                          <span className="g-subkpi-source-metric">
+                            {formatMetricValue(
+                              item.actual ?? null,
+                              false,
+                              item.unit,
+                            )}
+                            <span className="g-kpi-val-sep">/</span>
+                            {formatMetricValue(
+                              item.target ?? null,
+                              false,
+                              item.unit,
+                            )}
+                          </span>
+                          <span
+                            className="g-subkpi-source-rate"
+                            style={{ color: getKpiColor(item.rate) }}
+                          >
+                            {item.rate !== null ? `${item.rate}%` : "--"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -306,30 +453,32 @@ export default function StrategyList({
           </h1>
         </div>
 
-        {activityKpis.length > 0 && (
-          <div className="g-pct-panel">
+        {gKpiPreviews.length > 0 && (
+          <div className="g-pct-panel g-panel-section">
             <div className="g-pct-panel-header">
-              <span className="g-pct-panel-title">活動達標率</span>
+              <span className="g-pct-panel-title">G-KPI 預覽</span>
+              <span className="g-panel-section-hint">
+                對齊目標編輯器的 aggregate / pct_activity 預覽
+              </span>
             </div>
             <div className="g-pct-panel-cards">
-              {activityKpis.map(renderGkCard)}
+              {gKpiPreviews.map(({ gk }) => renderPreviewCard(gk, "gkpi"))}
             </div>
           </div>
         )}
 
-        {(headlineKpis.length > 0 || detailKpis.length > 0) && (
-          <div className="g-kpi-panel">
+        {subGKpiPreviews.length > 0 && (
+          <div className="g-kpi-panel g-kpi-panel-sub">
             <div className="g-kpi-panel-header">
-              <span className="g-kpi-panel-title">目標 KPI</span>
+              <span className="g-kpi-panel-title">G-sub-KPI 預覽</span>
+              <span className="g-panel-section-hint">
+                顯示 direct KPI 的實際值、目標與來源明細
+              </span>
             </div>
-            {headlineKpis.length > 0 && (
-              <div className="g-kpi-headline-area">
-                <span className="g-kpi-headline-label">主要指標</span>
-                {headlineKpis.map(renderGkCard)}
-              </div>
-            )}
             <div className="g-kpi-panel-body">
-              {detailKpis.map(renderGkCard)}
+              {subGKpiPreviews.map(({ gk }) =>
+                renderPreviewCard(gk, "subgkpi"),
+              )}
             </div>
           </div>
         )}
