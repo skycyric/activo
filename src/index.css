@@ -1467,6 +1467,250 @@ body,
   overflow: hidden;
 }
 
+/* ══ KPI Scorecard（G 目標 KPI 概覽，新版） ══════════════════════════════ */
+.kpi-scorecard-section {
+  margin-bottom: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* G-KPI（目標成效指標）：強調框線 */
+.kpi-scorecard-section--primary {
+  border: 2px solid #6366f1;
+}
+
+/* G-sub-KPI（活動執行指標）：淡化框線 */
+.kpi-scorecard-section--sub {
+  border: 1.5px solid #bfdbfe;
+}
+
+.kpi-scorecard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  gap: 8px;
+}
+
+.kpi-scorecard-section--primary .kpi-scorecard-header {
+  background: #ede9fe;
+  border-bottom: 1px solid #c4b5fd;
+}
+
+.kpi-scorecard-section--sub .kpi-scorecard-header {
+  background: #eff6ff;
+  border-bottom: 1px solid #bfdbfe;
+}
+
+.kpi-scorecard-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Section Chip */
+.kpi-sc-section-chip {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.kpi-sc-section-chip--gkpi {
+  background: #5b21b6;
+  color: #fff;
+}
+.kpi-sc-section-chip--sub {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.kpi-scorecard-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: 0.02em;
+}
+
+.kpi-scorecard-subtitle {
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.kpi-scorecard-stat {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.kpi-scorecard-stat-sep {
+  color: var(--text3);
+  margin: 0 2px;
+}
+.kpi-scorecard-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text3);
+}
+
+/* G-KPI Grid：大卡片，兩欄 */
+.kpi-scorecard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+/* G-sub-KPI Grid：小卡片，多欄 */
+.kpi-scorecard-grid--sub {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  padding: 10px;
+}
+
+/* 單張 Scorecard 卡片 */
+.kpi-sc-card {
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  border-left-width: 5px;
+  padding: 12px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  transition: box-shadow 0.15s;
+}
+.kpi-sc-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* G-sub-KPI 卡片稍微縮小 */
+.kpi-scorecard-section--sub .kpi-sc-card {
+  padding: 9px 11px 8px;
+  border-left-width: 4px;
+}
+
+/* 狀態 variant */
+.kpi-sc-card--hit    { border-color: #a7f3d0; }
+.kpi-sc-card--good   { border-color: #c7d2fe; }
+.kpi-sc-card--warn   { border-color: #fde68a; }
+.kpi-sc-card--behind { border-color: #fecaca; }
+.kpi-sc-card--none   { border-color: #e5e7eb; }
+
+/* 名稱 + 狀態 badge */
+.kpi-sc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+.kpi-sc-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  flex: 1;
+  min-width: 0;
+}
+
+/* G-sub-KPI 名稱稍小 */
+.kpi-scorecard-section--sub .kpi-sc-name {
+  font-size: 12px;
+}
+
+.kpi-sc-star {
+  color: #d97706;
+}
+.kpi-sc-status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kpi-sc-status--hit    { background: #d1fae5; }
+.kpi-sc-status--good   { background: #e0e7ff; }
+.kpi-sc-status--warn   { background: #fef3c7; }
+.kpi-sc-status--behind { background: #fee2e2; }
+.kpi-sc-status--none   { background: #f1f5f9; color: #94a3b8 !important; }
+
+/* 大數字達成率 */
+.kpi-sc-rate-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kpi-sc-rate {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -1px;
+}
+
+/* G-sub-KPI 達成率數字縮小 */
+.kpi-scorecard-section--sub .kpi-sc-rate {
+  font-size: 26px;
+}
+
+.kpi-sc-pct-sub {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.kpi-sc-pct-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text3);
+}
+
+/* 進度條 */
+.kpi-sc-bar-wrap {
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+/* G-sub-KPI 進度條薄一點 */
+.kpi-scorecard-section--sub .kpi-sc-bar-wrap {
+  height: 7px;
+}
+
+.kpi-sc-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.6s ease;
+  min-width: 3px;
+}
+
+/* 實際/目標小字 */
+.kpi-sc-footer {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 1px;
+}
+
+/* 展開按鈕 */
+.kpi-sc-toggle {
+  font-size: 12px;
+  color: var(--brand);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  margin-top: 2px;
+}
+.kpi-sc-toggle:hover {
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
 .g-kpi-form-row {
   display: flex;
   gap: 6px;
@@ -1659,11 +1903,12 @@ body,
   gap: 4px;
 }
 .g-kpi-activity-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 4px 6px;
   font-size: 12px;
-  padding: 3px 6px;
+  padding: 4px 6px;
   border-radius: 4px;
 }
 .g-kpi-activity-row.met {
@@ -1675,20 +1920,21 @@ body,
 .g-kpi-activity-icon {
   flex-shrink: 0;
   font-size: 12px;
+  padding-top: 1px;
 }
 .g-kpi-activity-text {
-  flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
   color: var(--text);
   font-weight: 500;
+  line-height: 1.4;
 }
 .g-kpi-activity-detail {
-  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--text3);
   font-size: 11px;
+  padding-top: 1px;
 }
 .g-subkpi-breakdown {
   border-top: 1px solid var(--border);

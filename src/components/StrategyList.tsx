@@ -58,18 +58,46 @@ function getActivityId(link: { activityId?: string }): string {
   return link.activityId || ((link as Record<string, string>).measureId ?? "");
 }
 
-function getGoalKpiMeta(gk: GoalKPI): string {
-  const gkType = gk.type ?? "value";
-  if (gk.goalKpiType === "aggregate") {
-    return `aggregate | 來源 ${(gk.linkedGoalKpis ?? []).length}`;
-  }
-  if (gkType === "pct_activity") {
-    return `pct_activity | 門檻 ${(gk.thresholdGoalKpiIds ?? []).length}`;
-  }
-  if (gkType === "progress") {
-    return `progress | 連結 ${gk.linkedKpis.length}`;
-  }
-  return `${gk.aggregation} | 連結 ${gk.linkedKpis.length}`;
+function getStatusInfo(rate: number | null): {
+  label: string;
+  colorClass: string;
+  color: string;
+  bgTint: string;
+} {
+  if (rate === null)
+    return {
+      label: "未計算",
+      colorClass: "none",
+      color: "#94a3b8",
+      bgTint: "#f8fafc",
+    };
+  if (rate >= 100)
+    return {
+      label: "達標",
+      colorClass: "hit",
+      color: "#10b981",
+      bgTint: "#f0fdf4",
+    };
+  if (rate >= 70)
+    return {
+      label: "良好",
+      colorClass: "good",
+      color: "#6366f1",
+      bgTint: "#f5f3ff",
+    };
+  if (rate >= 40)
+    return {
+      label: "注意",
+      colorClass: "warn",
+      color: "#f59e0b",
+      bgTint: "#fffbeb",
+    };
+  return {
+    label: "落後",
+    colorClass: "behind",
+    color: "#ef4444",
+    bgTint: "#fef2f2",
+  };
 }
 
 function getSubKpiSources(gk: GoalKPI, deptActivities: DeptActivity[]) {
@@ -247,10 +275,7 @@ export default function StrategyList({
     [goalKpis, goal, deptActivities, previewGoals],
   );
 
-  const gKpiPreviews = goalKpiPreviews.filter(({ gk }) => isGKpi(gk));
-  const subGKpiPreviews = goalKpiPreviews.filter(({ gk }) => !isGKpi(gk));
-
-  const renderPreviewCard = (gk: GoalKPI, section: "gkpi" | "subgkpi") => {
+  const renderScorecardCard = (gk: GoalKPI) => {
     const {
       actual,
       target,
@@ -262,136 +287,139 @@ export default function StrategyList({
     } =
       goalKpiPreviews.find((item) => item.gk.id === gk.id)?.result ??
       computeGoalKpiResult(gk, goal, deptActivities, previewGoals);
-    const kColor = getKpiColor(rate);
     const gkType = gk.type ?? "value";
+    const isAgg = gk.goalKpiType === "aggregate";
+    const isPct = gkType === "pct_activity";
+    const isGKpiCard = isAgg || isPct; // G-KPI（目標成效指標）
+
+    // G-KPI 狀態色以 rate 判斷（aggregate: rate=actual；pct_activity: rate=actual/target*100）
+    // G-sub-KPI 狀態色同樣以 rate 判斷
+    const status = getStatusInfo(rate);
     const isExpanded = expandedPreviewId === gk.id;
-    const subSources =
-      section === "subgkpi" ? getSubKpiSources(gk, deptActivities) : [];
+    const subSources = !isGKpiCard ? getSubKpiSources(gk, deptActivities) : [];
+
+    // ── 主角數字決定 ──
+    // pct_activity：大字 = "N/M"（幾個活動達標），副字 = "活動達標"，footer = 達標率% / 目標%
+    // aggregate：大字 = actual%（加權平均達成率），footer = "來源 N 項加權平均"
+    // G-sub-KPI：大字 = rate%（真正的達成率），footer = 實際 X / 目標 Y
+
+    let bigNumber: string;
+    let bigUnit: string | null = null;
+    let footerLine: string | null = null;
+
+    if (isPct) {
+      bigNumber = metCount !== null ? `${metCount}/${totalCount}` : "--";
+      bigUnit = "活動達標";
+      footerLine =
+        actual !== null ? `達標率 ${actual}% ／ 目標 ${target ?? "--"}%` : null;
+    } else if (isAgg) {
+      bigNumber = actual !== null ? `${actual}%` : "--";
+      footerLine =
+        totalCount > 0 ? `來源 ${totalCount} 項加權平均` : "尚未連結來源";
+    } else {
+      // G-sub-KPI：rate% 才是達成率
+      bigNumber = rate !== null ? `${rate}%` : "--";
+      footerLine = `實際 ${formatMetricValue(actual, isRateMode, gk.unit)} ／ 目標 ${formatMetricValue(target, isRateMode, gk.unit)}`;
+    }
+
+    // 進度條寬度：pct_activity 用 actual/target（達標率百分比），其餘用 rate
+    const barPct = isPct
+      ? actual !== null && target
+        ? Math.min((actual / target) * 100, 100)
+        : 0
+      : Math.min(rate ?? 0, 100);
+
+    const hasExpandable =
+      (isPct &&
+        (gk.thresholdGoalKpiIds ?? []).length > 0 &&
+        activities.length > 0) ||
+      (!isGKpiCard && subSources.length > 0);
 
     return (
       <div
         key={gk.id}
-        className={`g-kpi-card${section === "subgkpi" ? " g-kpi-card-sub" : ""}`}
+        className={`kpi-sc-card kpi-sc-card--${status.colorClass}`}
+        style={{ borderLeftColor: status.color, background: status.bgTint }}
       >
-        <div className="g-kpi-card-top">
-          <div className="g-kpi-card-left">
-            <div className="g-kpi-name-row">
-              <span className="g-kpi-name">{gk.label}</span>
-              <span
-                className={`g-kpi-kind-chip ${section === "gkpi" ? "gkpi" : "subgkpi"}`}
-              >
-                {section === "gkpi" ? "G-KPI" : "G-sub-KPI"}
-              </span>
-              {gk.isHeadline && (
-                <span className="g-kpi-headline-chip">主要</span>
-              )}
-            </div>
-            <span className="g-kpi-meta">{getGoalKpiMeta(gk)}</span>
-          </div>
-          <div className="g-kpi-card-right">
-            <span className="g-kpi-value">
-              <span className="g-kpi-val-label">實際</span>
-              {formatMetricValue(actual, isRateMode, gk.unit)}
-              {gkType === "pct_activity" && metCount !== null && (
-                <span className="g-kpi-inline-hint">
-                  {metCount}/{totalCount} 活動達標
-                </span>
-              )}
-              <span className="g-kpi-val-sep">/</span>
-              <span className="g-kpi-val-label">目標</span>
-              {formatMetricValue(target, isRateMode, gk.unit)}
-            </span>
-            {(gkType !== "pct_activity" || section === "subgkpi") && (
-              <span className="g-kpi-rate" style={{ color: kColor }}>
-                {rate !== null ? `${rate}%` : "--"}
-              </span>
-            )}
-          </div>
+        {/* 頂部：名稱 + 狀態 badge */}
+        <div className="kpi-sc-top">
+          <span className="kpi-sc-name">
+            {gk.isHeadline && <span className="kpi-sc-star">★ </span>}
+            {gk.label}
+          </span>
+          <span
+            className={`kpi-sc-status kpi-sc-status--${status.colorClass}`}
+            style={{ color: status.color }}
+          >
+            {status.label}
+          </span>
         </div>
 
-        {rate !== null && (
-          <div className="g-kpi-bar-wrap">
-            <div className="g-kpi-bar">
-              <div
-                style={{
-                  width: `${Math.min(rate, 100)}%`,
-                  height: "100%",
-                  background: kColor,
-                  borderRadius: "4px",
-                  transition: "width 0.6s ease",
-                }}
-              />
-            </div>
-          </div>
-        )}
+        {/* 主角數字 */}
+        <div className="kpi-sc-rate-row">
+          <span className="kpi-sc-rate" style={{ color: status.color }}>
+            {bigNumber}
+          </span>
+          {bigUnit && (
+            <span className="kpi-sc-pct-sub">
+              <span className="kpi-sc-pct-unit">{bigUnit}</span>
+            </span>
+          )}
+        </div>
 
-        {gkType === "pct_activity" && (
-          <div className="g-kpi-activity-breakdown">
-            {(gk.thresholdGoalKpiIds ?? []).length === 0 ? (
-              <div className="g-kpi-activity-empty">尚未設定門檻 GoalKPI</div>
-            ) : activities.length === 0 ? (
-              <div className="g-kpi-activity-empty">
-                所選 GoalKPI 尚未連結任何 M KPI
-              </div>
-            ) : (
-              <>
-                <button
-                  className="g-kpi-activity-toggle"
-                  onClick={() =>
-                    setExpandedPreviewId((current) =>
-                      current === gk.id ? null : gk.id,
-                    )
-                  }
-                >
-                  {isExpanded ? "▲ 隱藏" : "▶ 顯示"} 活動明細
-                </button>
-                {isExpanded && (
-                  <div className="g-kpi-activity-list">
-                    {activities.map((a) => (
-                      <div
-                        key={a.measureId}
-                        className={`g-kpi-activity-row ${a.met ? "met" : "unmet"}`}
-                      >
-                        <span className="g-kpi-activity-icon">
-                          {a.met ? "✅" : "❌"}
-                        </span>
-                        <span className="g-kpi-activity-text">
-                          {(a.measureRawText || "").substring(0, 28)}
-                        </span>
-                        {a.isConflict && (
-                          <span className="g-pct-src-badge">
-                            {a.chosenSrcLabel}
-                          </span>
-                        )}
-                        <span className="g-kpi-activity-detail">
-                          {a.displayRate !== null
-                            ? `${a.displayRate.toFixed(1)}%`
-                            : "--"}
-                          {" / 目標 "}
-                          {a.chosenTarget !== null ? a.chosenTarget : "--"}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+        {/* 進度條 */}
+        <div className="kpi-sc-bar-wrap">
+          <div
+            className="kpi-sc-bar-fill"
+            style={{ width: `${barPct}%`, background: status.color }}
+          />
+        </div>
 
-        {section === "subgkpi" && subSources.length > 0 && (
-          <div className="g-subkpi-breakdown">
+        {/* 補充說明小字 */}
+        {footerLine && <div className="kpi-sc-footer">{footerLine}</div>}
+
+        {/* 展開按鈕 */}
+        {hasExpandable && (
+          <>
             <button
-              className="g-kpi-activity-toggle"
+              className="kpi-sc-toggle"
               onClick={() =>
-                setExpandedPreviewId((current) =>
-                  current === gk.id ? null : gk.id,
-                )
+                setExpandedPreviewId((cur) => (cur === gk.id ? null : gk.id))
               }
             >
-              {isExpanded ? "▲ 隱藏" : "▶ 顯示"} 來源明細
+              {isExpanded ? "▲ 隱藏" : "▶ 顯示"}
+              {isPct ? " 活動明細" : " 來源明細"}
             </button>
-            {isExpanded && (
+            {isExpanded && isPct && (
+              <div className="g-kpi-activity-list">
+                {activities.map((a) => (
+                  <div
+                    key={a.measureId}
+                    className={`g-kpi-activity-row ${a.met ? "met" : "unmet"}`}
+                  >
+                    <span className="g-kpi-activity-icon">
+                      {a.met ? "✅" : "❌"}
+                    </span>
+                    <span className="g-kpi-activity-text">
+                      {(a.measureRawText || "").substring(0, 28)}
+                    </span>
+                    {a.isConflict && (
+                      <span className="g-pct-src-badge">
+                        {a.chosenSrcLabel}
+                      </span>
+                    )}
+                    <span className="g-kpi-activity-detail">
+                      {a.displayRate !== null
+                        ? `${a.displayRate.toFixed(1)}%`
+                        : "--"}
+                      {" / 目標 "}
+                      {a.chosenTarget !== null ? a.chosenTarget : "--"}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {isExpanded && !isPct && subSources.length > 0 && (
               <div className="g-subkpi-source-list">
                 {subSources.map((group) => (
                   <div key={group.activityId} className="g-subkpi-source-group">
@@ -433,7 +461,7 @@ export default function StrategyList({
                 ))}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     );
@@ -453,35 +481,73 @@ export default function StrategyList({
           </h1>
         </div>
 
-        {gKpiPreviews.length > 0 && (
-          <div className="g-pct-panel g-panel-section">
-            <div className="g-pct-panel-header">
-              <span className="g-pct-panel-title">G-KPI 預覽</span>
-              <span className="g-panel-section-hint">
-                對齊目標編輯器的 aggregate / pct_activity 預覽
-              </span>
-            </div>
-            <div className="g-pct-panel-cards">
-              {gKpiPreviews.map(({ gk }) => renderPreviewCard(gk, "gkpi"))}
-            </div>
-          </div>
-        )}
-
-        {subGKpiPreviews.length > 0 && (
-          <div className="g-kpi-panel g-kpi-panel-sub">
-            <div className="g-kpi-panel-header">
-              <span className="g-kpi-panel-title">G-sub-KPI 預覽</span>
-              <span className="g-panel-section-hint">
-                顯示 direct KPI 的實際值、目標與來源明細
-              </span>
-            </div>
-            <div className="g-kpi-panel-body">
-              {subGKpiPreviews.map(({ gk }) =>
-                renderPreviewCard(gk, "subgkpi"),
+        {(() => {
+          const gKpiList = goalKpiPreviews.filter(({ gk }) => isGKpi(gk));
+          const subGKpiList = goalKpiPreviews.filter(({ gk }) => !isGKpi(gk));
+          return (
+            <>
+              {gKpiList.length > 0 && (
+                <div className="kpi-scorecard-section kpi-scorecard-section--primary">
+                  <div className="kpi-scorecard-header">
+                    <div className="kpi-scorecard-header-left">
+                      <span className="kpi-sc-section-chip kpi-sc-section-chip--gkpi">
+                        G-KPI
+                      </span>
+                      <span className="kpi-scorecard-title">目標成效指標</span>
+                      <span className="kpi-scorecard-subtitle">
+                        目標是否達成的結論性數字
+                      </span>
+                    </div>
+                    <span className="kpi-scorecard-stat">
+                      {
+                        gKpiList.filter(
+                          ({ result }) => (result.rate ?? 0) >= 100,
+                        ).length
+                      }
+                      <span className="kpi-scorecard-stat-sep">/</span>
+                      {gKpiList.length}
+                      <span className="kpi-scorecard-stat-label"> 達標</span>
+                    </span>
+                  </div>
+                  <div className="kpi-scorecard-grid">
+                    {gKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
-        )}
+
+              {subGKpiList.length > 0 && (
+                <div className="kpi-scorecard-section kpi-scorecard-section--sub">
+                  <div className="kpi-scorecard-header kpi-scorecard-header--sub">
+                    <div className="kpi-scorecard-header-left">
+                      <span className="kpi-sc-section-chip kpi-sc-section-chip--sub">
+                        G-sub-KPI
+                      </span>
+                      <span className="kpi-scorecard-title">活動執行指標</span>
+                      <span className="kpi-scorecard-subtitle">
+                        連結各活動 M-KPI，匯入上方 G-KPI
+                      </span>
+                    </div>
+                    <span className="kpi-scorecard-stat">
+                      {
+                        subGKpiList.filter(
+                          ({ result }) => (result.rate ?? 0) >= 100,
+                        ).length
+                      }
+                      <span className="kpi-scorecard-stat-sep">/</span>
+                      {subGKpiList.length}
+                      <span className="kpi-scorecard-stat-label"> 達標</span>
+                    </span>
+                  </div>
+                  <div className="kpi-scorecard-grid kpi-scorecard-grid--sub">
+                    {subGKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                  </div>
+                </div>
+              )}
+
+              {gKpiList.length === 0 && subGKpiList.length > 0 && null}
+            </>
+          );
+        })()}
 
         <div className="list-toolbar">
           <div className="list-filters">
