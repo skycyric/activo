@@ -555,12 +555,12 @@ describe("migrateToActivityFirst", () => {
     expect(activities).toHaveLength(1);
     expect(activities[0].id).toBe("msr1");
     expect(activities[0].rawText).toBe("活動A");
-    expect(activities[0].ogsmLink).toEqual({
-      periodId: "period1",
-      goalId: "g1",
-      strategyId: "strat1",
-    });
-    expect(activities[0].excludeFromOgsm).toBe(false);
+    const link = activities[0].dashboardLinks?.[0];
+    expect(link?.type).toBe("ogsm");
+    expect(link?.periodId).toBe("period1");
+    expect(link?.goalId).toBe("g1");
+    expect(link?.strategyId).toBe("strat1");
+    expect(link?.exclude).toBe(false);
   });
 
   test("冪等性：同 ID 的活動不重複加入 dept.activities", () => {
@@ -835,16 +835,15 @@ describe("migrateToActivityFirst", () => {
     const a1 = activities.find((a) => a.id === "msr1")!;
     const a2 = activities.find((a) => a.id === "msr2")!;
 
-    // 活動A 只拿到 plan1 的 item1
-    expect(a1.actionPlans).toHaveLength(1);
-    expect(a1.actionPlans![0].id).toBe("plan1");
-    expect(a1.actionPlans![0].items).toHaveLength(1);
-    expect(a1.actionPlans![0].items[0].id).toBe("item1");
+    // 活動A 只拿到 plan1 的 item1（planItems 是平坦化結構）
+    expect(a1.planItems).toHaveLength(1);
+    expect(a1.planItems![0].id).toBe("item1");
+    expect(a1.planItems![0].quarter).toBe("Q1");
 
     // 活動B 只拿到 plan2 的 item2
-    expect(a2.actionPlans).toHaveLength(1);
-    expect(a2.actionPlans![0].id).toBe("plan2");
-    expect(a2.actionPlans![0].items[0].id).toBe("item2");
+    expect(a2.planItems).toHaveLength(1);
+    expect(a2.planItems![0].id).toBe("item2");
+    expect(a2.planItems![0].quarter).toBe("Q1");
   });
 
   test("actionPlans 無 linkedMeasureId 的 items 複製給 strategy 內所有活動", () => {
@@ -907,11 +906,11 @@ describe("migrateToActivityFirst", () => {
     const a1 = activities.find((a) => a.id === "msr1")!;
     const a2 = activities.find((a) => a.id === "msr2")!;
 
-    // 活動A：拿到共用 item + 自己的 item
-    expect(a1.actionPlans![0].items).toHaveLength(2);
+    // 活動A：拿到共用 item + 自己的 item（planItems 平坦化）
+    expect(a1.planItems).toHaveLength(2);
 
     // 活動B：只拿到共用 item（沒有自己的 linked item）
-    expect(a2.actionPlans![0].items).toHaveLength(1);
-    expect(a2.actionPlans![0].items[0].id).toBe("item_no_link");
+    expect(a2.planItems).toHaveLength(1);
+    expect(a2.planItems![0].id).toBe("item_no_link");
   });
 });

@@ -6636,11 +6636,11 @@
       ]
     },
     {
-      "id": "dept_mno9wax2_003_e38848e5",
-      "name": "設計企劃部",
+      "id": "dept_mnsazgxc_001_05995463",
+      "name": "設計企畫部",
       "periods": [
         {
-          "id": "period_mno9wax2_002_29edd738",
+          "id": "period_mnsazgxc_000_7526b7c0",
           "halfYear": "H1",
           "year": 2026,
           "ogsm": {
@@ -6650,7 +6650,22 @@
             },
             "goals": [],
             "period": "2026 H1",
-            "importedAt": "2026-04-07T07:03:35.750Z",
+            "importedAt": "2026-04-10T02:45:07.823Z",
+            "overallRate": 0
+          }
+        },
+        {
+          "id": "period_mnsazgxc_000_7526b7c0_h2",
+          "halfYear": "H2",
+          "year": 2026,
+          "ogsm": {
+            "objectives": {
+              "orgO": "",
+              "deptO": ""
+            },
+            "goals": [],
+            "period": "2026 H1",
+            "importedAt": "2026-04-10T02:45:07.823Z",
             "overallRate": 0
           }
         }

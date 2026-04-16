@@ -1,13 +1,54 @@
 /**
  * File System Access API + IndexedDB persistence
- * Lets the user pick a JSON data file once; the handle is stored in IndexedDB
- * so re-permission (not re-pick) is all that's needed on subsequent app opens.
+ * Multi-file mode: lets the user pick a root folder once; the handle is stored
+ * in IndexedDB so re-permission (not re-pick) is all that's needed later.
  * Works with OneDrive / SharePoint sync folder for multi-user sharing.
  */
 
 const DB_NAME = "ogsm_filesync";
 const STORE_NAME = "handles";
-const HANDLE_KEY = "dataFile";
+export const BACKUP_FOLDER_NAME = "備份";
+export const BACKUP_KEEP_LATEST = 30;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function sanitizeFileNamePart(input: string): string {
+  return input
+    .trim()
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
+export function makeBackupTimestamp(date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = pad2(date.getMonth() + 1);
+  const dd = pad2(date.getDate());
+  const hh = pad2(date.getHours());
+  const mi = pad2(date.getMinutes());
+  const ss = pad2(date.getSeconds());
+  return `${yyyy}-${mm}-${dd}_${hh}${mi}${ss}`;
+}
+
+export function makeWorkspaceBackupFileName(
+  stamp: string,
+  version: number,
+): string {
+  return `workspace_${stamp}_v${version}.json`;
+}
+
+export function makeDeptBackupFileName(
+  deptFolderName: string,
+  stamp: string,
+  version: number,
+): string {
+  const safe = sanitizeFileNamePart(deptFolderName) || "dept";
+  return `dept_${safe}_${stamp}_v${version}.json`;
+}
 
 // ── IndexedDB helpers ──────────────────────────────────────────────────────
 
@@ -20,116 +61,11 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-async function saveHandle(handle: FileSystemFileHandle): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put(handle, HANDLE_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function loadHandle(): Promise<FileSystemFileHandle | null> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const req = tx.objectStore(STORE_NAME).get(HANDLE_KEY);
-    req.onsuccess = () => resolve((req.result as FileSystemFileHandle) ?? null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// ── Permission helpers ────────────────────────────────────────────────────
-
-/** Query current permission without prompting (safe on page load, no user gesture needed). */
-async function queryPermission(
-  handle: FileSystemFileHandle,
-): Promise<PermissionState> {
-  return handle.queryPermission({ mode: "readwrite" });
-}
-
-/** Request permission — MUST be called from a user-gesture handler (button click). */
-async function requestPermission(
-  handle: FileSystemFileHandle,
-): Promise<boolean> {
-  return (
-    ((await handle.requestPermission({ mode: "readwrite" })) as string) ===
-    "granted"
-  );
-}
-
 // ── Public API ─────────────────────────────────────────────────────────────
 
 /** Returns true when the browser supports File System Access API. */
 export function isFileSystemAccessSupported(): boolean {
-  return typeof window !== "undefined" && "showOpenFilePicker" in window;
-}
-
-/**
- * Show a file picker for a JSON file.
- * Saves the handle to IndexedDB on success; returns null if the user cancels.
- */
-export async function pickDataFile(): Promise<FileSystemFileHandle | null> {
-  try {
-    const [handle] = await showOpenFilePicker({
-      types: [
-        {
-          description: "JSON 資料檔",
-          accept: { "application/json": [".json"] },
-        },
-      ],
-      multiple: false,
-    });
-    await saveHandle(handle as FileSystemFileHandle);
-    return handle as FileSystemFileHandle;
-  } catch (e: unknown) {
-    if (e instanceof Error && e.name === "AbortError") return null; // user cancelled
-    throw e;
-  }
-}
-
-/**
- * Called on page load (no user gesture).
- * Returns the handle if permission is already granted, or null.
- * If a handle exists but needs re-authorization, use `hasSavedHandle()` + `authorizeDataFile()`.
- */
-export async function peekDataFile(): Promise<FileSystemFileHandle | null> {
-  try {
-    const handle = await loadHandle();
-    if (!handle) return null;
-    const state = await queryPermission(handle);
-    return state === "granted" ? handle : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Returns true when IndexedDB contains a saved handle (regardless of permission state).
- * Use this to decide whether to show a "重新授權" button.
- */
-export async function hasSavedHandle(): Promise<boolean> {
-  try {
-    return (await loadHandle()) !== null;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Re-authorize a saved handle — MUST be called from a user-gesture handler (button click).
- * Returns the handle on success, or null if the user denies / no handle saved.
- */
-export async function authorizeDataFile(): Promise<FileSystemFileHandle | null> {
-  try {
-    const handle = await loadHandle();
-    if (!handle) return null;
-    const ok = await requestPermission(handle);
-    return ok ? handle : null;
-  } catch {
-    return null;
-  }
+  return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 
 /** Read the full text content of the file. */
@@ -161,19 +97,52 @@ export async function writeDataFile(
   await writable.close();
 }
 
-/** Remove the persisted handle from IndexedDB. */
-export async function clearDataFile(): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).delete(HANDLE_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // best-effort
+export async function ensureBackupDir(
+  rootHandle: FileSystemDirectoryHandle,
+): Promise<FileSystemDirectoryHandle> {
+  return rootHandle.getDirectoryHandle(BACKUP_FOLDER_NAME, { create: true });
+}
+
+export async function writeJsonFileInDir(
+  dirHandle: FileSystemDirectoryHandle,
+  fileName: string,
+  content: string,
+): Promise<void> {
+  const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+export async function pruneJsonBackupsByPrefix(
+  dirHandle: FileSystemDirectoryHandle,
+  fileNamePrefix: string,
+  keepLatest = BACKUP_KEEP_LATEST,
+): Promise<number> {
+  if (keepLatest < 0) return 0;
+  const matched: { name: string; lastModified: number }[] = [];
+  for await (const [name, entry] of dirHandle.entries()) {
+    if (entry.kind !== "file") continue;
+    if (!name.toLowerCase().endsWith(".json")) continue;
+    if (!name.startsWith(fileNamePrefix)) continue;
+    try {
+      const file = await (entry as FileSystemFileHandle).getFile();
+      matched.push({ name, lastModified: file.lastModified });
+    } catch {
+      // best-effort
+    }
   }
+  if (matched.length <= keepLatest) return 0;
+  matched.sort((a, b) => b.lastModified - a.lastModified);
+  const toRemove = matched.slice(keepLatest);
+  for (const item of toRemove) {
+    try {
+      await dirHandle.removeEntry(item.name);
+    } catch {
+      // best-effort
+    }
+  }
+  return toRemove.length;
 }
 
 // ── Directory handle (for conflict-copy scanning) ─────────────────────────
@@ -382,17 +351,26 @@ export async function scanDeptJsons(
 
   for await (const [subName, subEntry] of rootHandle.entries()) {
     if (subEntry.kind !== "directory") continue;
+    if (subName === BACKUP_FOLDER_NAME) continue;
     const subDir = subEntry as FileSystemDirectoryHandle;
-    // Find first .json in this sub-folder
+    let preferredJson: FileSystemFileHandle | null = null;
+    let fallbackJson: FileSystemFileHandle | null = null;
     for await (const [fileName, fileEntry] of subDir.entries()) {
       if (fileEntry.kind !== "file") continue;
       if (!fileName.toLowerCase().endsWith(".json")) continue;
+      if (fileName.toLowerCase() === "data.json") {
+        preferredJson = fileEntry as FileSystemFileHandle;
+        break;
+      }
+      fallbackJson ??= fileEntry as FileSystemFileHandle;
+    }
+    const selectedJson = preferredJson ?? fallbackJson;
+    if (selectedJson) {
       results.push({
         subfolderName: subName,
-        handle: fileEntry as FileSystemFileHandle,
+        handle: selectedJson,
         subDirHandle: subDir,
       });
-      break; // only one json per subfolder
     }
   }
 

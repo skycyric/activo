@@ -248,6 +248,8 @@ export const StrategySchema = z.object({
   completionRate: z.number(), // 0-200, computed from KPIs
   manualRate: z.number().nullable(),
   updatedAt: z.string().optional(),
+  /** Tombstone: 使用者刻意清空的欄位名稱清單（用於 merge 時區分「未填」與「主動清空」） */
+  clearedFields: z.array(z.string()).optional(),
 });
 
 // ── Goal ──────────────────────────────────────────────────────────────────────
@@ -319,6 +321,8 @@ export const GoalSchema = z.object({
   completionRate: z.number(),
   goalKpis: z.array(GoalKPISchema).optional(),
   updatedAt: z.string().optional(),
+  /** Tombstone: 使用者刻意清空的欄位名稱清單 */
+  clearedFields: z.array(z.string()).optional(),
 });
 
 // ── FreeNode ──────────────────────────────────────────────────────────────────
@@ -381,6 +385,8 @@ export const TeamSchema = z.object({
   deptId: z.string().optional(), // 所屬部門
   members: z.array(TeamMemberSchema),
   updatedAt: z.string().optional(),
+  /** Tombstone: 使用者刻意清空的欄位名稱清單 */
+  clearedFields: z.array(z.string()).optional(),
 });
 
 export const WorkspaceDataSchema = z.object({

@@ -68,11 +68,16 @@ export default function ActivityPage({
   const [showAddModal, setShowAddModal] = useState(false);
   const [filters, setFilters] = useState<ActivityFilterState>(() => ({
     ...EMPTY_FILTERS,
-    owner: (() => {
+    owners: (() => {
       try {
-        return localStorage.getItem("activo_filter_owner") ?? "";
+        const raw = localStorage.getItem("activo_filter_owners");
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed)
+          ? parsed.filter((x): x is string => typeof x === "string")
+          : [];
       } catch {
-        return "";
+        return [];
       }
     })(),
   }));
@@ -88,18 +93,21 @@ export default function ActivityPage({
     }
   }, [initialSelectedActivityId]);
 
-  // Persist owner filter to localStorage
+  // Persist owner filters to localStorage
   useEffect(() => {
     try {
-      if (filters.owner) {
-        localStorage.setItem("activo_filter_owner", filters.owner);
+      if (filters.owners.length > 0) {
+        localStorage.setItem(
+          "activo_filter_owners",
+          JSON.stringify(filters.owners),
+        );
       } else {
-        localStorage.removeItem("activo_filter_owner");
+        localStorage.removeItem("activo_filter_owners");
       }
     } catch {
       // best-effort
     }
-  }, [filters.owner]);
+  }, [filters.owners]);
 
   // When a chip/card is clicked from non-table views, jump to table + expand
   const handleSetExpandedId = useCallback((id: string | null) => {
@@ -224,20 +232,39 @@ export default function ActivityPage({
 
   // Apply filters
   const filtered = useMemo<ActivityWithContext[]>(() => {
-    // Pre-build set of member names for selected team (for owner-based matching)
-    const selectedTeamMemberNames = filters.teamId
-      ? new Set(
-          (workspace.teams ?? [])
-            .find((t) => t.id === filters.teamId)
-            ?.members.map((m) => m.name) ?? [],
-        )
-      : null;
+    const deptSet = new Set(filters.deptIds);
+    const teamSet = new Set(filters.teamIds);
+    const ownerSet = new Set(filters.owners);
+    const frameworkSet = new Set(filters.frameworks);
+    const periodSet = new Set(filters.periodIds);
+    const goalSet = new Set(filters.goalIds);
+    const strategySet = new Set(filters.strategyIds);
+    const statusSet = new Set(filters.statuses);
+
+    const periodLabelById = new Map<string, string>();
+    for (const dept of workspace.departments) {
+      for (const period of dept.periods) {
+        periodLabelById.set(period.id, `${period.year} ${period.halfYear}`);
+      }
+    }
+
+    // Pre-build member names for selected teams (for owner-based matching)
+    const selectedTeamMemberNames =
+      teamSet.size > 0
+        ? new Set(
+            (workspace.teams ?? [])
+              .filter((t) => teamSet.has(t.id))
+              .flatMap((t) => t.members)
+              .map((m) => m.name),
+          )
+        : null;
 
     return allActivities.filter((a) => {
-      if (filters.deptId && a.deptId !== filters.deptId) return false;
-      if (filters.teamId && selectedTeamMemberNames) {
+      if (deptSet.size > 0 && !deptSet.has(a.deptId)) return false;
+
+      if (teamSet.size > 0 && selectedTeamMemberNames) {
         const isAssistUnit = a.assistUnits?.some(
-          (u) => u.type === "team" && u.id === filters.teamId,
+          (u) => u.type === "team" && teamSet.has(u.id),
         );
         const ownerInTeam =
           (a.owner && selectedTeamMemberNames.has(a.owner)) ||
@@ -246,70 +273,67 @@ export default function ActivityPage({
           );
         if (!isAssistUnit && !ownerInTeam) return false;
       }
-      if (filters.owner) {
+
+      if (ownerSet.size > 0) {
         const ownerList: string[] = [
           a.owner ?? "",
           ...((a as { owners?: string[] }).owners ?? []),
         ];
-        if (!ownerList.includes(filters.owner)) return false;
+        if (!ownerList.some((owner) => ownerSet.has(owner))) return false;
       }
 
-      // Multi-attribution filtering: check if ANY link matches period/goal/strategy
-      if (
-        filters.periodId ||
-        filters.goalId ||
-        filters.strategyId ||
-        (filters.framework === "ogsm" ? false : true)
-      ) {
-        // Need to check against actual dashboardLinks, not flattened first-link fields
-        const ogsmLinks = (a.dashboardLinks ?? []).filter(
-          (l) => l.type === "ogsm",
-        );
-
-        if (filters.framework === "ogsm") {
-          // OGSM framework: match if ANY link has matching period/goal/strategy
-          let hasMatch = false;
-          if (ogsmLinks.length > 0) {
-            if (!filters.periodId && !filters.goalId && !filters.strategyId) {
-              // No OGSM filters specified, just needs OGSM framework
-              hasMatch = true;
-            } else {
-              hasMatch = ogsmLinks.some((link) => {
-                if (filters.periodId && link.periodId !== filters.periodId)
-                  return false;
-                if (filters.goalId && link.goalId !== filters.goalId)
-                  return false;
-                if (
-                  filters.strategyId &&
-                  link.strategyId !== filters.strategyId
-                )
-                  return false;
-                return true;
-              });
-            }
-          }
-          if (!hasMatch) return false;
-        }
-      }
-
-      if (filters.framework) {
+      if (frameworkSet.size > 0) {
         const fw = a.frameworks ?? [];
         const hasOgsmLink = (a.dashboardLinks ?? []).some(
           (l) => l.type === "ogsm",
         );
-        if (filters.framework === "_none") {
-          // 「未分類」= 沒有任何 framework、沒有 OGSM dashboardLink、也非舊格式 OGSM 措施
-          if (fw.length > 0 || hasOgsmLink || a.strategyId) return false;
-        } else if (filters.framework === "ogsm") {
-          // 相容舊資料：有 dashboardLink 或 strategyId（舊格式 strategy.measures[] 路徑）也算 OGSM
-          if (!fw.includes("ogsm") && !hasOgsmLink && !a.strategyId)
-            return false;
-        } else {
-          if (!fw.includes(filters.framework)) return false;
+
+        const isNone = fw.length === 0 && !hasOgsmLink && !a.strategyId;
+        const matchedFrameworks = new Set<string>(fw);
+        if (hasOgsmLink || a.strategyId) matchedFrameworks.add("ogsm");
+        if (isNone) matchedFrameworks.add("_none");
+
+        if (![...frameworkSet].some((value) => matchedFrameworks.has(value))) {
+          return false;
         }
       }
 
-      if (filters.status && a.status !== filters.status) return false;
+      const ogsmLinks = (a.dashboardLinks ?? []).filter(
+        (l) => l.type === "ogsm",
+      );
+      if (periodSet.size > 0 || goalSet.size > 0 || strategySet.size > 0) {
+        const matchesOgsmLink = ogsmLinks.some((link) => {
+          if (periodSet.size > 0) {
+            const label = periodLabelById.get(link.periodId ?? "") ?? "";
+            if (!periodSet.has(label)) return false;
+          }
+          if (goalSet.size > 0 && !goalSet.has(link.goalId ?? "")) return false;
+          if (strategySet.size > 0 && !strategySet.has(link.strategyId ?? ""))
+            return false;
+          return true;
+        });
+
+        const activityPeriodLabelSet = new Set(
+          (a.periodLabel || "")
+            .split("、")
+            .map((x) => x.trim())
+            .filter(Boolean),
+        );
+
+        // 舊資料 fallback：沒有 dashboardLinks 時用扁平欄位判斷
+        const matchesLegacy =
+          ogsmLinks.length === 0 &&
+          (periodSet.size === 0 ||
+            [...periodSet].some((label) =>
+              activityPeriodLabelSet.has(label),
+            )) &&
+          (goalSet.size === 0 || goalSet.has(a.goalId)) &&
+          (strategySet.size === 0 || strategySet.has(a.strategyId));
+
+        if (!matchesOgsmLink && !matchesLegacy) return false;
+      }
+
+      if (statusSet.size > 0 && !statusSet.has(a.status ?? "")) return false;
       if (filters.startFrom && a.startDate && a.startDate < filters.startFrom)
         return false;
       if (filters.endTo && a.endDate && a.endDate > filters.endTo) return false;
@@ -332,7 +356,18 @@ export default function ActivityPage({
     });
   }, [allActivities, filters, workspace.teams]);
 
-  const hasFilter = Object.values(filters).some((v) => v !== "");
+  const hasFilter =
+    filters.deptIds.length > 0 ||
+    filters.teamIds.length > 0 ||
+    filters.owners.length > 0 ||
+    filters.frameworks.length > 0 ||
+    filters.periodIds.length > 0 ||
+    filters.goalIds.length > 0 ||
+    filters.strategyIds.length > 0 ||
+    filters.statuses.length > 0 ||
+    filters.startFrom !== "" ||
+    filters.endTo !== "" ||
+    filters.keyword !== "";
 
   // Resolve selected activity from allActivities
   const selectedActivity = selectedActivityId
@@ -396,7 +431,7 @@ export default function ActivityPage({
               workspace={workspace}
               expandedId={expandedId}
               onSetExpandedId={handleSetExpandedId}
-              ownerFilter={filters.owner}
+              ownerFilter={filters.owners.join("、")}
               onUpdateActivity={onUpdateActivity}
               onDeleteActivity={onDeleteActivity}
               onJumpToActivity={onJumpToActivity}

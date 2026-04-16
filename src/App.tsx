@@ -18,16 +18,19 @@ import {
   exportWorkspaceJSON,
   importJSON,
   readFileAsText,
-  validateOrWarn,
   normalizeWorkspaceData,
 } from "./utils/storage";
-import { WorkspaceDataSchema } from "./schemas/ogsm";
 import {
   isFileSystemAccessSupported,
+  BACKUP_KEEP_LATEST,
   readDataFile,
   readDataFileMeta,
   writeDataFile,
-  peekDataFolder,
+  ensureBackupDir,
+  makeBackupTimestamp,
+  makeDeptBackupFileName,
+  makeWorkspaceBackupFileName,
+  pruneJsonBackupsByPrefix,
   scanForConflictCopies,
   pickRootFolder,
   loadRootHandle,
@@ -35,10 +38,12 @@ import {
   saveRootHandle,
   scanDeptJsons,
   probeWritable,
+  writeJsonFileInDir,
 } from "./utils/fileSync";
 import {
   mergeWorkspaces,
   detectConflicts,
+  trackClearedFields,
   type ConflictEntry,
   type ConflictResolutions,
 } from "./utils/merge";
@@ -54,6 +59,8 @@ import KpiDesigner from "./components/KpiDesigner";
 import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
+type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
+type InlineToastTone = "success" | "warning" | "error";
 
 /** Per-department file state for multi-file mode */
 export interface DeptFileState {
@@ -68,6 +75,25 @@ export interface DeptFileState {
   lastModified: number | null;
   hasRemoteUpdate: boolean;
   conflictCopies: { handle: FileSystemFileHandle; name: string }[];
+}
+
+function getDeptSyncBadge(entry: DeptFileState | null): {
+  label: string;
+  className: string;
+} {
+  if (!entry) {
+    return { label: "未連結", className: "sp-sync-unlinked" };
+  }
+  if (entry.syncStatus === "saving") {
+    return { label: "儲存中", className: "sp-sync-saving" };
+  }
+  if (entry.syncStatus === "error") {
+    return { label: "儲存失敗", className: "sp-sync-error" };
+  }
+  if (entry.isDirty || entry.syncStatus === "pending") {
+    return { label: "未儲存", className: "sp-sync-pending" };
+  }
+  return { label: "已儲存", className: "sp-sync-saved" };
 }
 
 function recompute(data: OGSMData): OGSMData {
@@ -170,11 +196,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
+  // ─── Multi-file sync (File System Access API + OneDrive 資料夾) ───────
   const fsSupported = isFileSystemAccessSupported();
-  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>("unlinked");
-  const [syncError, setSyncError] = useState("");
 
   // ─── Multi-file mode state ────────────────────────────────────────────
   const [deptFiles, setDeptFiles] = useState<DeptFileState[]>([]);
@@ -183,31 +206,6 @@ export default function App() {
   const isMultiFileMode = deptFiles.length > 0;
   /** True when the user has write permission on the root folder (admin). */
   const [isAdmin, setIsAdmin] = useState(false);
-  const loadedFileVersionRef = useRef<number | null>(null);
-  const loadedFileLastModifiedRef = useRef<number | null>(null);
-  const [mergeToast, setMergeToast] = useState("");
-  // Remote-update banner (background polling)
-  const [remoteUpdateBanner, setRemoteUpdateBanner] = useState(false);
-  // Refs used inside polling interval (avoid stale closure)
-  const syncStatusRef = useRef<SyncStatus>("unlinked");
-  const conflictOpenRef = useRef(false);
-  // Manual save / dirty tracking
-  const [isDirty, setIsDirty] = useState(false);
-  // Conflict resolution state
-  const [conflictEntries, setConflictEntries] = useState<ConflictEntry[]>([]);
-  const [conflictResolutions, setConflictResolutions] =
-    useState<ConflictResolutions>({});
-  const conflictDiskWsRef = useRef<WorkspaceData | null>(null);
-  // Directory handle for conflict-copy scanning
-  const dirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
-  const [conflictCopies, setConflictCopies] = useState<
-    { handle: FileSystemFileHandle; name: string }[]
-  >([]);
-  // Tracks which copy triggered the current ConflictModal (for post-merge delete)
-  const conflictSourceCopyRef = useRef<{
-    handle: FileSystemFileHandle;
-    name: string;
-  } | null>(null);
 
   // ─── Multi-file conflict / remote-update state ────────────────────────
   /** deptId of the dept whose save is paused waiting for conflict resolution */
@@ -219,12 +217,31 @@ export default function App() {
     useState<ConflictResolutions>({});
   const conflictDeptDiskWsRef = useRef<WorkspaceData | null>(null);
   const [deptMergeToast, setDeptMergeToast] = useState("");
+  const [deptSaveToast, setDeptSaveToast] = useState<{
+    message: string;
+    tone: InlineToastTone;
+  } | null>(null);
   const conflictDeptSourceCopyRef = useRef<{
     handle: FileSystemFileHandle;
     name: string;
   } | null>(null);
   /** Stable ref kept in sync with deptFiles — used by polling interval to avoid stale closure */
   const deptFilesRef = useRef<DeptFileState[]>([]);
+  const deptSaveToastTimerRef = useRef<number | null>(null);
+
+  const showDeptSaveToast = useCallback(
+    (message: string, tone: InlineToastTone = "success") => {
+      setDeptSaveToast({ message, tone });
+      if (deptSaveToastTimerRef.current !== null) {
+        window.clearTimeout(deptSaveToastTimerRef.current);
+      }
+      deptSaveToastTimerRef.current = window.setTimeout(() => {
+        setDeptSaveToast(null);
+        deptSaveToastTimerRef.current = null;
+      }, 4000);
+    },
+    [],
+  );
 
   // ─── Multi-file mode: load root folder into deptFiles state ──────────
   const loadRootFolderIntoState = useCallback(
@@ -294,53 +311,10 @@ export default function App() {
     [],
   );
 
-  // Shared: attach handle + read file into workspace
-  const applyHandle = useCallback(async (handle: FileSystemFileHandle) => {
-    fileHandleRef.current = handle;
-    try {
-      const [text, lastModified] = await Promise.all([
-        readDataFile(handle),
-        readDataFileMeta(handle),
-      ]);
-      let remote: WorkspaceData;
-      try {
-        remote = JSON.parse(text);
-      } catch {
-        throw new Error("檔案不是有效的 JSON");
-      }
-      if (
-        !remote ||
-        typeof remote !== "object" ||
-        !Array.isArray((remote as { departments?: unknown }).departments)
-      ) {
-        throw new Error("檔案格式不符：不是有效的工作區格式");
-      }
-      validateOrWarn(WorkspaceDataSchema, remote, "applyHandle");
-      normalizeWorkspaceData(remote);
-      loadedFileVersionRef.current = remote.version ?? null;
-      loadedFileLastModifiedRef.current = lastModified;
-      setWorkspace(remote);
-      saveWorkspace(remote);
-      setIsDirty(false);
-      setRemoteUpdateBanner(false);
-      setSyncStatus("saved");
-      setSyncError("");
-    } catch (e) {
-      setSyncStatus("error");
-      setSyncError("讀取檔案失敗：" + String(e));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // On mount: restore folder handles only (no single-file mode)
+  // On mount: restore multi-file root handle if permission is already granted
   useEffect(() => {
     if (!fsSupported) return;
     (async () => {
-      // Restore directory handle for conflict-copy scanning (permission may already be granted)
-      const dirHandle = await peekDataFolder();
-      if (dirHandle) dirHandleRef.current = dirHandle;
-
-      // Multi-file mode: restore root handle if permission already granted
       const rootHandle = await loadRootHandle();
       if (rootHandle) {
         await loadRootFolderIntoState(rootHandle);
@@ -363,60 +337,10 @@ export default function App() {
 
   // ─── 同步 refs 供 polling interval 讀取（避免 stale closure）────────
   useEffect(() => {
-    syncStatusRef.current = syncStatus;
-  }, [syncStatus]);
-  useEffect(() => {
-    conflictOpenRef.current = conflictEntries.length > 0;
-  }, [conflictEntries.length]);
-  useEffect(() => {
     deptFilesRef.current = deptFiles;
   }, [deptFiles]);
 
-  // ─── 背景輪詢：每 30 秒檢查檔案是否被他人更新 ─────────────────────
   const POLL_INTERVAL_MS = 30_000;
-  useEffect(() => {
-    if (!fsSupported) return;
-    const poll = async () => {
-      const handle = fileHandleRef.current;
-      if (!handle) return;
-      // 存檔中、待授權或衝突 modal 開著時跳過
-      if (
-        syncStatusRef.current === "saving" ||
-        syncStatusRef.current === "pending" ||
-        conflictOpenRef.current
-      )
-        return;
-      if (loadedFileLastModifiedRef.current === null) return;
-      try {
-        const lastMod = await readDataFileMeta(handle);
-        if (lastMod > loadedFileLastModifiedRef.current) {
-          setRemoteUpdateBanner(true);
-        }
-      } catch {
-        // best-effort：讀不到就靜默略過
-      }
-      // 順便扫描目錄中是否有 OneDrive 衝突副本
-      const dir = dirHandleRef.current;
-      if (dir) {
-        try {
-          const copies = await scanForConflictCopies(dir, handle.name);
-          if (copies.length > 0) {
-            setConflictCopies((prev) => {
-              // 不重複已知的副本
-              const prevNames = new Set(prev.map((c) => c.name));
-              const newOnes = copies.filter((c) => !prevNames.has(c.name));
-              return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
-            });
-          }
-        } catch {
-          // best-effort
-        }
-      }
-    };
-    const timer = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fsSupported]);
 
   // ─── 多檔模式背景輪詢：每 30 秒偵測遠端更新與衝突副本 ──────────────
   useEffect(() => {
@@ -474,96 +398,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fsSupported, isMultiFileMode, conflictDeptId]);
 
-  const fileSaveNow = useCallback(async (ws: WorkspaceData) => {
-    const handle = fileHandleRef.current;
-    if (!handle) return;
-    setSyncStatus("saving");
-    try {
-      // ── 第一次讀檔 ───────────────────────────────────────────────
-      const firstMeta = await readDataFileMeta(handle);
-      const diskText = await readDataFile(handle);
-      const onDisk: WorkspaceData = JSON.parse(diskText);
-      let toWrite = ws;
-
-      // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
-      // 給其他使用者也在存檔的情況留出同步時間，
-      // 避免兩人幾乎同時按存檔卻互相看不到對方的寫入。
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      // ── 第二次讀檔：確認 lastModified 是否在等待期間又變動 ────────
-      const secondMeta = await readDataFileMeta(handle);
-      if (secondMeta !== firstMeta) {
-        // 等待期間檔案又被人更新，重新讀取最新內容再做衝突偵測
-        const freshText = await readDataFile(handle);
-        const freshDisk: WorkspaceData = JSON.parse(freshText);
-        // 以最新的磁碟版本取代原本的 onDisk
-        Object.assign(onDisk, freshDisk);
-      }
-
-      // 若 loadedFileVersionRef.current 為 null（舊格式無版本號），視為版本 -1，
-      // 讓任何有版本的 onDisk 都能觸發衝突偵測（而非直接跳過）。
-      const loadedVer = loadedFileVersionRef.current ?? -1;
-      if (onDisk.version !== undefined && onDisk.version !== loadedVer) {
-        // Version mismatch: check for user-visible conflicts first
-        const conflicts = detectConflicts(ws, onDisk);
-        if (conflicts.length > 0) {
-          // Suspend the save and let user resolve conflicts
-          conflictDiskWsRef.current = onDisk;
-          setConflictEntries(conflicts);
-          setConflictResolutions({});
-          setSyncStatus("saved"); // reset badge while modal is open
-          return;
-        }
-        // No conflicting edits: auto-merge additions/deletions silently
-        const { workspace: merged, autoMerged } = mergeWorkspaces(ws, onDisk);
-        toWrite = merged;
-        setWorkspace(merged);
-        saveWorkspace(merged);
-        if (autoMerged > 0) {
-          setMergeToast(`已自動合併 ${autoMerged} 項遠端新增/刪除`);
-          setTimeout(() => setMergeToast(""), 4000);
-        }
-      }
-
-      const payload: WorkspaceData = {
-        ...toWrite,
-        version: (loadedFileVersionRef.current ?? toWrite.version ?? 1) + 1,
-        savedAt: new Date().toISOString(),
-      };
-      loadedFileVersionRef.current = payload.version;
-      await writeDataFile(handle, JSON.stringify(payload, null, 2));
-      // 更新 lastModified 基準，避免存檔後的輪詢誤報
-      loadedFileLastModifiedRef.current = await readDataFileMeta(handle);
-      setSyncStatus("saved");
-      setSyncError("");
-      setIsDirty(false);
-      setRemoteUpdateBanner(false);
-    } catch (e) {
-      setSyncStatus("error");
-      setSyncError("檔案寫入失敗：" + String(e));
-    }
-  }, []);
-
-  // ─── Banner 處理函式 ──────────────────────────────────────────────
-  const handleRemoteRefresh = useCallback(async () => {
-    if (
-      isDirty &&
-      !window.confirm("你有未儲存的變更，重新整理後會遺失。確定嗎？")
-    )
-      return;
-    const handle = fileHandleRef.current;
-    if (handle) await applyHandle(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDirty, applyHandle]);
-
-  const handleRemoteSaveAndRefresh = useCallback(async () => {
-    await fileSaveNow(workspace);
-    // fileSaveNow 後直接重新讀檔，確保拿到最新合併結果
-    const handle = fileHandleRef.current;
-    if (handle) await applyHandle(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, fileSaveNow, applyHandle]);
-
   // ─── Multi-file mode handlers ─────────────────────────────────────────
   const handleLinkRootFolder = useCallback(async () => {
     const rootHandle = await pickRootFolder();
@@ -573,6 +407,15 @@ export default function App() {
   }, [loadRootFolderIntoState]);
 
   const handleUnlinkRootFolder = useCallback(async () => {
+    const dirtyCount = deptFilesRef.current.filter((f) => f.isDirty).length;
+    if (
+      dirtyCount > 0 &&
+      !window.confirm(
+        `目前有 ${dirtyCount} 個部門尚未儲存，中斷連結後這些記憶體內變更將無法再寫回共享資料夾。確定要中斷嗎？`,
+      )
+    ) {
+      return;
+    }
     setDeptFiles([]);
     setIsAdmin(false);
     rootDirHandleRef.current = null;
@@ -589,7 +432,12 @@ export default function App() {
         prev.map((f) => {
           const dept = f.workspace.departments[0];
           if (!dept || dept.id !== deptId) return f;
-          return { ...f, workspace: next, isDirty: true, syncStatus: "saved" };
+          return {
+            ...f,
+            workspace: next,
+            isDirty: true,
+            syncStatus: "pending",
+          };
         }),
       );
     },
@@ -602,7 +450,9 @@ export default function App() {
       const entry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
-      if (!entry || entry.isReadOnly || !entry.isDirty) return;
+      if (!entry || entry.isReadOnly || !entry.isDirty) {
+        return "skipped" as SaveDeptResult;
+      }
 
       // Mark saving
       setDeptFiles((prev) =>
@@ -618,6 +468,7 @@ export default function App() {
         const firstMeta = await readDataFileMeta(entry.handle);
         const diskText = await readDataFile(entry.handle);
         let onDisk: WorkspaceData = JSON.parse(diskText);
+        normalizeWorkspaceData(onDisk);
 
         // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
         await new Promise<void>((resolve) => setTimeout(resolve, 3000));
@@ -633,6 +484,7 @@ export default function App() {
         if (secondMeta !== firstMeta) {
           const freshText = await readDataFile(freshEntry.handle);
           onDisk = JSON.parse(freshText);
+          normalizeWorkspaceData(onDisk);
         }
 
         // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
@@ -650,11 +502,11 @@ export default function App() {
             setDeptFiles((prev) =>
               prev.map((f) =>
                 f.workspace.departments[0]?.id === deptId
-                  ? { ...f, syncStatus: "saved" as SyncStatus }
+                  ? { ...f, syncStatus: "pending" as SyncStatus }
                   : f,
               ),
             );
-            return;
+            return "conflict" as SaveDeptResult;
           }
           // 無衝突：自動合併並繼續
           const { workspace: merged, autoMerged } = mergeWorkspaces(
@@ -697,6 +549,7 @@ export default function App() {
               : f,
           ),
         );
+        return "saved" as SaveDeptResult;
       } catch {
         setDeptFiles((prev) =>
           prev.map((f) =>
@@ -705,157 +558,45 @@ export default function App() {
               : f,
           ),
         );
+        return "error" as SaveDeptResult;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
-  const handleMergeCopy = useCallback(
-    async (copy: { handle: FileSystemFileHandle; name: string }) => {
-      try {
-        const text = await readDataFile(copy.handle);
-        const remote: WorkspaceData = JSON.parse(text);
-        const conflicts = detectConflicts(workspace, remote);
-        conflictDiskWsRef.current = remote;
-        conflictSourceCopyRef.current = copy;
-        if (conflicts.length > 0) {
-          setConflictEntries(conflicts);
-          setConflictResolutions({});
-        } else {
-          // 無衝突：直接自動合併
-          const { workspace: merged, autoMerged } = mergeWorkspaces(
-            workspace,
-            remote,
-          );
-          const payload: WorkspaceData = {
-            ...merged,
-            version: (merged.version ?? 1) + 1,
-            savedAt: new Date().toISOString(),
-          };
-          if (fileHandleRef.current) {
-            await writeDataFile(
-              fileHandleRef.current,
-              JSON.stringify(payload, null, 2),
-            );
-            loadedFileVersionRef.current = payload.version;
-            loadedFileLastModifiedRef.current = await readDataFileMeta(
-              fileHandleRef.current,
-            );
-          }
-          setWorkspace(payload);
-          saveWorkspace(payload);
-          setIsDirty(false);
-          if (autoMerged > 0) {
-            setMergeToast(`已從副本自動合併 ${autoMerged} 項變更`);
-            setTimeout(() => setMergeToast(""), 4000);
-          }
-          // 詢問是否刪除副本
-          if (
-            dirHandleRef.current &&
-            window.confirm(`已成功合併「${copy.name}」，是否刪除此副本檔案？`)
-          ) {
-            await dirHandleRef.current.removeEntry(copy.name);
-          }
-          setConflictCopies((prev) => prev.filter((c) => c.name !== copy.name));
-          conflictSourceCopyRef.current = null;
-        }
-      } catch (e) {
-        setSyncError("讀取副本失敗：" + String(e));
-        setSyncStatus("error");
-      }
-    },
-    [workspace],
-  );
-
-  const handleDismissCopy = useCallback((name: string) => {
-    setConflictCopies((prev) => prev.filter((c) => c.name !== name));
-  }, []);
-
-  // Conflict resolution handlers
-  const handleConflictChange = useCallback(
-    (id: string, choice: "local" | "remote") => {
-      setConflictResolutions((prev) => ({ ...prev, [id]: choice }));
-    },
-    [],
-  );
-
-  const handleConflictConfirm = useCallback(async () => {
-    const onDisk = conflictDiskWsRef.current;
-    if (!onDisk || !fileHandleRef.current) return;
-    setSyncStatus("saving");
-    try {
-      // 解衝突後重讀：使用者解決衝突期間磁碟可能已再次被他人更新
-      let freshDisk = onDisk;
-      try {
-        const freshText = await readDataFile(fileHandleRef.current);
-        freshDisk = JSON.parse(freshText);
-      } catch {
-        // best-effort：讀不到就沿用原衝突快照
-      }
-      const { workspace: merged } = mergeWorkspaces(
-        workspace,
-        freshDisk,
-        conflictResolutions,
-      );
-      const payload: WorkspaceData = {
-        ...merged,
-        version: (merged.version ?? 1) + 1,
-        savedAt: new Date().toISOString(),
-      };
-      await writeDataFile(
-        fileHandleRef.current,
-        JSON.stringify(payload, null, 2),
-      );
-      loadedFileVersionRef.current = payload.version;
-      loadedFileLastModifiedRef.current = await readDataFileMeta(
-        fileHandleRef.current,
-      );
-      setWorkspace(payload);
-      saveWorkspace(payload);
-      setSyncStatus("saved");
-      setSyncError("");
-      setIsDirty(false);
-      // 若此次衝突來自副本 merge，詢問是否刪除
-      const src = conflictSourceCopyRef.current;
-      if (src && dirHandleRef.current) {
-        if (window.confirm(`衝突已解決，是否刪除副本檔案「${src.name}」？`)) {
-          await dirHandleRef.current.removeEntry(src.name);
-        }
-        setConflictCopies((prev) => prev.filter((c) => c.name !== src.name));
-      }
-    } catch (e) {
-      setSyncStatus("error");
-      setSyncError("檔案寫入失敗：" + String(e));
-    } finally {
-      setConflictEntries([]);
-      conflictDiskWsRef.current = null;
-      conflictSourceCopyRef.current = null;
-    }
-  }, [workspace, conflictResolutions]);
-
-  const handleConflictCancel = useCallback(() => {
-    setConflictEntries([]);
-    setConflictResolutions({});
-    conflictDiskWsRef.current = null;
-  }, []);
-
   // ─── Multi-file conflict resolution handlers ──────────────────────────
 
   const handleDeptConflictChange = useCallback(
-    (id: string, choice: "local" | "remote") => {
-      setConflictDeptResolutions((prev) => ({ ...prev, [id]: choice }));
+    (entityId: string, field: string, choice: "local" | "remote") => {
+      if (field === "*") {
+        // 快捷全選：呼叫方展開所有 fieldDiff 欄位
+        // 這裡直接寫 entity-level key，merge 函數會正確 fallback
+        setConflictDeptResolutions((prev) => ({ ...prev, [entityId]: choice }));
+      } else {
+        const key = `${entityId}.${field}`;
+        setConflictDeptResolutions((prev) => ({ ...prev, [key]: choice }));
+      }
     },
     [],
   );
 
   const handleDeptConflictCancel = useCallback(() => {
+    if (conflictDeptId) {
+      setDeptFiles((prev) =>
+        prev.map((f) =>
+          f.workspace.departments[0]?.id === conflictDeptId
+            ? { ...f, syncStatus: f.isDirty ? "pending" : "saved" }
+            : f,
+        ),
+      );
+    }
     setConflictDeptEntries([]);
     setConflictDeptResolutions({});
     setConflictDeptId(null);
     conflictDeptDiskWsRef.current = null;
     conflictDeptSourceCopyRef.current = null;
-  }, []);
+  }, [conflictDeptId]);
 
   const handleDeptConflictConfirm = useCallback(async () => {
     const deptId = conflictDeptId;
@@ -879,6 +620,7 @@ export default function App() {
       try {
         const freshText = await readDataFile(entry.handle);
         freshDisk = JSON.parse(freshText);
+        normalizeWorkspaceData(freshDisk);
       } catch {
         // best-effort：讀不到就沿用原衝突快照
       }
@@ -967,6 +709,7 @@ export default function App() {
           readDataFileMeta(entry.handle),
         ]);
         const remote: WorkspaceData = JSON.parse(text);
+        normalizeWorkspaceData(remote);
         setDeptFiles((prev) =>
           prev.map((f) =>
             f.workspace.departments[0]?.id === deptId
@@ -974,6 +717,7 @@ export default function App() {
                   ...f,
                   workspace: remote,
                   isDirty: false,
+                  syncStatus: "saved",
                   version: remote.version ?? null,
                   lastModified: lm,
                   hasRemoteUpdate: false,
@@ -998,9 +742,18 @@ export default function App() {
         (f) => f.workspace.departments[0]?.id === deptId,
       );
       if (!entry) return;
+      if (
+        entry.isDirty &&
+        !window.confirm(
+          `「${entry.subfolderName}」目前有未儲存變更，現在合併副本可能覆蓋或重組本機內容。建議先儲存；仍要繼續合併嗎？`,
+        )
+      ) {
+        return;
+      }
       try {
         const text = await readDataFile(copy.handle);
         const remote: WorkspaceData = JSON.parse(text);
+        normalizeWorkspaceData(remote);
         const conflicts = detectConflicts(entry.workspace, remote);
         conflictDeptDiskWsRef.current = remote;
         conflictDeptSourceCopyRef.current = copy;
@@ -1059,6 +812,66 @@ export default function App() {
     [],
   );
 
+  const handleSaveCurrentDept = useCallback(async () => {
+    if (!activeDeptId) return;
+    const entry = deptFilesRef.current.find(
+      (f) => f.workspace.departments[0]?.id === activeDeptId,
+    );
+    const result = await saveDeptFile(activeDeptId);
+    if (!entry) return;
+    if (result === "saved") {
+      showDeptSaveToast(`「${entry.subfolderName}」已儲存。`, "success");
+    } else if (result === "conflict") {
+      showDeptSaveToast(
+        `「${entry.subfolderName}」發生衝突，請先完成衝突處理。`,
+        "warning",
+      );
+    } else if (result === "error") {
+      showDeptSaveToast(`「${entry.subfolderName}」儲存失敗。`, "error");
+    }
+  }, [activeDeptId, saveDeptFile, showDeptSaveToast]);
+
+  const handleSaveAllDirty = useCallback(async () => {
+    const dirtyEntries = deptFilesRef.current.filter(
+      (f) => f.isDirty && !f.isReadOnly,
+    );
+    if (dirtyEntries.length === 0) return;
+
+    const savedNames: string[] = [];
+    const errorNames: string[] = [];
+
+    for (const entry of dirtyEntries) {
+      const deptId = entry.workspace.departments[0]?.id;
+      if (!deptId) continue;
+      const result = await saveDeptFile(deptId);
+      if (result === "saved") {
+        savedNames.push(entry.subfolderName);
+      } else if (result === "error") {
+        errorNames.push(entry.subfolderName);
+      }
+      if (result === "conflict") {
+        showDeptSaveToast(
+          `已儲存 ${savedNames.length} 個部門；「${entry.subfolderName}」發生衝突，批次儲存已暫停。`,
+          "warning",
+        );
+        return;
+      }
+    }
+
+    if (errorNames.length > 0) {
+      showDeptSaveToast(
+        `已儲存 ${savedNames.length} 個部門；失敗：${errorNames.join("、")}`,
+        "error",
+      );
+      return;
+    }
+
+    showDeptSaveToast(
+      `已完成批次儲存，共 ${savedNames.length} 個部門。`,
+      "success",
+    );
+  }, [saveDeptFile, showDeptSaveToast]);
+
   const handleDeptDismissCopy = useCallback(
     (deptId: string, copyName: string) => {
       setDeptFiles((prev) =>
@@ -1114,7 +927,6 @@ export default function App() {
     isUndoRedoRef.current = true;
     setWorkspace(ws);
     saveWorkspace(ws);
-    setIsDirty(true);
   }, []);
 
   const redo = useCallback(() => {
@@ -1126,15 +938,24 @@ export default function App() {
     isUndoRedoRef.current = true;
     setWorkspace(ws);
     saveWorkspace(ws);
-    setIsDirty(true);
   }, []);
 
   // Keyboard shortcut: Ctrl+Z / Ctrl+Y
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // skip when typing in inputs/textareas
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const isTypingTarget =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "s" &&
+        isMultiFileMode
+      ) {
+        e.preventDefault();
+        void handleSaveCurrentDept();
+        return;
+      }
+      if (isTypingTarget) return;
       if (
         (e.ctrlKey || e.metaKey) &&
         !e.shiftKey &&
@@ -1153,7 +974,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo]);
+  }, [handleSaveCurrentDept, isMultiFileMode, undo, redo]);
   // ─────────────────────────────────────────────────────────────────────
 
   // Derive active dept/period with fallback
@@ -1167,6 +988,82 @@ export default function App() {
         teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
       }
     : workspace;
+
+  const handleBackup = useCallback(async () => {
+    // Fallback: no multi-file root linked -> keep existing download behavior.
+    if (!isMultiFileMode || !rootDirHandleRef.current) {
+      exportWorkspaceJSON(effectiveWorkspace);
+      return;
+    }
+
+    try {
+      const backupDir = await ensureBackupDir(rootDirHandleRef.current);
+      const stamp = makeBackupTimestamp();
+
+      const wsPayload: WorkspaceData = JSON.parse(
+        JSON.stringify(effectiveWorkspace),
+      );
+      normalizeWorkspaceData(wsPayload);
+      const wsVersion = wsPayload.version ?? 1;
+      const wsFileName = makeWorkspaceBackupFileName(stamp, wsVersion);
+
+      await writeJsonFileInDir(
+        backupDir,
+        wsFileName,
+        JSON.stringify(wsPayload, null, 2),
+      );
+      await pruneJsonBackupsByPrefix(
+        backupDir,
+        "workspace_",
+        BACKUP_KEEP_LATEST,
+      );
+
+      const failedDepts: string[] = [];
+      let deptSaved = 0;
+
+      for (const entry of deptFilesRef.current) {
+        try {
+          const deptPayload: WorkspaceData = JSON.parse(
+            JSON.stringify(entry.workspace),
+          );
+          normalizeWorkspaceData(deptPayload);
+          const deptVersion = entry.version ?? deptPayload.version ?? 1;
+          const deptFileName = makeDeptBackupFileName(
+            entry.subfolderName,
+            stamp,
+            deptVersion,
+          );
+          await writeJsonFileInDir(
+            backupDir,
+            deptFileName,
+            JSON.stringify(deptPayload, null, 2),
+          );
+          deptSaved += 1;
+        } catch {
+          failedDepts.push(entry.subfolderName);
+        }
+      }
+
+      await pruneJsonBackupsByPrefix(backupDir, "dept_", BACKUP_KEEP_LATEST);
+
+      if (failedDepts.length > 0) {
+        showDeptSaveToast(
+          `備份完成：workspace 1 份、部門 ${deptSaved} 份；失敗：${failedDepts.join("、")}`,
+          "warning",
+        );
+        return;
+      }
+
+      showDeptSaveToast(
+        `備份完成：workspace 1 份、部門 ${deptSaved} 份（根目錄/備份）`,
+        "success",
+      );
+    } catch {
+      // Permission or FS failure fallback to browser download.
+      exportWorkspaceJSON(effectiveWorkspace);
+      showDeptSaveToast("無法寫入根目錄/備份，已改用下載備份檔。", "warning");
+    }
+  }, [effectiveWorkspace, isMultiFileMode, showDeptSaveToast]);
 
   const activeDept =
     effectiveWorkspace.departments.find((d) => d.id === activeDeptId) ??
@@ -1201,7 +1098,6 @@ export default function App() {
       }
       setWorkspace(next);
       saveWorkspace(next);
-      setIsDirty(true);
     },
     [pushHistory],
   );
@@ -1214,7 +1110,10 @@ export default function App() {
         const prev = prevById.get(t.id);
         // Stamp updatedAt only if content actually changed
         if (!prev || JSON.stringify(prev) !== JSON.stringify(t)) {
-          return { ...t, updatedAt: now };
+          const tracked = prev
+            ? trackClearedFields(prev, t, ["name", "members"])
+            : t;
+          return { ...tracked, updatedAt: now };
         }
         return t;
       });
@@ -1258,6 +1157,39 @@ export default function App() {
     ? (deptFiles.find((f) => f.workspace.departments[0]?.id === activeDeptId)
         ?.isReadOnly ?? false)
     : false;
+  const activeDeptFile = isMultiFileMode
+    ? (deptFiles.find((f) => f.workspace.departments[0]?.id === activeDeptId) ??
+      null)
+    : null;
+  const activeDeptSyncBadge = getDeptSyncBadge(activeDeptFile);
+  const dirtyDeptCount = deptFiles.filter(
+    (f) => f.isDirty && !f.isReadOnly,
+  ).length;
+  const canSaveCurrentDept =
+    !!activeDeptFile &&
+    !activeDeptFile.isReadOnly &&
+    activeDeptFile.isDirty &&
+    activeDeptFile.syncStatus !== "saving";
+  const canSaveAnyDept = dirtyDeptCount > 0 && !conflictDeptId;
+
+  useEffect(() => {
+    if (!isMultiFileMode) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!deptFilesRef.current.some((f) => f.isDirty)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isMultiFileMode]);
+
+  useEffect(() => {
+    return () => {
+      if (deptSaveToastTimerRef.current !== null) {
+        window.clearTimeout(deptSaveToastTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleUpdateWarnDaysBefore = useCallback(
     (n: number) => {
@@ -1763,8 +1695,18 @@ export default function App() {
 
   const handleUpdateStrategy = useCallback(
     (updated: Strategy) => {
+      const prevGoal = data.goals.find((g) => g.id === selectedGoalId);
+      const prev = prevGoal?.strategies.find((s) => s.id === updated.id);
+      const tracked = prev
+        ? trackClearedFields(prev, updated, [
+            "title",
+            "notes",
+            "owners",
+            "actionPlans",
+          ])
+        : updated;
       const stamped: Strategy = {
-        ...updated,
+        ...tracked,
         updatedAt: new Date().toISOString(),
       };
       updateData({
@@ -2092,11 +2034,15 @@ export default function App() {
 
   const handleUpdateGoal = useCallback(
     (updated: Goal) => {
+      const prev = data.goals.find((g) => g.id === updated.id);
+      const tracked = prev
+        ? trackClearedFields(prev, updated, ["title", "fullText", "goalKpis"])
+        : updated;
       updateData({
         ...data,
         goals: data.goals.map((g) =>
           g.id === updated.id
-            ? { ...updated, updatedAt: new Date().toISOString() }
+            ? { ...tracked, updatedAt: new Date().toISOString() }
             : g,
         ),
       });
@@ -2545,6 +2491,46 @@ export default function App() {
             ))}
           </select>
 
+          {isMultiFileMode && (
+            <div className="header-sync-group">
+              <span
+                className={`sp-sync-badge ${activeDeptSyncBadge.className}`}
+              >
+                {activeDeptSyncBadge.label}
+              </span>
+              <button
+                className={
+                  canSaveCurrentDept
+                    ? "btn-save-dirty"
+                    : "btn-secondary btn-disabled"
+                }
+                onClick={handleSaveCurrentDept}
+                disabled={!canSaveCurrentDept}
+                title={
+                  isActiveDeptReadOnly
+                    ? "目前部門為唯讀，無法存檔"
+                    : canSaveCurrentDept
+                      ? "儲存目前部門"
+                      : "目前部門沒有待儲存變更"
+                }
+              >
+                儲存目前部門
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={handleSaveAllDirty}
+                disabled={!canSaveAnyDept}
+                title={
+                  canSaveAnyDept
+                    ? `依序儲存 ${dirtyDeptCount} 個尚未儲存的部門`
+                    : "目前沒有可儲存的部門"
+                }
+              >
+                儲存全部髒部門{dirtyDeptCount > 0 ? ` (${dirtyDeptCount})` : ""}
+              </button>
+            </div>
+          )}
+
           {fsSupported &&
             (isMultiFileMode ? (
               <button
@@ -2564,43 +2550,7 @@ export default function App() {
               </button>
             ))}
 
-          {syncStatus !== "unlinked" && (
-            <span
-              className={`sp-sync-badge sp-sync-${syncStatus}`}
-              onClick={
-                syncStatus === "saved" || syncStatus === "error"
-                  ? () => fileSaveNow(workspace)
-                  : undefined
-              }
-              style={{
-                cursor:
-                  syncStatus === "saved" || syncStatus === "error"
-                    ? "pointer"
-                    : "default",
-              }}
-              title={
-                syncStatus === "error"
-                  ? "儲存失敗，點擊重試"
-                  : syncStatus === "saved"
-                    ? "點擊手動儲存"
-                    : undefined
-              }
-            >
-              {syncStatus === "saving" && (
-                <>
-                  <span className="sp-spin">⏳</span> 儲存中…
-                </>
-              )}
-              {syncStatus === "pending" && "⏸ 等待儲存"}
-              {syncStatus === "saved" && "✅ 已儲存"}
-              {syncStatus === "error" && "❌ 儲存失敗"}
-            </span>
-          )}
-
-          <button
-            className="btn-secondary"
-            onClick={() => exportWorkspaceJSON(effectiveWorkspace)}
-          >
+          <button className="btn-secondary" onClick={() => void handleBackup()}>
             💾 備份
           </button>
 
@@ -2619,86 +2569,15 @@ export default function App() {
         </div>
       </header>
 
-      {syncStatus === "error" && syncError && (
-        <div className="sp-error-banner">⚠️ {syncError}</div>
-      )}
-      {remoteUpdateBanner && (
-        <div className="remote-update-banner">
-          <span>⚡ 偵測到共用檔案已被他人更新</span>
-          <div className="remote-update-actions">
-            {isDirty && (
-              <button
-                className="btn-secondary remote-update-btn"
-                onClick={handleRemoteSaveAndRefresh}
-              >
-                先存檔再重新整理
-              </button>
-            )}
-            <button
-              className="btn-secondary remote-update-btn"
-              onClick={handleRemoteRefresh}
-            >
-              {isDirty ? "捨棄變更並重新整理" : "重新整理"}
-            </button>
-            <button
-              className="remote-update-dismiss"
-              onClick={() => {
-                // 將基準推進到現在，避免下次輪詢重複顯示同一個更新
-                readDataFileMeta(fileHandleRef.current!).then((t) => {
-                  loadedFileLastModifiedRef.current = t;
-                });
-                setRemoteUpdateBanner(false);
-              }}
-            >
-              稍後處理
-            </button>
-          </div>
-        </div>
-      )}
-      {mergeToast && <div className="merge-toast">🔀 {mergeToast}</div>}
-
-      {conflictCopies.length > 0 && (
-        <div className="copy-scan-banner">
-          <span className="copy-scan-title">
-            📂 偵測到 {conflictCopies.length} 個 OneDrive 衝突副本
-          </span>
-          <div className="copy-scan-list">
-            {conflictCopies.map((copy) => (
-              <div key={copy.name} className="copy-scan-item">
-                <span className="copy-scan-name" title={copy.name}>
-                  {copy.name}
-                </span>
-                <button
-                  className="btn-secondary copy-scan-btn"
-                  onClick={() => handleMergeCopy(copy)}
-                >
-                  合併此副本
-                </button>
-                <button
-                  className="remote-update-dismiss"
-                  onClick={() => handleDismissCopy(copy.name)}
-                >
-                  忽略
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {conflictEntries.length > 0 && (
-        <ConflictModal
-          conflicts={conflictEntries}
-          resolutions={conflictResolutions}
-          onChange={handleConflictChange}
-          onConfirm={handleConflictConfirm}
-          onCancel={handleConflictCancel}
-        />
-      )}
-
       {/* Multi-file mode: dept merge toast */}
       {isMultiFileMode && deptMergeToast && (
         <div className="merge-toast">🔀 {deptMergeToast}</div>
+      )}
+
+      {isMultiFileMode && deptSaveToast && (
+        <div className={`inline-toast inline-toast-${deptSaveToast.tone}`}>
+          {deptSaveToast.message}
+        </div>
       )}
 
       {/* Multi-file mode: remote update banners */}
@@ -2715,25 +2594,17 @@ export default function App() {
                   style={{ marginBottom: 4 }}
                 >
                   <span>⚡ 「{f.subfolderName}」有遠端更新</span>
-                  {f.isDirty && (
-                    <button
-                      className="btn-secondary remote-update-btn"
-                      onClick={() =>
-                        deptId &&
-                        saveDeptFile(deptId).then(() =>
-                          handleDeptRemoteRefresh(deptId, false),
-                        )
-                      }
-                    >
-                      先存檔再重新整理
-                    </button>
-                  )}
                   <button
                     className="btn-secondary remote-update-btn"
                     onClick={() => deptId && handleDeptRemoteRefresh(deptId)}
                   >
                     {f.isDirty ? "捨棄變更並重新整理" : "重新整理"}
                   </button>
+                  {f.isDirty && (
+                    <span className="remote-update-hint">
+                      先用上方存檔按鈕寫回，再決定是否重新整理。
+                    </span>
+                  )}
                   <button
                     className="remote-update-dismiss"
                     onClick={() =>
