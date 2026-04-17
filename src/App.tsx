@@ -61,6 +61,165 @@ import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
 type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
 type InlineToastTone = "success" | "warning" | "error";
+type AppRouteView = "home" | "activity" | "ogsm" | "settings" | "kpi";
+type ActivityPageView = "table" | "kanban" | "gantt" | "cards" | "calendar";
+type ActivityGanttSubView = "activity" | "plan";
+
+interface ActivityRouteHint {
+  activityPageView?: ActivityPageView;
+  activityGanttSubView?: ActivityGanttSubView;
+}
+
+interface AppRouteState {
+  __appRoute: true;
+  view: AppRouteView;
+  activityPageView: ActivityPageView;
+  activityGanttSubView: ActivityGanttSubView;
+  activeDeptId: string;
+  activePeriodId: string;
+  selectedGoalId: string | null;
+  selectedStrategyId: string | null;
+  kpiDesignerGoalId: string | null;
+  pendingActivityDetailId: string | null;
+  expandedDetailActivityId: string | null;
+}
+
+function buildRouteHash(route: AppRouteState): string {
+  const params = new URLSearchParams();
+  if (route.activeDeptId) params.set("d", route.activeDeptId);
+  if (route.activePeriodId) params.set("p", route.activePeriodId);
+  params.set("av", route.activityPageView);
+  params.set("ag", route.activityGanttSubView);
+  if (route.selectedGoalId) params.set("g", route.selectedGoalId);
+  if (route.selectedStrategyId) params.set("s", route.selectedStrategyId);
+  if (route.kpiDesignerGoalId) params.set("kg", route.kpiDesignerGoalId);
+  if (route.view === "activity" && route.pendingActivityDetailId)
+    params.set("a", route.pendingActivityDetailId);
+  if (route.expandedDetailActivityId)
+    params.set("x", route.expandedDetailActivityId);
+
+  const query = params.toString();
+  return query ? `#app/${route.view}?${query}` : `#app/${route.view}`;
+}
+
+function parseRouteHash(hash: string): Partial<AppRouteState> | null {
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (!raw) return null;
+  const normalizedRaw = raw.startsWith("/") ? raw.slice(1) : raw;
+
+  // New readable format: #app/<view>?d=...&p=...&g=...&s=...&kg=...&a=...&x=...
+  if (normalizedRaw.startsWith("app/")) {
+    const [pathPart, queryPart] = normalizedRaw.split("?");
+    const viewPart = pathPart.split("/")[1] ?? "";
+    const view: AppRouteView =
+      viewPart === "home" ||
+      viewPart === "activity" ||
+      viewPart === "ogsm" ||
+      viewPart === "settings" ||
+      viewPart === "kpi"
+        ? viewPart
+        : "home";
+    const params = new URLSearchParams(queryPart ?? "");
+    const avParam = params.get("av");
+    const agParam = params.get("ag");
+    const parsedActivityPageView: ActivityPageView | undefined =
+      avParam === "table" ||
+      avParam === "kanban" ||
+      avParam === "gantt" ||
+      avParam === "cards" ||
+      avParam === "calendar"
+        ? avParam
+        : undefined;
+    const parsedActivityGanttSubView: ActivityGanttSubView | undefined =
+      agParam === "activity" || agParam === "plan" ? agParam : undefined;
+    const route: Partial<AppRouteState> = {
+      __appRoute: true,
+      view,
+      activeDeptId: params.get("d") ?? "",
+      activePeriodId: params.get("p") ?? "",
+      selectedGoalId: params.get("g"),
+      selectedStrategyId: params.get("s"),
+      kpiDesignerGoalId: params.get("kg"),
+      pendingActivityDetailId: params.get("a"),
+      expandedDetailActivityId: params.get("x"),
+    };
+    if (parsedActivityPageView) {
+      route.activityPageView = parsedActivityPageView;
+    }
+    if (parsedActivityGanttSubView) {
+      route.activityGanttSubView = parsedActivityGanttSubView;
+    }
+    return route;
+  }
+
+  // Legacy format backward compatibility: #app=1&view=...
+  const params = new URLSearchParams(raw);
+  if (params.get("app") !== "1") return null;
+
+  const viewParam = params.get("view");
+  const view: AppRouteView =
+    viewParam === "home" ||
+    viewParam === "activity" ||
+    viewParam === "ogsm" ||
+    viewParam === "settings" ||
+    viewParam === "kpi"
+      ? viewParam
+      : "home";
+
+  return {
+    __appRoute: true,
+    view,
+    activeDeptId: params.get("dept") ?? "",
+    activePeriodId: params.get("period") ?? "",
+    selectedGoalId: params.get("goal"),
+    selectedStrategyId: params.get("strategy"),
+    kpiDesignerGoalId: params.get("kpiGoal"),
+    pendingActivityDetailId: params.get("activity"),
+    expandedDetailActivityId: null,
+  };
+}
+
+function normalizeAppRouteState(
+  route: Partial<AppRouteState>,
+  base: AppRouteState,
+): AppRouteState {
+  const merged = {
+    ...base,
+    ...route,
+    __appRoute: true as const,
+  };
+  const activityPageView: ActivityPageView =
+    merged.activityPageView === "table" ||
+    merged.activityPageView === "kanban" ||
+    merged.activityPageView === "gantt" ||
+    merged.activityPageView === "cards" ||
+    merged.activityPageView === "calendar"
+      ? merged.activityPageView
+      : base.activityPageView;
+  const activityGanttSubView: ActivityGanttSubView =
+    merged.activityGanttSubView === "activity" ||
+    merged.activityGanttSubView === "plan"
+      ? merged.activityGanttSubView
+      : base.activityGanttSubView;
+
+  return {
+    ...merged,
+    activityPageView,
+    activityGanttSubView,
+  };
+}
+
+function buildNavigationKey(route: AppRouteState): string {
+  // Keep browser back aligned with page-level navigation only.
+  // Do not include OGSM internal selection state (goal/strategy/detail panel).
+  return JSON.stringify({
+    view: route.view,
+    activityPageView: route.activityPageView,
+    activityGanttSubView: route.activityGanttSubView,
+    activeDeptId: route.activeDeptId,
+    activePeriodId: route.activePeriodId,
+  });
+}
 
 /** Per-department file state for multi-file mode */
 export interface DeptFileState {
@@ -175,7 +334,15 @@ export default function App() {
   const [pendingActivityDetailId, setPendingActivityDetailId] = useState<
     string | null
   >(null);
+  /** OGSM 右 panel 目前展開中的活動 ID（同步到 URL） */
+  const [expandedDetailActivityId, setExpandedDetailActivityId] = useState<
+    string | null
+  >(null);
   const [showKpiDesigner, setShowKpiDesigner] = useState(false);
+  const [activityPageView, setActivityPageView] =
+    useState<ActivityPageView>("table");
+  const [activityGanttSubView, setActivityGanttSubView] =
+    useState<ActivityGanttSubView>("activity");
   const [kpiDesignerGoalId, setKpiDesignerGoalId] = useState<string | null>(
     null,
   );
@@ -195,6 +362,9 @@ export default function App() {
   }, []);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const isApplyingBrowserRouteRef = useRef(false);
+  const lastBrowserRouteKeyRef = useRef("");
+  const lastNavigationKeyRef = useRef("");
 
   // ─── Multi-file sync (File System Access API + OneDrive 資料夾) ───────
   const fsSupported = isFileSystemAccessSupported();
@@ -334,6 +504,176 @@ export default function App() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [menuOpen]);
+
+  const applyBrowserRoute = useCallback((route: AppRouteState) => {
+    setActivityPageView(route.activityPageView);
+    setActivityGanttSubView(route.activityGanttSubView);
+    setActiveDeptId(route.activeDeptId);
+    setActivePeriodId(route.activePeriodId);
+    setSelectedGoalId(route.selectedGoalId);
+    setSelectedStrategyId(route.selectedStrategyId);
+    setPendingActivityDetailId(
+      route.view === "activity" ? route.pendingActivityDetailId : null,
+    );
+    setExpandedDetailActivityId(route.expandedDetailActivityId);
+    setKpiDesignerGoalId(route.kpiDesignerGoalId);
+    setShowHomePage(route.view === "home");
+    setShowActivityPage(route.view === "activity");
+    setShowDeptSettings(route.view === "settings");
+    setShowKpiDesigner(route.view === "kpi");
+  }, []);
+
+  useEffect(() => {
+    if (selectedStrategyId) return;
+    setExpandedDetailActivityId(null);
+  }, [selectedStrategyId]);
+
+  const currentRouteState = useMemo<AppRouteState>(() => {
+    // Keep this priority aligned with the render branches below.
+    const view: AppRouteView = showKpiDesigner
+      ? "kpi"
+      : showHomePage
+        ? "home"
+        : showDeptSettings
+          ? "settings"
+          : showActivityPage
+            ? "activity"
+            : "ogsm";
+    return {
+      __appRoute: true,
+      view,
+      activityPageView,
+      activityGanttSubView,
+      activeDeptId,
+      activePeriodId,
+      selectedGoalId,
+      selectedStrategyId,
+      kpiDesignerGoalId,
+      pendingActivityDetailId: showActivityPage
+        ? pendingActivityDetailId
+        : null,
+      expandedDetailActivityId,
+    };
+  }, [
+    activityPageView,
+    activityGanttSubView,
+    activeDeptId,
+    activePeriodId,
+    kpiDesignerGoalId,
+    pendingActivityDetailId,
+    expandedDetailActivityId,
+    selectedGoalId,
+    selectedStrategyId,
+    showActivityPage,
+    showDeptSettings,
+    showHomePage,
+    showKpiDesigner,
+  ]);
+
+  useEffect(() => {
+    const routeKey = JSON.stringify(currentRouteState);
+    const navigationKey = buildNavigationKey(currentRouteState);
+    if (!lastBrowserRouteKeyRef.current) {
+      const parsedHashRoute = parseRouteHash(window.location.hash);
+      if (parsedHashRoute) {
+        const mergedRoute = normalizeAppRouteState(
+          parsedHashRoute,
+          currentRouteState,
+        );
+        isApplyingBrowserRouteRef.current = true;
+        applyBrowserRoute(mergedRoute);
+        lastBrowserRouteKeyRef.current = JSON.stringify(mergedRoute);
+        lastNavigationKeyRef.current = buildNavigationKey(mergedRoute);
+        window.history.replaceState(
+          mergedRoute,
+          "",
+          `${window.location.pathname}${window.location.search}${buildRouteHash(mergedRoute)}`,
+        );
+        return;
+      }
+      window.history.replaceState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+      lastBrowserRouteKeyRef.current = routeKey;
+      lastNavigationKeyRef.current = navigationKey;
+      return;
+    }
+    if (isApplyingBrowserRouteRef.current) {
+      window.history.replaceState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+      lastBrowserRouteKeyRef.current = routeKey;
+      lastNavigationKeyRef.current = navigationKey;
+      isApplyingBrowserRouteRef.current = false;
+      return;
+    }
+    if (routeKey === lastBrowserRouteKeyRef.current) return;
+
+    if (navigationKey === lastNavigationKeyRef.current) {
+      // In-page details changed (e.g., selection/expanded panel): don't pollute history stack.
+      window.history.replaceState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+    } else {
+      window.history.pushState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+      lastNavigationKeyRef.current = navigationKey;
+    }
+    lastBrowserRouteKeyRef.current = routeKey;
+  }, [applyBrowserRoute, currentRouteState]);
+
+  useEffect(() => {
+    const applyRouteFromHash = () => {
+      const parsedHashRoute = parseRouteHash(window.location.hash);
+      if (!parsedHashRoute) return false;
+      const fallbackRoute = normalizeAppRouteState(
+        parsedHashRoute,
+        currentRouteState,
+      );
+      isApplyingBrowserRouteRef.current = true;
+      applyBrowserRoute(fallbackRoute);
+      return true;
+    };
+
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as Partial<AppRouteState> | null;
+      if (state && state.__appRoute === true) {
+        const parsedHashRoute = parseRouteHash(window.location.hash);
+        const normalizedState = normalizeAppRouteState(
+          {
+            ...(parsedHashRoute ?? {}),
+            ...state,
+          },
+          currentRouteState,
+        );
+        isApplyingBrowserRouteRef.current = true;
+        applyBrowserRoute(normalizedState);
+        return;
+      }
+      applyRouteFromHash();
+    };
+
+    const onHashChange = () => {
+      // Hash might be changed by manual edit or external in-app link navigation.
+      applyRouteFromHash();
+    };
+
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, [applyBrowserRoute, currentRouteState]);
 
   // ─── 同步 refs 供 polling interval 讀取（避免 stale closure）────────
   useEffect(() => {
@@ -1847,26 +2187,27 @@ export default function App() {
     ],
   );
 
-  /** V3 jump handler：由 activityId 查出 OGSM link 後導覽到 DetailPanel */
+  /** 活動入口統一：在活動總覽開啟右側 ActivityDetailPanel，不跳 OGSM */
   const handleJumpToActivity = useCallback(
-    (deptId: string, activityId: string) => {
-      const dept = effectiveWorkspace.departments.find((d) => d.id === deptId);
-      const activity = dept?.activities?.find((a) => a.id === activityId);
-      const ogsmLink = activity?.dashboardLinks?.find((l) => l.type === "ogsm");
-      if (!ogsmLink?.periodId || !ogsmLink.goalId || !ogsmLink.strategyId) {
-        // standalone 活動：僅切換到活動頁面（已在活動頁面時不做任何事）
-        return;
-      }
-      setShowActivityPage(false);
+    (deptId: string, activityId: string, routeHint?: ActivityRouteHint) => {
+      // Keep route anchors of source view (kanban/gantt/cards/calendar),
+      // then open the activity detail panel inside Activity page.
+      setActivityPageView(
+        routeHint?.activityPageView ?? currentRouteState.activityPageView,
+      );
+      setActivityGanttSubView(
+        routeHint?.activityGanttSubView ??
+          currentRouteState.activityGanttSubView,
+      );
+      setShowActivityPage(true);
       setShowDeptSettings(false);
       setShowHomePage(false);
+      setShowKpiDesigner(false);
       setActiveDeptId(deptId);
-      setActivePeriodId(ogsmLink.periodId);
-      setSelectedGoalId(ogsmLink.goalId);
-      setSelectedStrategyId(ogsmLink.strategyId);
-      setPendingDetailNav({ tab: "plans", measureId: activityId });
+      setPendingActivityDetailId(activityId);
+      setPendingDetailNav(null);
     },
-    [effectiveWorkspace],
+    [currentRouteState],
   );
 
   const handleToggleExcludeFromOgsm = useCallback(
@@ -2361,7 +2702,10 @@ export default function App() {
               (pendingDetailNav?.measureId ?? "")
             }
             strategy={selectedStrategy}
-            onClose={() => setSelectedStrategyId(null)}
+            onClose={() => {
+              setSelectedStrategyId(null);
+              setExpandedDetailActivityId(null);
+            }}
             onUpdate={handleUpdateStrategy}
             onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
             teams={teams}
@@ -2380,6 +2724,8 @@ export default function App() {
               setShowDeptSettings(false);
               setShowHomePage(false);
             }}
+            expandedActivityId={expandedDetailActivityId}
+            onExpandedActivityChange={setExpandedDetailActivityId}
             onOpenActivityDetail={(actId) => {
               setPendingActivityDetailId(actId);
               setShowActivityPage(true);
@@ -2477,6 +2823,77 @@ export default function App() {
           </div>
           <span className="header-logo">A</span>
           <span className="header-title">Activo</span>
+          <nav className="header-nav-tabs">
+            <button
+              className={`header-nav-tab${showHomePage ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowHomePage(true);
+                  setShowActivityPage(false);
+                  setShowDeptSettings(false);
+                })
+              }
+            >
+              首頁
+            </button>
+            <button
+              className={`header-nav-tab${showActivityPage ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowActivityPage(true);
+                  setShowHomePage(false);
+                  setShowDeptSettings(false);
+                })
+              }
+            >
+              活動總覽
+            </button>
+            <button
+              className={`header-nav-tab${showKpiDesigner ? " active" : ""}`}
+              onClick={() => {
+                setShowKpiDesigner(true);
+                setKpiDesignerGoalId(null);
+                setShowHomePage(false);
+                setShowActivityPage(false);
+                setShowDeptSettings(false);
+              }}
+            >
+              目標編輯器
+            </button>
+            <button
+              className={`header-nav-tab${
+                !showHomePage &&
+                !showActivityPage &&
+                !showDeptSettings &&
+                !showKpiDesigner
+                  ? " active"
+                  : ""
+              }`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setShowDeptSettings(false);
+                })
+              }
+            >
+              OGSM
+            </button>
+            <button
+              className={`header-nav-tab${showDeptSettings ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowDeptSettings(true);
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setSelectedGoalId(null);
+                  setSelectedStrategyId(null);
+                })
+              }
+            >
+              部門設定
+            </button>
+          </nav>
         </div>
 
         <div className="header-toolbar">
@@ -2491,6 +2908,7 @@ export default function App() {
               </option>
             ))}
           </select>
+          <div className="header-section-sep" />
 
           {isMultiFileMode && (
             <div className="header-sync-group">
@@ -2780,6 +3198,10 @@ export default function App() {
           <ActivityPage
             workspace={effectiveWorkspace}
             activeDeptId={activeDeptId}
+            view={activityPageView}
+            ganttSubView={activityGanttSubView}
+            onViewChange={setActivityPageView}
+            onGanttSubViewChange={setActivityGanttSubView}
             readOnlyDeptIds={
               isMultiFileMode
                 ? (deptFiles

@@ -1,4 +1,13 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
+import {
+  Calendar,
+  Views,
+  dateFnsLocalizer,
+  type Event,
+} from "react-big-calendar";
+import { format, parse, startOfWeek, getDay } from "date-fns";
+import { zhTW } from "date-fns/locale/zh-TW";
+import "react-big-calendar/lib/css/react-big-calendar.css";
 import type { ActivityWithContext } from "../ActivityPage";
 
 interface Props {
@@ -13,141 +22,133 @@ const STATUS_COLOR: Record<string, string> = {
   completed: "#86efac",
 };
 
-const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+type ActivityEvent = Event & {
+  activity: ActivityWithContext;
+  deptId: string;
+  activityId: string;
+};
 
-function ymd(y: number, m: number, d: number): string {
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+function normalizeDateRange(
+  activity: ActivityWithContext,
+): { start: Date; end: Date } | null {
+  const start = activity.startDate;
+  const end = activity.endDate;
+  if (!start && !end) return null;
+
+  // If only one side exists, treat it as a single-day activity.
+  const normalizedStart = start ?? end!;
+  const normalizedEnd = end ?? start!;
+  const [safeStart, safeEnd] =
+    normalizedStart <= normalizedEnd
+      ? [normalizedStart, normalizedEnd]
+      : [normalizedEnd, normalizedStart];
+
+  // Parse YYYY-MM-DD to Date
+  const startDate = new Date(`${safeStart}T00:00:00`);
+  const endDate = new Date(`${safeEnd}T23:59:59`);
+
+  return { start: startDate, end: endDate };
 }
 
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
+// dateFnsLocalizer 設定
+const locales = {
+  "zh-TW": zhTW,
+};
 
-/** First weekday (0=Sun) of given year/month */
-function firstWeekday(year: number, month: number): number {
-  return new Date(year, month - 1, 1).getDay();
-}
+const localizer = dateFnsLocalizer({
+  format,
+  parse,
+  startOfWeek: () => startOfWeek(new Date(), { locale: zhTW }),
+  getDay: (date: Date) => getDay(date),
+  locales,
+});
 
 export default function ActivityCalendar({
   activities,
   onJumpToActivity,
 }: Props) {
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1); // 1-based
-
-  const prevMonth = () => {
-    if (month === 1) {
-      setYear((y) => y - 1);
-      setMonth(12);
-    } else setMonth((m) => m - 1);
-  };
-  const nextMonth = () => {
-    if (month === 12) {
-      setYear((y) => y + 1);
-      setMonth(1);
-    } else setMonth((m) => m + 1);
-  };
-
-  const days = daysInMonth(year, month);
-  const offset = firstWeekday(year, month); // cells before day 1
-
-  const todayStr = ymd(
-    today.getFullYear(),
-    today.getMonth() + 1,
-    today.getDate(),
-  );
-
-  // Activities visible in this month: must overlap [month start, month end]
-  const monthStart = ymd(year, month, 1);
-  const monthEnd = ymd(year, month, days);
-
-  const visible = useMemo(
+  // Convert activities to RBC Event format
+  const events: ActivityEvent[] = useMemo(
     () =>
-      activities.filter(
-        (a) =>
-          a.startDate &&
-          a.endDate &&
-          a.startDate <= monthEnd &&
-          a.endDate >= monthStart,
-      ),
-    [activities, monthStart, monthEnd],
+      activities
+        .map((activity) => {
+          const dateRange = normalizeDateRange(activity);
+          if (!dateRange) return null;
+
+          return {
+            id: activity.id,
+            title: activity.rawText,
+            start: dateRange.start,
+            end: dateRange.end,
+            activity,
+            deptId: activity.deptId,
+            activityId: activity.id,
+            resource: activity,
+          } as ActivityEvent;
+        })
+        .filter((e): e is ActivityEvent => !!e),
+    [activities],
   );
 
-  // For each day, get activities overlapping that day (max 3 shown)
-  const MAX_PER_DAY = 3;
+  // Get total visible activities count
+  const visibleCount = events.length;
 
-  const getActivitiesForDay = (dateStr: string) =>
-    visible.filter((a) => a.startDate! <= dateStr && a.endDate! >= dateStr);
+  // Event style getter: apply status color
+  const eventStyleGetter = (event: ActivityEvent) => {
+    const backgroundColor =
+      STATUS_COLOR[event.activity.status ?? "not-started"];
+    return {
+      style: {
+        backgroundColor,
+        borderRadius: "3px",
+        opacity: 0.9,
+        color: "#1e293b",
+        border: "0px",
+        display: "block",
+      },
+    };
+  };
 
-  // Build grid cells
-  const totalCells = Math.ceil((offset + days) / 7) * 7;
+  // Handle event selection
+  const handleSelectEvent = (event: ActivityEvent) => {
+    onJumpToActivity(event.deptId, event.activityId);
+  };
+
+  // Translations for RBC messages (month view only)
+  const messages = {
+    next: "下個月",
+    previous: "上個月",
+    today: "今天",
+    month: "月",
+    week: "週",
+    day: "日",
+    agenda: "待辦",
+    date: "日期",
+    time: "時間",
+    event: "活動",
+    noEventsInRange: "本月無活動",
+    showMore: (total: number) => `+${total} 更多`,
+  };
 
   return (
     <div className="cal-outer">
-      {/* Header */}
       <div className="cal-header">
-        <button className="cal-nav-btn" onClick={prevMonth}>
-          ◀
-        </button>
-        <span className="cal-month-label">
-          {year} 年 {month} 月
-        </span>
-        <button className="cal-nav-btn" onClick={nextMonth}>
-          ▶
-        </button>
-        <span className="cal-activity-count">
-          {visible.length} 個活動在本月
-        </span>
+        <span className="cal-activity-count">{visibleCount} 個活動在本月</span>
       </div>
-
-      {/* Weekday headers */}
-      <div className="cal-grid">
-        {WEEKDAYS.map((w, i) => (
-          <div key={i} className="cal-wd-hdr">
-            {w}
-          </div>
-        ))}
-
-        {/* Day cells */}
-        {Array.from({ length: totalCells }).map((_, cellIdx) => {
-          const dayNum = cellIdx - offset + 1;
-          const isInMonth = dayNum >= 1 && dayNum <= days;
-          if (!isInMonth)
-            return <div key={cellIdx} className="cal-cell cal-cell-out" />;
-
-          const dateStr = ymd(year, month, dayNum);
-          const isToday = dateStr === todayStr;
-          const dayActs = getActivitiesForDay(dateStr);
-          const overflow = dayActs.length - MAX_PER_DAY;
-
-          return (
-            <div
-              key={cellIdx}
-              className={`cal-cell${isToday ? " cal-today" : ""}`}
-            >
-              <span className="cal-day-num">{dayNum}</span>
-              <div className="cal-day-acts">
-                {dayActs.slice(0, MAX_PER_DAY).map((act) => (
-                  <button
-                    key={act.id}
-                    className="cal-act-strip"
-                    style={{
-                      background: STATUS_COLOR[act.status ?? "not-started"],
-                    }}
-                    title={`${act.rawText}\n${act.startDate} → ${act.endDate}`}
-                    onClick={() => onJumpToActivity(act.deptId, act.id)}
-                  >
-                    {act.rawText}
-                  </button>
-                ))}
-                {overflow > 0 && (
-                  <span className="cal-act-more">+{overflow} 更多</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div style={{ maxHeight: "calc(100vh - 300px)", overflow: "auto" }}>
+        <Calendar
+          localizer={localizer}
+          events={events}
+          defaultView={Views.MONTH}
+          views={[Views.MONTH]}
+          defaultDate={new Date()}
+          onSelectEvent={handleSelectEvent}
+          eventPropGetter={eventStyleGetter}
+          messages={messages}
+          style={{ height: "auto", minHeight: "600px" }}
+          popup
+          selectable={false}
+        />
       </div>
     </div>
   );

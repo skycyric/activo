@@ -1876,6 +1876,10 @@ function NodeTypeManager({
 interface KpiGoalTreeProps {
   draftGoals: Goal[];
   deptActivities: DeptActivity[];
+  objectiveText?: string;
+  periods?: PeriodData[];
+  activePeriodId?: string;
+  onSwitchPeriod?: (periodId: string) => void;
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
   onAddGoalKpi: (goalId: string) => void;
@@ -1888,6 +1892,10 @@ interface KpiGoalTreeProps {
 function KpiGoalTree({
   draftGoals,
   deptActivities,
+  objectiveText,
+  periods = [],
+  activePeriodId,
+  onSwitchPeriod,
   selectedNodeId,
   onSelectNode,
   onAddGoalKpiOfType,
@@ -1906,6 +1914,40 @@ function KpiGoalTree({
   return (
     <div className="kpid-ogs-tree" style={style}>
       <div className="kpid-tree-section-label">KPI 模式 — 目標 GoalKPI</div>
+      {periods.length > 0 && (
+        <div
+          className="kpid-tree-period-tabs"
+          role="tablist"
+          aria-label="OGSM half-year"
+        >
+          {periods.map((p) => {
+            const isActive = p.id === activePeriodId;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                className={`kpid-tree-period-tab${isActive ? " active" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSwitchPeriod?.(p.id);
+                }}
+              >
+                {p.year}-{p.halfYear}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div
+        className={`kpid-tree-o${selectedNodeId === "o" ? " selected" : ""}`}
+        onClick={() => onSelectNode("o")}
+      >
+        <span className="kpid-tree-o-text">
+          {objectiveText?.trim() || "O｜(未設定部門目標)"}
+        </span>
+      </div>
       <div className="kpid-tree-g-list">
         {draftGoals.map((g) => {
           const gkpis = g.goalKpis ?? [];
@@ -3081,7 +3123,7 @@ export default function KpiDesigner({
   }, [data.goals]);
 
   const [viewMode, setViewMode] = useState<ViewMode>("item");
-  const [moduleId, setModuleId] = useState<ModuleId>(null);
+  const [moduleId, setModuleId] = useState<ModuleId>("ogsm");
 
   const updateDraftGk = useCallback((updatedGk: GoalKPI, goalId: string) => {
     setDraftGoals((prev) =>
@@ -3117,7 +3159,7 @@ export default function KpiDesigner({
     onUpdateData(newData);
     draftGoalIds.current.clear();
     setHasDraftGkChanges(false);
-  }, [draftGoals, data, onUpdateData, isReadOnly]);
+  }, [draftGoals, data, onUpdateData]);
 
   const updateGoalKpis = useCallback((goalId: string, kpis: GoalKPI[]) => {
     setDraftGoals((prev) =>
@@ -3252,6 +3294,10 @@ export default function KpiDesigner({
             <KpiGoalTree
               draftGoals={draftGoals}
               deptActivities={deptActivities}
+              objectiveText={data.objectives?.deptO}
+              periods={availablePeriods}
+              activePeriodId={periodId}
+              onSwitchPeriod={onSwitchPeriod}
               selectedNodeId={selectedNodeId}
               onSelectNode={setSelectedNodeId}
               onAddGoalKpi={addGoalKpi}
@@ -3295,7 +3341,7 @@ export default function KpiDesigner({
         {/* Center: Canvas */}
         <div className="kpid-canvas-wrap">
           <div className="kpid-canvas-toolbar">
-            <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
                 className={`kpid-mode-btn${viewMode === "item" ? " active" : ""}`}
                 onClick={() => setViewMode("item")}

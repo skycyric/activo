@@ -1,11 +1,5 @@
 import { useMemo, useState } from "react";
-import type {
-  Goal,
-  GoalKPI,
-  Strategy,
-  Team,
-  DeptActivity,
-} from "../schemas/ogsm";
+import type { Goal, GoalKPI, DeptActivity, Strategy } from "../schemas/ogsm";
 import { countStrategyWarnings } from "../utils/planWarnings";
 import { computeGoalKpiResult } from "../utils/goalKpi";
 import { computeKpiAchievement } from "../utils/kpiCalc";
@@ -13,7 +7,7 @@ import { computeKpiAchievement } from "../utils/kpiCalc";
 interface Props {
   goal: Goal | null;
   allGoals?: Goal[];
-  strategies: Strategy[];
+  strategies: import("../schemas/ogsm").Strategy[];
   selectedStrategyId: string | null;
   onSelectStrategy: (id: string, warnFilter?: "overdue" | "warning") => void;
   onAddStrategy?: () => void;
@@ -21,7 +15,7 @@ interface Props {
   onDeleteGoal?: (id: string) => void;
   filterOwner: string;
   onFilterOwner: (v: string) => void;
-  teams: Team[];
+  teams: import("../schemas/ogsm").Team[];
   warnDaysBefore: number;
   isReadOnly?: boolean;
   deptActivities?: DeptActivity[];
@@ -242,9 +236,6 @@ export default function StrategyList({
   strategies,
   selectedStrategyId,
   onSelectStrategy,
-  filterOwner,
-  onFilterOwner,
-  teams,
   warnDaysBefore,
   deptActivities = [],
 }: Props) {
@@ -338,7 +329,7 @@ export default function StrategyList({
     return (
       <div
         key={gk.id}
-        className={`kpi-sc-card kpi-sc-card--${status.colorClass}`}
+        className={`kpi-sc-card kpi-sc-card--${status.colorClass}${isExpanded ? " kpi-sc-card--expanded" : ""}`}
         style={{ borderLeftColor: status.color, background: status.bgTint }}
       >
         {/* 頂部：名稱 + 狀態 badge */}
@@ -387,8 +378,13 @@ export default function StrategyList({
                 setExpandedPreviewId((cur) => (cur === gk.id ? null : gk.id))
               }
             >
-              {isExpanded ? "▲ 隱藏" : "▶ 顯示"}
-              {isPct ? " 活動明細" : " 來源明細"}
+              {isPct
+                ? isExpanded
+                  ? "▲ 收合活動明細"
+                  : "▶ 展開活動明細"
+                : isExpanded
+                  ? "▲ 收合來源明細"
+                  : "▶ 展開來源明細"}
             </button>
             {isExpanded && isPct && (
               <div className="g-kpi-activity-list">
@@ -481,109 +477,94 @@ export default function StrategyList({
           </h1>
         </div>
 
-        {(() => {
-          const gKpiList = goalKpiPreviews.filter(({ gk }) => isGKpi(gk));
-          const subGKpiList = goalKpiPreviews.filter(({ gk }) => !isGKpi(gk));
-          return (
-            <>
-              {gKpiList.length > 0 && (
-                <div className="kpi-scorecard-section kpi-scorecard-section--primary">
-                  <div className="kpi-scorecard-header">
-                    <div className="kpi-scorecard-header-left">
-                      <span className="kpi-sc-section-chip kpi-sc-section-chip--gkpi">
-                        G-KPI
-                      </span>
-                      <span className="kpi-scorecard-title">目標成效指標</span>
-                      <span className="kpi-scorecard-subtitle">
-                        目標是否達成的結論性數字
-                      </span>
-                    </div>
-                    <span className="kpi-scorecard-stat">
-                      {
-                        gKpiList.filter(
-                          ({ result }) => (result.rate ?? 0) >= 100,
-                        ).length
-                      }
-                      <span className="kpi-scorecard-stat-sep">/</span>
-                      {gKpiList.length}
-                      <span className="kpi-scorecard-stat-label"> 達標</span>
-                    </span>
-                  </div>
-                  <div className="kpi-scorecard-grid">
-                    {gKpiList.map(({ gk }) => renderScorecardCard(gk))}
-                  </div>
-                </div>
-              )}
-
-              {subGKpiList.length > 0 && (
-                <div className="kpi-scorecard-section kpi-scorecard-section--sub">
-                  <div className="kpi-scorecard-header kpi-scorecard-header--sub">
-                    <div className="kpi-scorecard-header-left">
-                      <span className="kpi-sc-section-chip kpi-sc-section-chip--sub">
-                        G-sub-KPI
-                      </span>
-                      <span className="kpi-scorecard-title">活動執行指標</span>
-                      <span className="kpi-scorecard-subtitle">
-                        連結各活動 M-KPI，匯入上方 G-KPI
+        {!selectedStrategyId &&
+          (() => {
+            const gKpiList = goalKpiPreviews.filter(({ gk }) => isGKpi(gk));
+            const subGKpiList = goalKpiPreviews.filter(({ gk }) => !isGKpi(gk));
+            return (
+              <>
+                {gKpiList.length > 0 && (
+                  <div className="kpi-scorecard-section kpi-scorecard-section--primary">
+                    <div className="kpi-scorecard-header">
+                      <div className="kpi-scorecard-header-left">
+                        <span className="kpi-sc-section-chip kpi-sc-section-chip--gkpi">
+                          G-KPI
+                        </span>
+                        <span className="kpi-scorecard-title">
+                          目標成效指標
+                        </span>
+                        <span className="kpi-scorecard-subtitle">
+                          目標是否達成的結論性數字
+                        </span>
+                      </div>
+                      <span className="kpi-scorecard-stat">
+                        {
+                          gKpiList.filter(
+                            ({ result }) => (result.rate ?? 0) >= 100,
+                          ).length
+                        }
+                        <span className="kpi-scorecard-stat-sep">/</span>
+                        {gKpiList.length}
+                        <span className="kpi-scorecard-stat-label"> 達標</span>
                       </span>
                     </div>
-                    <span className="kpi-scorecard-stat">
-                      {
-                        subGKpiList.filter(
-                          ({ result }) => (result.rate ?? 0) >= 100,
-                        ).length
-                      }
-                      <span className="kpi-scorecard-stat-sep">/</span>
-                      {subGKpiList.length}
-                      <span className="kpi-scorecard-stat-label"> 達標</span>
-                    </span>
+                    <div className="kpi-scorecard-grid">
+                      {gKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                    </div>
                   </div>
-                  <div className="kpi-scorecard-grid kpi-scorecard-grid--sub">
-                    {subGKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                )}
+
+                {subGKpiList.length > 0 && (
+                  <div className="kpi-scorecard-section kpi-scorecard-section--sub">
+                    <div className="kpi-scorecard-header kpi-scorecard-header--sub">
+                      <div className="kpi-scorecard-header-left">
+                        <span className="kpi-sc-section-chip kpi-sc-section-chip--sub">
+                          G-sub-KPI
+                        </span>
+                        <span className="kpi-scorecard-title">
+                          活動執行指標
+                        </span>
+                        <span className="kpi-scorecard-subtitle">
+                          連結各活動 M-KPI，匯入上方 G-KPI
+                        </span>
+                      </div>
+                      <span className="kpi-scorecard-stat">
+                        {
+                          subGKpiList.filter(
+                            ({ result }) => (result.rate ?? 0) >= 100,
+                          ).length
+                        }
+                        <span className="kpi-scorecard-stat-sep">/</span>
+                        {subGKpiList.length}
+                        <span className="kpi-scorecard-stat-label"> 達標</span>
+                      </span>
+                    </div>
+                    <div className="kpi-scorecard-grid kpi-scorecard-grid--sub">
+                      {subGKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {gKpiList.length === 0 && subGKpiList.length > 0 && null}
-            </>
-          );
-        })()}
+                {gKpiList.length === 0 && subGKpiList.length > 0 && null}
+              </>
+            );
+          })()}
 
-        <div className="list-toolbar">
-          <div className="list-filters">
-            <select
-              className="filter-select"
-              value={filterOwner}
-              onChange={(e) => onFilterOwner(e.target.value)}
-            >
-              <option value="all">全部負責人</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="strategy-rows">
-        {strategies.length === 0 && (
-          <div className="empty-state small">
-            <p>目前此目標下沒有任何策略。</p>
+        {selectedStrategyId && strategies.length > 0 && (
+          <div className="strategy-rows">
+            {strategies.map((s, i) => (
+              <StrategyRow
+                key={s.id}
+                s={s}
+                index={i}
+                selected={s.id === selectedStrategyId}
+                onClick={() => onSelectStrategy(s.id)}
+                onSelectStrategy={onSelectStrategy}
+                warnDaysBefore={warnDaysBefore}
+              />
+            ))}
           </div>
         )}
-        {strategies.map((s, i) => (
-          <StrategyRow
-            key={s.id}
-            s={s}
-            index={i}
-            selected={s.id === selectedStrategyId}
-            onClick={() => onSelectStrategy(s.id)}
-            onSelectStrategy={onSelectStrategy}
-            warnDaysBefore={warnDaysBefore}
-          />
-        ))}
       </div>
     </div>
   );

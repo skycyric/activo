@@ -83,6 +83,7 @@ export const PlanItemSchema = z.object({
   plannedEndDate: IsoDate,
   actualEndDate: IsoDate,
   completed: z.boolean(),
+  dependsOnIds: z.array(z.string()).optional(),
   linkedMeasureId: z.string().nullable().optional(),
   owner: z.string().optional(),
   notes: z.string().optional(),
@@ -119,6 +120,8 @@ export const MeasureSchema = z.object({
   id: z.string(),
   rawText: z.string(),
   kpis: z.array(KPISchema),
+  /** 每個活動自己的預警提前天數（到期日前 n 天開始 warning），預設 3 */
+  warnDaysBefore: z.number().optional(),
   quarter: z.string().optional(),
   owner: z.string().optional(),
   updatedAt: z.string().optional(),

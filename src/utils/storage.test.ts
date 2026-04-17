@@ -324,6 +324,69 @@ describe("normalizeWorkspaceData（透過存取 cycle）", () => {
     const strat = loaded!.departments[0].periods[0].ogsm.goals[0].strategies[0];
     expect(Array.isArray(strat.owners)).toBe(true);
   });
+
+  test("_migratedV3=true 時仍會修復 goalKpis.linkedKpis 的 activityId 壞值", () => {
+    const rawWs = makeWorkspace({
+      _migratedPhase2: true,
+      _migratedPhase3: true,
+      _migratedActivityFirst: true,
+      _migratedV3: true,
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [
+                  makeGoal([makeStrategy({ owners: [] })], {
+                    goalKpis: [
+                      {
+                        id: "gk1",
+                        label: "測試 GK",
+                        unit: "%",
+                        target: 100,
+                        aggregation: "AVERAGE",
+                        goalKpiType: "direct",
+                        linkedKpis: [
+                          { measureId: "act-1", kpiId: "k1" },
+                          {
+                            activityId: 123,
+                            measureId: "act-2",
+                            kpiId: "k2",
+                          },
+                          { activityId: "", kpiId: "k3" },
+                          { activityId: "act-4", kpiId: null },
+                        ],
+                      } as unknown as import("../schemas/ogsm").GoalKPI,
+                    ],
+                  }),
+                ],
+                period: "2026 H1",
+                importedAt: "2026-01-01T00:00:00.000Z",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    localStorage.setItem("ogsm_workspace_v1", JSON.stringify(rawWs));
+    const loaded = loadWorkspace();
+    const links =
+      loaded!.departments[0].periods[0].ogsm.goals[0].goalKpis?.[0]
+        .linkedKpis ?? [];
+
+    expect(links).toEqual([
+      { activityId: "act-1", kpiId: "k1" },
+      { activityId: "act-2", kpiId: "k2" },
+    ]);
+  });
 });
 
 // ─── parseAndValidateJSON ─────────────────────────────────────────────────────
@@ -400,6 +463,44 @@ describe("parseAndValidateJSON", () => {
       _migratedPhase3: true,
     });
     expect(() => parseAndValidateJSON(bad)).toThrow("工作區格式不符");
+  });
+
+  test("OGSM 的 goalKpis.linkedKpis 壞 activityId 會在 parse 時自動修復", () => {
+    const badOgsm = JSON.stringify({
+      objectives: { orgO: "公司", deptO: "部門" },
+      goals: [
+        makeGoal([makeStrategy()], {
+          goalKpis: [
+            {
+              id: "gk1",
+              label: "GK",
+              unit: "%",
+              target: 100,
+              aggregation: "AVERAGE",
+              goalKpiType: "direct",
+              linkedKpis: [
+                { measureId: "act-9", kpiId: "k9" },
+                { activityId: 999, measureId: "act-8", kpiId: "k8" },
+                { activityId: null, kpiId: "k7" },
+              ],
+            },
+          ] as unknown as import("../schemas/ogsm").GoalKPI[],
+        }),
+      ],
+      period: "2026 H1",
+      importedAt: "2026-01-01T00:00:00.000Z",
+      overallRate: 0,
+    });
+
+    const result = parseAndValidateJSON(
+      badOgsm,
+    ) as import("../schemas/ogsm").OGSMData;
+    const links = result.goals[0].goalKpis?.[0].linkedKpis ?? [];
+
+    expect(links).toEqual([
+      { activityId: "act-9", kpiId: "k9" },
+      { activityId: "act-8", kpiId: "k8" },
+    ]);
   });
 });
 

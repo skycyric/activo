@@ -724,11 +724,17 @@ export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
     changed = true;
   }
   if (syncRelationalLinksV1(ws)) changed = true;
+
   // Always-run invariant: ensure owners is always an array regardless of migration state.
   // Guards against externally-modified or imported files where owners may be missing.
   for (const dept of ws.departments) {
     for (const period of dept.periods) {
       for (const goal of period.ogsm.goals) {
+        if (
+          normalizeGoalKpiLinks(goal as unknown as { goalKpis?: unknown[] })
+        ) {
+          changed = true;
+        }
         for (const strategy of goal.strategies) {
           if (!Array.isArray(strategy.owners)) {
             strategy.owners = [];
@@ -739,6 +745,59 @@ export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
     }
   }
   return changed;
+}
+
+function normalizeGoalKpiLinks(
+  goalLike: { goalKpis?: unknown[] } | null | undefined,
+): boolean {
+  if (!goalLike || !Array.isArray(goalLike.goalKpis)) return false;
+  let goalChanged = false;
+  for (const gk of goalLike.goalKpis) {
+    const gkRaw = gk as Record<string, unknown>;
+    if (!Array.isArray(gkRaw.linkedKpis)) {
+      gkRaw.linkedKpis = [];
+      goalChanged = true;
+      continue;
+    }
+
+    const repairedLinks: Array<{ activityId: string; kpiId: string }> = [];
+    for (const link of gkRaw.linkedKpis as unknown[]) {
+      const raw = link as Record<string, unknown>;
+      const activityIdRaw = raw.activityId;
+      const legacyMeasureIdRaw = raw.measureId;
+      const kpiIdRaw = raw.kpiId;
+
+      const activityId =
+        typeof activityIdRaw === "string" && activityIdRaw.trim()
+          ? activityIdRaw
+          : typeof legacyMeasureIdRaw === "string" && legacyMeasureIdRaw.trim()
+            ? legacyMeasureIdRaw
+            : "";
+      const kpiId =
+        typeof kpiIdRaw === "string" && kpiIdRaw.trim() ? kpiIdRaw : "";
+
+      if (!activityId || !kpiId) {
+        goalChanged = true;
+        continue;
+      }
+      repairedLinks.push({ activityId, kpiId });
+    }
+
+    if (
+      repairedLinks.length !== (gkRaw.linkedKpis as unknown[]).length ||
+      repairedLinks.some((l, i) => {
+        const prev = (gkRaw.linkedKpis as unknown[])[i] as Record<
+          string,
+          unknown
+        >;
+        return prev.activityId !== l.activityId || prev.kpiId !== l.kpiId;
+      })
+    ) {
+      gkRaw.linkedKpis = repairedLinks;
+      goalChanged = true;
+    }
+  }
+  return goalChanged;
 }
 
 /**
@@ -799,6 +858,14 @@ export function normalizeOneStrategy(strategy: Strategy): boolean {
 function normalizeOGSMData(ogsm: OGSMData): boolean {
   let changed = false;
   for (const goal of ogsm.goals) {
+    const goalRaw = goal as unknown as Record<string, unknown>;
+    if (!Array.isArray(goalRaw.goalKpis)) {
+      goalRaw.goalKpis = [];
+      changed = true;
+    }
+    if (normalizeGoalKpiLinks(goalRaw as { goalKpis?: unknown[] })) {
+      changed = true;
+    }
     for (const strategy of goal.strategies) {
       if (normalizeOneStrategy(strategy)) changed = true;
     }

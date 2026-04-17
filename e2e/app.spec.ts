@@ -199,3 +199,127 @@ test.describe("DeptSettings 開合", () => {
     ).toHaveCount(0);
   });
 });
+
+// ─── 9. 活動檢視錨點：點擊活動應開右側 panel，不應導到 OGSM ─────────────
+
+test.describe("活動檢視錨點導覽", () => {
+  async function openActivityView(
+    page: Page,
+    view: "kanban" | "gantt" | "cards" | "calendar",
+    ganttSubView: "activity" | "plan" = "activity",
+  ) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.removeItem("activo_filter_owners");
+    });
+
+    const query =
+      view === "gantt" ? `av=${view}&ag=${ganttSubView}` : `av=${view}`;
+    await page.goto(`/#app/activity?${query}`);
+
+    await expect(
+      page.locator(".activity-page-title", { hasText: "活動總覽" }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const tabText: Record<typeof view, string> = {
+      kanban: "看板",
+      gantt: "甘特",
+      cards: "卡片牆",
+      calendar: "月曆",
+    };
+    await expect(
+      page.locator(".activity-view-tab.active", { hasText: tabText[view] }),
+    ).toBeVisible();
+
+    if (view === "gantt") {
+      await expect(page.locator(".activity-gantt-subtab.active")).toContainText(
+        ganttSubView === "plan" ? "計畫甘特" : "活動甘特",
+      );
+    }
+  }
+
+  async function expectActivityPanelAnchored(
+    page: Page,
+    view: "kanban" | "gantt" | "cards" | "calendar",
+  ) {
+    await expect(
+      page.locator(".activity-page-title", { hasText: "活動總覽" }),
+    ).toBeVisible();
+    await expect(page.locator(".adp-panel")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(new RegExp(`#app/activity\\?.*av=${view}`));
+    await expect(page).not.toHaveURL(/#app\/ogsm/);
+  }
+
+  test("看板點活動：保持在活動頁並開右側 panel", async ({ page }) => {
+    await openActivityView(page, "kanban");
+    const cards = page.locator(".act-card");
+    const count = await cards.count();
+    test.skip(count === 0, "目前看板沒有可點活動，略過此 smoke 測試");
+
+    await cards.first().click();
+    await expectActivityPanelAnchored(page, "kanban");
+  });
+
+  test("看板點活動後切到列表：同步展開同一筆活動列", async ({ page }) => {
+    await openActivityView(page, "kanban");
+    const cards = page.locator(".act-card");
+    const count = await cards.count();
+    test.skip(count === 0, "目前看板沒有可點活動，略過此 smoke 測試");
+
+    await cards.first().click();
+    await expectActivityPanelAnchored(page, "kanban");
+
+    await page.locator(".activity-view-tab", { hasText: "列表" }).click();
+    await expect(
+      page.locator(".activity-view-tab.active", { hasText: "列表" }),
+    ).toBeVisible();
+    await expect(page.locator(".act-row.expanded")).toHaveCount(1);
+    await expect(page.locator(".adp-panel")).toBeVisible();
+  });
+
+  test("活動甘特點活動：保持在活動頁並開右側 panel", async ({ page }) => {
+    await openActivityView(page, "gantt", "activity");
+    const labels = page.locator(".gantt-label-row");
+    const count = await labels.count();
+    test.skip(count === 0, "目前活動甘特沒有可點列，略過此 smoke 測試");
+
+    await labels.first().click();
+    await expectActivityPanelAnchored(page, "gantt");
+    await expect(page.locator(".activity-gantt-subtab.active")).toContainText(
+      "活動甘特",
+    );
+  });
+
+  test("計畫甘特點活動：保持在活動頁並開右側 panel", async ({ page }) => {
+    await openActivityView(page, "gantt", "plan");
+    const groups = page.locator(".plan-gantt-group-name");
+    const count = await groups.count();
+    test.skip(count === 0, "目前計畫甘特沒有可點活動，略過此 smoke 測試");
+
+    await groups.first().click();
+    await expectActivityPanelAnchored(page, "gantt");
+    await expect(page.locator(".activity-gantt-subtab.active")).toContainText(
+      "計畫甘特",
+    );
+  });
+
+  test("卡片牆點活動：保持在活動頁並開右側 panel", async ({ page }) => {
+    await openActivityView(page, "cards");
+    const cards = page.locator(".act-card");
+    const count = await cards.count();
+    test.skip(count === 0, "目前卡片牆沒有可點活動，略過此 smoke 測試");
+
+    await cards.first().click();
+    await expectActivityPanelAnchored(page, "cards");
+  });
+
+  test("月曆點活動：保持在活動頁並開右側 panel", async ({ page }) => {
+    await openActivityView(page, "calendar");
+    const strips = page.locator(".cal-act-strip");
+    const count = await strips.count();
+    test.skip(count === 0, "目前月曆沒有可點活動，略過此 smoke 測試");
+
+    await strips.first().click();
+    await expectActivityPanelAnchored(page, "calendar");
+  });
+});

@@ -19,6 +19,7 @@ import {
   getKpiDisplayName,
   recomputeActivityKpis,
 } from "../utils/kpiCalc";
+import { countPlanWarnings, getPlanItemWarning } from "../utils/planWarnings";
 import KpiConfigModal from "./activity/KpiConfigModal";
 import AssistUnitPicker from "./activity/AssistUnitPicker";
 import OwnerPicker from "./activity/OwnerPicker";
@@ -90,6 +91,7 @@ export default function ActivityDetailPanel({
   deptId,
   workspace,
   isReadOnly = false,
+  warnDaysBefore,
   initialPeriodId,
   initialGoalId,
   initialStrategyId,
@@ -102,6 +104,7 @@ export default function ActivityDetailPanel({
     ...activity,
     kpis: activity.kpis ?? [],
     planItems: activity.planItems ?? [],
+    warnDaysBefore: activity.warnDaysBefore ?? 3,
   }));
 
   // Sync draft when activity prop changes (e.g. switched to new activity)
@@ -110,15 +113,22 @@ export default function ActivityDetailPanel({
       ...activity,
       kpis: activity.kpis ?? [],
       planItems: activity.planItems ?? [],
+      warnDaysBefore: activity.warnDaysBefore ?? 3,
     });
+    setStatusManuallyChanged(false);
     setTab("basic");
   }, [activity.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [tab, setTab] = useState<Tab>("basic");
   const [dirty, setDirty] = useState(false);
+  const [statusManuallyChanged, setStatusManuallyChanged] = useState(false);
 
   // ── KPI Config Modal ───────────────────────────────────────────────────────
   const [configKpiId, setConfigKpiId] = useState<string | null>(null);
+  const effectiveWarnDays = Math.max(
+    0,
+    Math.round(draft.warnDaysBefore ?? warnDaysBefore ?? 3),
+  );
 
   // ── Panel width (draggable) ────────────────────────────────────────────────
   const [panelWidth, setPanelWidth] = useState(loadWidth);
@@ -166,6 +176,7 @@ export default function ActivityDetailPanel({
     const saved: DeptActivity = {
       ...draft,
       kpis: recomputeActivityKpis(draft.kpis ?? []),
+      warnDaysBefore: effectiveWarnDays,
       updatedAt: new Date().toISOString(),
     };
     onUpdate(deptId, saved);
@@ -208,6 +219,17 @@ export default function ActivityDetailPanel({
 
   // ── PlanItems helpers ──────────────────────────────────────────────────────
   const planItems = draft.planItems ?? [];
+  const overduePlanItems = planItems.filter(
+    (item) => getPlanItemWarning(item, effectiveWarnDays) === "overdue",
+  );
+
+  useEffect(() => {
+    if (statusManuallyChanged) return;
+    if (overduePlanItems.length === 0) return;
+    if (draft.status === "attention") return;
+    if (draft.status && draft.status !== "not-started") return;
+    setDraft((prev) => ({ ...prev, status: "attention" }));
+  }, [overduePlanItems.length, statusManuallyChanged, draft.status]);
 
   const patchPlanItem = (
     itemId: string,
@@ -228,6 +250,7 @@ export default function ActivityDetailPanel({
       completed: false,
       plannedEndDate: undefined,
       actualEndDate: undefined,
+      dependsOnIds: [],
       linkedMeasureId: null,
     };
     patch({ planItems: [...planItems, newItem] });
@@ -319,6 +342,13 @@ export default function ActivityDetailPanel({
               isReadOnly={isReadOnly}
               deptId={deptId}
               patch={patch}
+              onStatusChange={(status) => {
+                setStatusManuallyChanged(true);
+                patch({ status });
+              }}
+              overduePlanDescriptions={overduePlanItems.map(
+                (item) => item.description || "（未命名行動計畫）",
+              )}
               initialPeriodId={initialPeriodId}
               initialGoalId={initialGoalId}
               initialStrategyId={initialStrategyId}
@@ -338,7 +368,9 @@ export default function ActivityDetailPanel({
             <PlansTab
               planItems={planItems}
               quarters={allQuarters}
+              warnDaysBefore={effectiveWarnDays}
               isReadOnly={isReadOnly}
+              onUpdateWarnDays={(n) => patch({ warnDaysBefore: n })}
               onPatch={patchPlanItem}
               onAdd={addPlanItem}
               onDelete={deletePlanItem}
@@ -390,6 +422,8 @@ function BasicTab({
   isReadOnly,
   deptId,
   patch,
+  onStatusChange,
+  overduePlanDescriptions,
   initialPeriodId,
   initialGoalId,
   initialStrategyId,
@@ -399,6 +433,8 @@ function BasicTab({
   isReadOnly: boolean;
   deptId: string;
   patch: (p: Partial<DeptActivity>) => void;
+  onStatusChange: (status: MeasureStatus | undefined) => void;
+  overduePlanDescriptions: string[];
   initialPeriodId?: string;
   initialGoalId?: string;
   initialStrategyId?: string;
@@ -520,6 +556,14 @@ function BasicTab({
     FRAMEWORK_OPTIONS.filter((o) => frameworks.includes(o.value))
       .map((o) => o.label)
       .join("、") || "（未選擇）";
+
+  const overdueTooltip =
+    overduePlanDescriptions.length > 0
+      ? `逾期行動計畫：\n${overduePlanDescriptions
+          .slice(0, 8)
+          .map((desc, idx) => `${idx + 1}. ${desc}`)
+          .join("\n")}${overduePlanDescriptions.length > 8 ? "\n..." : ""}`
+      : undefined;
 
   return (
     <div className="adp-section-list">
@@ -716,17 +760,21 @@ function BasicTab({
 
       {/* 狀態 */}
       <div className="adp-field">
-        <label className="adp-field-label">狀態</label>
+        <label className="adp-field-label" title={overdueTooltip}>
+          狀態
+          {overduePlanDescriptions.length > 0 ? "（預設注意）" : ""}
+        </label>
         {isReadOnly ? (
-          <span className="adp-value">
+          <span className="adp-value" title={overdueTooltip}>
             {STATUS_OPTIONS.find((s) => s.value === draft.status)?.label ?? "—"}
           </span>
         ) : (
           <select
             className="adp-select"
             value={draft.status ?? ""}
+            title={overdueTooltip}
             onChange={(e) =>
-              patch({ status: (e.target.value as MeasureStatus) || undefined })
+              onStatusChange((e.target.value as MeasureStatus) || undefined)
             }
           >
             <option value="">（未設定）</option>
@@ -1054,20 +1102,53 @@ function KpiRow({
 function PlansTab({
   planItems,
   quarters,
+  warnDaysBefore,
   isReadOnly,
+  onUpdateWarnDays,
   onPatch,
   onAdd,
   onDelete,
 }: {
   planItems: ActivityPlanItem[];
   quarters: string[];
+  warnDaysBefore: number;
   isReadOnly: boolean;
+  onUpdateWarnDays: (n: number) => void;
   onPatch: (id: string, changes: Partial<ActivityPlanItem>) => void;
   onAdd: (quarter: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const warnCounts = countPlanWarnings(planItems, warnDaysBefore);
+
   return (
     <div className="adp-section-list">
+      <div className="adp-plan-settings-row">
+        <div className="adp-plan-warn-config">
+          <span className="adp-plan-meta-label">預警提前天數</span>
+          <input
+            className="adp-input adp-input-sm"
+            type="number"
+            min={0}
+            step={1}
+            value={warnDaysBefore}
+            disabled={isReadOnly}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              onUpdateWarnDays(Number.isFinite(next) ? Math.max(0, next) : 0);
+            }}
+          />
+          <span className="adp-plan-meta-label">天（預設 3）</span>
+        </div>
+        <div className="adp-plan-warn-summary">
+          <span className="adp-plan-badge overdue">
+            🔴 逾期 {warnCounts.overdue}
+          </span>
+          <span className="adp-plan-badge warning">
+            ⚠️ 即將到期 {warnCounts.warning}
+          </span>
+        </div>
+      </div>
+
       {quarters.map((q) => {
         const items = planItems.filter((p) => (p.quarter ?? "Q1") === q);
         return (
@@ -1089,6 +1170,8 @@ function PlansTab({
               <PlanItemRow
                 key={item.id}
                 item={item}
+                allPlanItems={planItems}
+                warnDaysBefore={warnDaysBefore}
                 isReadOnly={isReadOnly}
                 onPatch={(c) => onPatch(item.id, c)}
                 onDelete={() => {
@@ -1111,15 +1194,40 @@ function PlansTab({
 
 function PlanItemRow({
   item,
+  allPlanItems,
+  warnDaysBefore,
   isReadOnly,
   onPatch,
   onDelete,
 }: {
   item: ActivityPlanItem;
+  allPlanItems: ActivityPlanItem[];
+  warnDaysBefore: number;
   isReadOnly: boolean;
   onPatch: (c: Partial<ActivityPlanItem>) => void;
   onDelete: () => void;
 }) {
+  const warnType = getPlanItemWarning(item, warnDaysBefore);
+  const dependsOnIds = item.dependsOnIds ?? [];
+  const depCandidates = allPlanItems.filter((p) => p.id !== item.id);
+
+  const toggleDependency = (depId: string) => {
+    const next = new Set(dependsOnIds);
+    if (next.has(depId)) {
+      next.delete(depId);
+      onPatch({ dependsOnIds: Array.from(next) });
+      return;
+    }
+
+    const dep = allPlanItems.find((p) => p.id === depId);
+    if (dep?.dependsOnIds?.includes(item.id)) {
+      window.alert("不可設定直接循環依賴（A 依賴 B 且 B 依賴 A）");
+      return;
+    }
+    next.add(depId);
+    onPatch({ dependsOnIds: Array.from(next) });
+  };
+
   return (
     <div className={`adp-plan-item${item.completed ? " adp-plan-done" : ""}`}>
       <div className="adp-plan-item-top">
@@ -1128,7 +1236,15 @@ function PlanItemRow({
           type="checkbox"
           checked={item.completed}
           disabled={isReadOnly}
-          onChange={(e) => onPatch({ completed: e.target.checked })}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            onPatch({
+              completed: checked,
+              actualEndDate: checked
+                ? item.actualEndDate || new Date().toISOString().slice(0, 10)
+                : undefined,
+            });
+          }}
         />
         {isReadOnly ? (
           <span
@@ -1156,7 +1272,7 @@ function PlanItemRow({
       </div>
 
       <div className="adp-plan-item-meta">
-        <span className="adp-plan-meta-label">截止：</span>
+        <span className="adp-plan-meta-label">預計完成：</span>
         <input
           className="adp-input adp-input-sm adp-plan-date"
           type="date"
@@ -1166,8 +1282,63 @@ function PlanItemRow({
             onPatch({ plannedEndDate: e.target.value || undefined })
           }
         />
+        <span className="adp-plan-meta-label">實際完成：</span>
+        <input
+          className="adp-input adp-input-sm adp-plan-date"
+          type="date"
+          value={item.actualEndDate ?? ""}
+          disabled={isReadOnly}
+          onChange={(e) =>
+            onPatch({ actualEndDate: e.target.value || undefined })
+          }
+        />
+        {warnType && (
+          <span
+            className={`adp-plan-badge ${warnType === "overdue" ? "overdue" : "warning"}`}
+          >
+            {warnType === "overdue" ? "🔴 逾期" : "⚠️ 即將到期"}
+          </span>
+        )}
         {item.owner !== undefined && (
           <span className="adp-plan-owner">{item.owner}</span>
+        )}
+      </div>
+
+      <div className="adp-plan-item-meta adp-plan-item-deps">
+        <span className="adp-plan-meta-label">前置依賴：</span>
+        {depCandidates.length === 0 ? (
+          <span className="adp-value">無可選項目</span>
+        ) : isReadOnly ? (
+          dependsOnIds.length > 0 ? (
+            <div className="adp-plan-dep-list">
+              {dependsOnIds.map((depId) => {
+                const dep = allPlanItems.find((p) => p.id === depId);
+                return (
+                  <span key={depId} className="adp-plan-dep-chip">
+                    {dep?.description || "（未命名項目）"}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="adp-value">無</span>
+          )
+        ) : (
+          <div className="adp-plan-dep-list">
+            {depCandidates.map((dep) => {
+              const checked = dependsOnIds.includes(dep.id);
+              return (
+                <label key={dep.id} className="adp-plan-dep-option">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleDependency(dep.id)}
+                  />
+                  <span>{dep.description || "（未命名項目）"}</span>
+                </label>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

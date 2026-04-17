@@ -89,6 +89,7 @@ export default function ActivityAddModal({
       id: genId("msr"),
       rawText: form.rawText.trim(),
       kpis: [],
+      warnDaysBefore: 3,
       description: form.description.trim() || undefined,
       owner: form.owner.trim() || undefined,
       startDate: form.startDate || undefined,

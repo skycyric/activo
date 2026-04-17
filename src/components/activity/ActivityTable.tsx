@@ -468,6 +468,8 @@ export default function ActivityTable({
               <tr
                 key={act.id}
                 className={`act-row${isExpanded ? " expanded" : ""}`}
+                onClick={() => onJumpToActivity(act.deptId, act.id)}
+                style={{ cursor: "pointer" }}
               >
                 {columnVisibility.rawText && (
                   <td className="act-td act-td-name">
@@ -612,7 +614,7 @@ export default function ActivityTable({
                     </button>
                     <button
                       className="act-action-btn act-jump-btn"
-                      title="跳至 OGSM 策略面板"
+                      title="開啟活動詳情面板"
                       onClick={() => onJumpToActivity(act.deptId, act.id)}
                     >
                       🔗

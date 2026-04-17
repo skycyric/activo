@@ -8,6 +8,7 @@ import ActivityTable from "./activity/ActivityTable";
 import ActivityKanban from "./activity/ActivityKanban";
 import ActivityCardGrid from "./activity/ActivityCardGrid";
 import ActivityGantt from "./activity/ActivityGantt";
+import ActivityPlanGantt from "./activity/ActivityPlanGantt";
 import ActivityCalendar from "./activity/ActivityCalendar";
 import ActivityAddModal from "./activity/ActivityAddModal";
 import ActivityDetailPanel from "./ActivityDetailPanel";
@@ -45,11 +46,22 @@ const VIEWS: { id: ActivityView; label: string; icon: string }[] = [
 interface Props {
   workspace: WorkspaceData;
   activeDeptId: string;
+  view?: ActivityView;
+  ganttSubView?: "activity" | "plan";
+  onViewChange?: (view: ActivityView) => void;
+  onGanttSubViewChange?: (view: "activity" | "plan") => void;
   readOnlyDeptIds?: string[];
   onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
   onDeleteActivity: (deptId: string, activityId: string) => void;
   onAddActivity: (deptId: string, activity: DeptActivity) => void;
-  onJumpToActivity: (deptId: string, activityId: string) => void;
+  onJumpToActivity: (
+    deptId: string,
+    activityId: string,
+    routeHint?: {
+      activityPageView?: ActivityView;
+      activityGanttSubView?: "activity" | "plan";
+    },
+  ) => void;
   /** 從外部（DetailPanel M tab）預先開啟某活動 ID */
   initialSelectedActivityId?: string | null;
 }
@@ -57,6 +69,10 @@ interface Props {
 export default function ActivityPage({
   workspace,
   activeDeptId,
+  view: controlledView,
+  ganttSubView: controlledGanttSubView,
+  onViewChange,
+  onGanttSubViewChange,
   readOnlyDeptIds,
   onUpdateActivity,
   onDeleteActivity,
@@ -64,7 +80,33 @@ export default function ActivityPage({
   onJumpToActivity,
   initialSelectedActivityId,
 }: Props) {
-  const [view, setView] = useState<ActivityView>("table");
+  const [internalView, setInternalView] = useState<ActivityView>(
+    controlledView ?? "table",
+  );
+  const [internalGanttSubView, setInternalGanttSubView] = useState<
+    "activity" | "plan"
+  >(controlledGanttSubView ?? "activity");
+  const view = controlledView ?? internalView;
+  const ganttSubView = controlledGanttSubView ?? internalGanttSubView;
+
+  const setView = (next: ActivityView) => {
+    if (controlledView === undefined) setInternalView(next);
+    onViewChange?.(next);
+  };
+  const setGanttSubView = (next: "activity" | "plan") => {
+    if (controlledGanttSubView === undefined) setInternalGanttSubView(next);
+    onGanttSubViewChange?.(next);
+  };
+
+  useEffect(() => {
+    if (controlledView !== undefined) setInternalView(controlledView);
+  }, [controlledView]);
+
+  useEffect(() => {
+    if (controlledGanttSubView !== undefined)
+      setInternalGanttSubView(controlledGanttSubView);
+  }, [controlledGanttSubView]);
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [filters, setFilters] = useState<ActivityFilterState>(() => ({
     ...EMPTY_FILTERS,
@@ -86,10 +128,25 @@ export default function ActivityPage({
     initialSelectedActivityId ?? null,
   );
 
-  // Sync if external navigation changes the target activity
+  const handleOpenActivityDetail = useCallback(
+    (deptId: string, activityId: string) => {
+      onViewChange?.(view);
+      onGanttSubViewChange?.(ganttSubView);
+      onJumpToActivity(deptId, activityId, {
+        activityPageView: view,
+        activityGanttSubView: ganttSubView,
+      });
+    },
+    [ganttSubView, onGanttSubViewChange, onJumpToActivity, onViewChange, view],
+  );
+
+  // Sync if external navigation changes the target activity.
+  // Keep table expanded row in sync with right detail panel selection.
   useEffect(() => {
     if (initialSelectedActivityId !== undefined) {
-      setSelectedActivityId(initialSelectedActivityId ?? null);
+      const nextId = initialSelectedActivityId ?? null;
+      setSelectedActivityId(nextId);
+      setExpandedId(nextId);
     }
   }, [initialSelectedActivityId]);
 
@@ -109,12 +166,15 @@ export default function ActivityPage({
     }
   }, [filters.owners]);
 
-  // When a chip/card is clicked from non-table views, jump to table + expand
-  const handleSetExpandedId = useCallback((id: string | null) => {
-    setExpandedId(id);
-    setSelectedActivityId(id);
-    if (id !== null) setView("table");
-  }, []);
+  // Table row selection should open/close panel and keep one expanded row.
+  const handleSetExpandedId = useCallback(
+    (id: string | null) => {
+      setExpandedId(id);
+      setSelectedActivityId(id);
+      if (id !== null) setView("table");
+    },
+    [setView],
+  );
 
   // Open activity detail panel (without forcing table view)
   const handleSelectActivity = useCallback((id: string | null) => {
@@ -434,7 +494,7 @@ export default function ActivityPage({
               ownerFilter={filters.owners.join("、")}
               onUpdateActivity={onUpdateActivity}
               onDeleteActivity={onDeleteActivity}
-              onJumpToActivity={onJumpToActivity}
+              onJumpToActivity={handleOpenActivityDetail}
             />
           )}
           {view === "kanban" && (
@@ -442,28 +502,52 @@ export default function ActivityPage({
               activities={filtered}
               allActivities={allActivities}
               onUpdateActivity={onUpdateActivity}
-              onJumpToActivity={onJumpToActivity}
+              onJumpToActivity={handleOpenActivityDetail}
             />
           )}
           {view === "gantt" && (
-            <ActivityGantt
-              activities={filtered}
-              allActivities={allActivities}
-              onJumpToActivity={onJumpToActivity}
-            />
+            <div className="activity-gantt-shell">
+              <div className="activity-gantt-subtabs">
+                <button
+                  className={`activity-gantt-subtab${ganttSubView === "activity" ? " active" : ""}`}
+                  onClick={() => setGanttSubView("activity")}
+                >
+                  活動甘特
+                </button>
+                <button
+                  className={`activity-gantt-subtab${ganttSubView === "plan" ? " active" : ""}`}
+                  onClick={() => setGanttSubView("plan")}
+                >
+                  計畫甘特
+                </button>
+              </div>
+
+              {ganttSubView === "activity" ? (
+                <ActivityGantt
+                  activities={filtered}
+                  allActivities={allActivities}
+                  onJumpToActivity={handleOpenActivityDetail}
+                />
+              ) : (
+                <ActivityPlanGantt
+                  activities={filtered}
+                  onJumpToActivity={handleOpenActivityDetail}
+                />
+              )}
+            </div>
           )}
           {view === "cards" && (
             <ActivityCardGrid
               activities={filtered}
               allActivities={allActivities}
               onUpdateActivity={onUpdateActivity}
-              onJumpToActivity={onJumpToActivity}
+              onJumpToActivity={handleOpenActivityDetail}
             />
           )}
           {view === "calendar" && (
             <ActivityCalendar
               activities={filtered}
-              onJumpToActivity={onJumpToActivity}
+              onJumpToActivity={handleOpenActivityDetail}
             />
           )}
         </div>

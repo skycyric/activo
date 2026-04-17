@@ -200,10 +200,7 @@ export default function ActivityGantt({
         </div>
 
         {/* Right chart area */}
-        <div
-          className="gantt-chart-area"
-          style={{ overflowX: "auto", flex: 1 }}
-        >
+        <div className="gantt-chart-area" style={{ flex: 1 }}>
           <div style={{ width: CHART_W, position: "relative" }}>
             {/* Tick header */}
             <div
