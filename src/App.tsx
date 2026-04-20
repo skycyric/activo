@@ -50,6 +50,7 @@ import {
   type ConflictEntry,
   type ConflictResolutions,
 } from "./utils/merge";
+import { evaluateSaveConflictProbe } from "./utils/saveConflict";
 import ConflictModal from "./components/ConflictModal";
 import Sidebar from "./components/Sidebar";
 import StrategyList from "./components/StrategyList";
@@ -59,11 +60,11 @@ import DeptSettingsPage from "./components/DeptSettingsPage";
 import ActivityPage from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
 import KpiDesigner from "./components/KpiDesigner";
-import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
 type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
 type InlineToastTone = "success" | "warning" | "error";
+type RemoteRefreshOptions = { confirmIfDirty?: boolean; silent?: boolean };
 type AppRouteView = "home" | "activity" | "ogsm" | "settings" | "kpi";
 type ActivityPageView = "table" | "kanban" | "gantt" | "cards" | "calendar";
 type ActivityGanttSubView = "activity" | "plan";
@@ -291,23 +292,17 @@ function getInitialWorkspace(): WorkspaceData {
   const legacy = loadLegacyData();
   if (legacy)
     return (_initialWorkspace = wrapOGSMInWorkspace(legacy, "營企本部"));
-  try {
-    return (_initialWorkspace = wrapOGSMInWorkspace(
-      parseOGSM(csvRaw),
-      "營企本部",
-    ));
-  } catch {
-    return (_initialWorkspace = wrapOGSMInWorkspace(
-      {
-        objectives: { orgO: "", deptO: "" },
-        goals: [],
-        period: `${new Date().getFullYear()} H1`,
-        importedAt: new Date().toISOString(),
-        overallRate: 0,
-      },
-      "部門一",
-    ));
-  }
+
+  return (_initialWorkspace = wrapOGSMInWorkspace(
+    {
+      objectives: { orgO: "", deptO: "" },
+      goals: [],
+      period: `${new Date().getFullYear()} H1`,
+      importedAt: new Date().toISOString(),
+      overallRate: 0,
+    },
+    "部門一",
+  ));
 }
 
 export default function App() {
@@ -400,6 +395,10 @@ export default function App() {
   } | null>(null);
   /** Stable ref kept in sync with deptFiles — used by polling interval to avoid stale closure */
   const deptFilesRef = useRef<DeptFileState[]>([]);
+  const handleDeptRemoteRefreshRef = useRef<
+    ((deptId: string, options?: RemoteRefreshOptions) => Promise<void>) | null
+  >(null);
+  const autoSyncToastAtRef = useRef<Record<string, number>>({});
   const deptSaveToastTimerRef = useRef<number | null>(null);
 
   const showDeptSaveToast = useCallback(
@@ -683,62 +682,111 @@ export default function App() {
     deptFilesRef.current = deptFiles;
   }, [deptFiles]);
 
-  const POLL_INTERVAL_MS = 30_000;
+  const POLL_INTERVAL_MS = 8_000;
+  const AUTO_SYNC_TOAST_THROTTLE_MS = 20_000;
 
-  // ─── 多檔模式背景輪詢：每 30 秒偵測遠端更新與衝突副本 ──────────────
+  // ─── 多檔模式背景輪詢：每 8 秒偵測遠端更新與衝突副本 ──────────────
   useEffect(() => {
     if (!fsSupported || !isMultiFileMode) return;
+
+    let polling = false;
     const poll = async () => {
+      if (polling) return;
       if (conflictDeptId) return; // 衝突 modal 開著時跳過
-      for (const f of deptFilesRef.current) {
-        if (f.isReadOnly || f.syncStatus === "saving") continue;
-        const deptId = f.workspace.departments[0]?.id;
-        if (!deptId) continue;
-        // 偵測遠端更新
-        try {
-          const lm = await readDataFileMeta(f.handle);
-          if (
-            f.lastModified !== null &&
-            lm > f.lastModified &&
-            !f.hasRemoteUpdate
-          ) {
-            setDeptFiles((prev) =>
-              prev.map((d) =>
-                d.workspace.departments[0]?.id === deptId
-                  ? { ...d, hasRemoteUpdate: true }
-                  : d,
-              ),
-            );
+      polling = true;
+      try {
+        for (const f of deptFilesRef.current) {
+          if (f.isReadOnly || f.syncStatus === "saving") continue;
+          const deptId = f.workspace.departments[0]?.id;
+          if (!deptId) continue;
+
+          // 偵測遠端更新
+          try {
+            const lm = await readDataFileMeta(f.handle);
+            if (f.lastModified !== null && lm > f.lastModified) {
+              if (!f.isDirty) {
+                // 無本地未存變更時，直接套用遠端，減少手動刷新需求
+                await handleDeptRemoteRefreshRef.current?.(deptId, {
+                  confirmIfDirty: false,
+                  silent: true,
+                });
+                const now = Date.now();
+                const lastToast = autoSyncToastAtRef.current[deptId] ?? 0;
+                if (now - lastToast >= AUTO_SYNC_TOAST_THROTTLE_MS) {
+                  showDeptSaveToast(
+                    `⚡ 「${f.subfolderName}」已自動同步遠端更新`,
+                    "warning",
+                  );
+                  autoSyncToastAtRef.current[deptId] = now;
+                }
+              } else if (!f.hasRemoteUpdate) {
+                setDeptFiles((prev) =>
+                  prev.map((d) =>
+                    d.workspace.departments[0]?.id === deptId
+                      ? { ...d, hasRemoteUpdate: true }
+                      : d,
+                  ),
+                );
+              }
+            }
+          } catch {
+            // best-effort
           }
-        } catch {
-          // best-effort
-        }
-        // 偵測 OneDrive 衝突副本
-        try {
-          const copies = await scanForConflictCopies(
-            f.subDirHandle,
-            "data.json",
-          );
-          if (copies.length > 0) {
-            setDeptFiles((prev) =>
-              prev.map((d) => {
-                if (d.workspace.departments[0]?.id !== deptId) return d;
-                const prevNames = new Set(d.conflictCopies.map((c) => c.name));
-                const newOnes = copies.filter((c) => !prevNames.has(c.name));
-                return newOnes.length > 0
-                  ? { ...d, conflictCopies: [...d.conflictCopies, ...newOnes] }
-                  : d;
-              }),
+
+          // 偵測 OneDrive 衝突副本
+          try {
+            const copies = await scanForConflictCopies(
+              f.subDirHandle,
+              "data.json",
             );
+            if (copies.length > 0) {
+              setDeptFiles((prev) =>
+                prev.map((d) => {
+                  if (d.workspace.departments[0]?.id !== deptId) return d;
+                  const prevNames = new Set(
+                    d.conflictCopies.map((c) => c.name),
+                  );
+                  const newOnes = copies.filter((c) => !prevNames.has(c.name));
+                  return newOnes.length > 0
+                    ? {
+                        ...d,
+                        conflictCopies: [...d.conflictCopies, ...newOnes],
+                      }
+                    : d;
+                }),
+              );
+            }
+          } catch {
+            // best-effort
           }
-        } catch {
-          // best-effort
         }
+      } finally {
+        polling = false;
       }
     };
-    const timer = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [fsSupported, isMultiFileMode, conflictDeptId]);
+
+    const onWindowFocus = () => {
+      void poll();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void poll();
+      }
+    };
+
+    // 進入 multi-file 後先跑一次，避免要等下一個 interval
+    void poll();
+    const timer = setInterval(() => {
+      void poll();
+    }, POLL_INTERVAL_MS);
+    window.addEventListener("focus", onWindowFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onWindowFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [fsSupported, isMultiFileMode, conflictDeptId, showDeptSaveToast]);
 
   // ─── Multi-file mode handlers ─────────────────────────────────────────
   const handleLinkRootFolder = useCallback(async () => {
@@ -760,6 +808,7 @@ export default function App() {
     }
     setDeptFiles([]);
     setIsAdmin(false);
+    autoSyncToastAtRef.current = {};
     rootDirHandleRef.current = null;
     await clearRootHandle();
   }, []);
@@ -832,14 +881,21 @@ export default function App() {
       }
 
       // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
+      // 同時比對「本機最後已知 lastModified」，避免漏掉
+      //「在本次 save 開始前就已被遠端更新」的情境。
       // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
-      // 版號相同但內容不同），兩個條件任一成立都進行衝突偵測。
+      // 版號相同但內容不同），任一條件成立都進行衝突偵測。
       const loadedVer = freshEntry.version ?? -1;
+      const probe = evaluateSaveConflictProbe({
+        firstMeta,
+        secondMeta,
+        knownLastModified: freshEntry.lastModified,
+        loadedVersion: loadedVer,
+        onDiskVersion: onDisk.version,
+      });
       let toWrite = freshEntry.workspace;
-      const versionDiffers =
-        onDisk.version !== undefined && onDisk.version !== loadedVer;
 
-      if (versionDiffers || diskWasModified) {
+      if (probe.shouldDetectConflict) {
         const conflicts = detectConflicts(freshEntry.workspace, onDisk);
         if (conflicts.length > 0) {
           // 暫停存檔，開衝突 modal
@@ -1033,11 +1089,13 @@ export default function App() {
 
   /** Re-read dept file from disk, discarding any in-memory changes. */
   const handleDeptRemoteRefresh = useCallback(
-    async (deptId: string, confirmIfDirty = true) => {
+    async (deptId: string, options?: RemoteRefreshOptions) => {
       const entry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
       if (!entry) return;
+      const confirmIfDirty = options?.confirmIfDirty ?? true;
+      const silent = options?.silent ?? false;
       if (
         confirmIfDirty &&
         entry.isDirty &&
@@ -1070,11 +1128,17 @@ export default function App() {
           ),
         );
       } catch (e) {
-        alert(`重新整理「${entry.subfolderName}」失敗：${e}`);
+        if (!silent) {
+          alert(`重新整理「${entry.subfolderName}」失敗：${e}`);
+        }
       }
     },
     [],
   );
+
+  useEffect(() => {
+    handleDeptRemoteRefreshRef.current = handleDeptRemoteRefresh;
+  }, [handleDeptRemoteRefresh]);
 
   /** Merge an OneDrive conflict copy into a dept's workspace. */
   const handleDeptMergeCopy = useCallback(

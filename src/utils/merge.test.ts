@@ -134,7 +134,7 @@ describe("detectConflicts", () => {
     expect(result[0].fieldDiffs[0].remoteVal).toBe("遠端版本");
   });
 
-  test("策略 updatedAt 相同 → 不算衝突（相同版本）", () => {
+  test("策略 updatedAt 相同但內容不同 → 仍視為衝突", () => {
     const sameTime = "2026-01-02T00:00:00.000Z";
     const local = makeWorkspace([
       makeGoal([makeStrategy({ title: "本地版本", updatedAt: sameTime })]),
@@ -142,9 +142,8 @@ describe("detectConflicts", () => {
     const remote = makeWorkspace([
       makeGoal([makeStrategy({ title: "遠端版本", updatedAt: sameTime })]),
     ]);
-    // 相同 updatedAt → detectConflicts 不認為是衝突
     const result = detectConflicts(local, remote);
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
   });
 
   test("策略 notes 不同 → fieldDiff 包含 notes", () => {
@@ -811,7 +810,7 @@ describe("detectConflicts — 無 updatedAt 時仍偵測內容差異", () => {
     expect(detectConflicts(ws, structuredClone(ws))).toHaveLength(0);
   });
 
-  test("strategy 雙方 updatedAt 相同但 title 不同 → 視為同步衝突，不通報（無法確定誰對）", () => {
+  test("strategy 雙方 updatedAt 相同但 title 不同 → 通報衝突", () => {
     const ts = "2026-01-02T00:00:00.000Z";
     const local = makeWorkspace([
       makeGoal([makeStrategy({ title: "本地版本", updatedAt: ts })]),
@@ -819,8 +818,7 @@ describe("detectConflicts — 無 updatedAt 時仍偵測內容差異", () => {
     const remote = makeWorkspace([
       makeGoal([makeStrategy({ title: "遠端版本", updatedAt: ts })]),
     ]);
-    // 同 timestamp 表示資料版本一致，差異可能是 migration 造成的，跳過
-    expect(detectConflicts(local, remote)).toHaveLength(0);
+    expect(detectConflicts(local, remote)).toHaveLength(1);
   });
 });
 
@@ -878,13 +876,13 @@ describe("detectConflicts — Teams", () => {
     expect(detectConflicts(local, remote)).toHaveLength(0);
   });
 
-  test("team 相同 updatedAt → sameTs guard，不通報", () => {
+  test("team 相同 updatedAt 但內容不同 → 通報衝突", () => {
     const ts = "2026-01-02T00:00:00.000Z";
     const local = makeWorkspace([]);
     local.teams = [makeTeam({ name: "小組A", updatedAt: ts })];
     const remote = makeWorkspace([]);
     remote.teams = [makeTeam({ name: "小組B", updatedAt: ts })];
-    expect(detectConflicts(local, remote)).toHaveLength(0);
+    expect(detectConflicts(local, remote)).toHaveLength(1);
   });
 
   test("team 被 deletedIds tombstone → 不通報", () => {
@@ -1027,6 +1025,92 @@ describe("detectConflicts — Activity 衝突", () => {
     expect(diff?.remoteVal).toBe("200000");
   });
 
+  test("kpis 不同 → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          kpis: [
+            {
+              id: "k1",
+              label: "交易率",
+              name: "交易率",
+              target: 10,
+              actual: 5,
+              unit: "%",
+              achievementRate: 50,
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          kpis: [
+            {
+              id: "k1",
+              label: "交易率",
+              name: "交易率",
+              target: 10,
+              actual: 8,
+              unit: "%",
+              achievementRate: 80,
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "kpis");
+    expect(diff).toBeDefined();
+  });
+
+  test("planItems 不同 → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          planItems: [
+            {
+              id: "p1",
+              description: "本地計畫",
+              completed: false,
+              quarter: "Q1",
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          planItems: [
+            {
+              id: "p1",
+              description: "遠端計畫",
+              completed: false,
+              quarter: "Q1",
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "planItems");
+    expect(diff).toBeDefined();
+  });
+
   test("一方 rawText 為空 → 不通報（填補行為）", () => {
     const local = makeWorkspace(
       [],
@@ -1044,7 +1128,7 @@ describe("detectConflicts — Activity 衝突", () => {
     expect(detectConflicts(local, remote)).toHaveLength(0);
   });
 
-  test("兩邊 updatedAt 相同 → sameTs guard，跳過", () => {
+  test("兩邊 updatedAt 相同但內容不同 → 通報衝突", () => {
     const ts = "2026-01-02T00:00:00.000Z";
     const local = makeWorkspace(
       [],
@@ -1054,7 +1138,7 @@ describe("detectConflicts — Activity 衝突", () => {
       [],
       [makeActivity({ rawText: "遠端活動", updatedAt: ts })],
     );
-    expect(detectConflicts(local, remote)).toHaveLength(0);
+    expect(detectConflicts(local, remote)).toHaveLength(1);
   });
 
   test("活動被 deletedIds tombstone → 不通報", () => {
@@ -1183,6 +1267,42 @@ describe("mergeWorkspaces — Activities", () => {
     const ids = workspace.departments[0].activities!.map((a) => a.id);
     expect(ids).toContain("act_L");
     expect(ids).toContain("act_R");
+  });
+
+  test("activity 衝突解決：field-level remote 覆蓋指定欄位", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "同活動",
+          budget: 100,
+          tags: ["local"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "同活動",
+          budget: 200,
+          tags: ["remote"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ],
+    );
+
+    const { workspace } = mergeWorkspaces(local, remote, {
+      "act1.budget": "local",
+      "act1.tags": "remote",
+    });
+
+    const merged = workspace.departments[0].activities?.find(
+      (a) => a.id === "act1",
+    );
+    expect(merged?.budget).toBe(100);
+    expect(merged?.tags).toEqual(["remote"]);
   });
 });
 

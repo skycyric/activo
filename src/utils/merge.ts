@@ -338,79 +338,228 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
  */
 function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
   const diffs: FieldDiff[] = [];
+  const summarizeKpis = (kpis: DeptActivity["kpis"]): string => {
+    if (!kpis || kpis.length === 0) return "(無 KPI)";
+    return kpis
+      .map((k) => {
+        const name = (k.name ?? k.label ?? "KPI").trim() || "KPI";
+        const actual = k.actual ?? "-";
+        const target = k.target ?? "-";
+        return `${name} ${actual}/${target}`;
+      })
+      .join(" | ");
+  };
 
-  if (
-    (la.rawText ?? "") !== (ra.rawText ?? "") &&
-    !isEmpty(la.rawText) &&
-    !isEmpty(ra.rawText)
-  ) {
-    diffs.push({
-      field: "rawText",
-      label: "活動名稱",
-      localVal: fmt(la.rawText),
-      remoteVal: fmt(ra.rawText),
-    });
-  }
-  if (
-    (la.status ?? "") !== (ra.status ?? "") &&
-    !isEmpty(la.status) &&
-    !isEmpty(ra.status)
-  ) {
-    diffs.push({
-      field: "status",
-      label: "狀態",
-      localVal: fmt(la.status),
-      remoteVal: fmt(ra.status),
-    });
-  }
+  const pushStringDiff = (
+    field: string,
+    label: string,
+    localVal: string | undefined,
+    remoteVal: string | undefined,
+  ) => {
+    if (
+      (localVal ?? "") !== (remoteVal ?? "") &&
+      !isEmpty(localVal) &&
+      !isEmpty(remoteVal)
+    ) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal),
+        remoteVal: fmt(remoteVal),
+      });
+    }
+  };
+
+  const pushNumberDiff = (
+    field: string,
+    label: string,
+    localVal: number | undefined,
+    remoteVal: number | undefined,
+  ) => {
+    if (localVal !== remoteVal && !isEmpty(localVal) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: String(localVal),
+        remoteVal: String(remoteVal),
+      });
+    }
+  };
+
+  const pushJsonDiff = (
+    field: string,
+    label: string,
+    localVal: unknown,
+    remoteVal: unknown,
+  ) => {
+    if (
+      JSON.stringify(localVal) !== JSON.stringify(remoteVal) &&
+      !isEmpty(localVal) &&
+      !isEmpty(remoteVal)
+    ) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal, field),
+        remoteVal: fmt(remoteVal, field),
+      });
+    }
+  };
+
+  pushStringDiff("rawText", "活動名稱", la.rawText, ra.rawText);
+  pushStringDiff("status", "狀態", la.status, ra.status);
   const lOwners = la.owners ?? [];
   const rOwners = ra.owners ?? [];
-  if (
-    JSON.stringify(lOwners) !== JSON.stringify(rOwners) &&
-    !isEmpty(lOwners) &&
-    !isEmpty(rOwners)
-  ) {
+  pushJsonDiff("owners", "負責人", lOwners, rOwners);
+  pushStringDiff("startDate", "開始日期", la.startDate, ra.startDate);
+  pushStringDiff("endDate", "結束日期", la.endDate, ra.endDate);
+  pushNumberDiff("budget", "預算", la.budget, ra.budget);
+  pushNumberDiff("personDays", "人天", la.personDays, ra.personDays);
+  pushNumberDiff(
+    "warnDaysBefore",
+    "預警提前天數",
+    la.warnDaysBefore,
+    ra.warnDaysBefore,
+  );
+  pushStringDiff("quarter", "季度", la.quarter, ra.quarter);
+  pushStringDiff("description", "活動說明", la.description, ra.description);
+  pushStringDiff("notes", "備註", la.notes, ra.notes);
+  pushStringDiff(
+    "lifecycleStartPeriodId",
+    "生命週期起始期別",
+    la.lifecycleStartPeriodId,
+    ra.lifecycleStartPeriodId,
+  );
+  pushStringDiff(
+    "lifecycleEndPeriodId",
+    "生命週期結束期別",
+    la.lifecycleEndPeriodId,
+    ra.lifecycleEndPeriodId,
+  );
+  pushJsonDiff(
+    "assistUnits",
+    "協助單位",
+    la.assistUnits ?? [],
+    ra.assistUnits ?? [],
+  );
+  pushJsonDiff(
+    "prerequisites",
+    "前置依賴",
+    la.prerequisites ?? [],
+    ra.prerequisites ?? [],
+  );
+  pushJsonDiff(
+    "relatedActivities",
+    "關聯活動",
+    la.relatedActivities ?? [],
+    ra.relatedActivities ?? [],
+  );
+  pushJsonDiff(
+    "dashboardLinks",
+    "儀表板連結",
+    la.dashboardLinks ?? [],
+    ra.dashboardLinks ?? [],
+  );
+  pushJsonDiff("tags", "標籤", la.tags ?? [], ra.tags ?? []);
+  pushJsonDiff("frameworks", "框架", la.frameworks ?? [], ra.frameworks ?? []);
+  pushJsonDiff("planItems", "行動計畫", la.planItems ?? [], ra.planItems ?? []);
+  const lKpis = la.kpis ?? [];
+  const rKpis = ra.kpis ?? [];
+  if (JSON.stringify(lKpis) !== JSON.stringify(rKpis)) {
     diffs.push({
-      field: "owners",
-      label: "負責人",
-      localVal: fmt(lOwners, "owners"),
-      remoteVal: fmt(rOwners, "owners"),
-    });
-  }
-  if (
-    (la.startDate ?? "") !== (ra.startDate ?? "") &&
-    !isEmpty(la.startDate) &&
-    !isEmpty(ra.startDate)
-  ) {
-    diffs.push({
-      field: "startDate",
-      label: "開始日期",
-      localVal: fmt(la.startDate),
-      remoteVal: fmt(ra.startDate),
-    });
-  }
-  if (
-    (la.endDate ?? "") !== (ra.endDate ?? "") &&
-    !isEmpty(la.endDate) &&
-    !isEmpty(ra.endDate)
-  ) {
-    diffs.push({
-      field: "endDate",
-      label: "結束日期",
-      localVal: fmt(la.endDate),
-      remoteVal: fmt(ra.endDate),
-    });
-  }
-  // budget: 本地有值、遠端不同（含 undefined）才通報
-  if (la.budget !== ra.budget && !isEmpty(la.budget)) {
-    diffs.push({
-      field: "budget",
-      label: "預算",
-      localVal: la.budget != null ? String(la.budget) : "(未設定)",
-      remoteVal: ra.budget != null ? String(ra.budget) : "(未設定)",
+      field: "kpis",
+      label: "KPI",
+      localVal: summarizeKpis(lKpis),
+      remoteVal: summarizeKpis(rKpis),
     });
   }
   return diffs;
+}
+
+function fieldMergeActivity(
+  la: DeptActivity,
+  ra: DeptActivity,
+  entityId?: string,
+  resolutions?: ConflictResolutions,
+): { merged: DeptActivity; changed: boolean } {
+  const winner = newerOf(la, ra);
+  const merged: DeptActivity = { ...la };
+  let changed = false;
+
+  function pick<T>(field: string, localVal: T, remoteVal: T): T {
+    if (entityId) {
+      const r = resolveField(resolutions, entityId, field);
+      if (r === "local") return localVal;
+      if (r === "remote") return remoteVal;
+    }
+    return winner === ra ? remoteVal : localVal;
+  }
+
+  function mergeField<T>(
+    field: keyof DeptActivity & string,
+    localVal: T,
+    remoteVal: T,
+  ) {
+    if (JSON.stringify(localVal) === JSON.stringify(remoteVal)) return;
+
+    let nextVal = localVal;
+    if (isEmpty(localVal) && !isEmpty(remoteVal)) {
+      nextVal = remoteVal;
+    } else if (!isEmpty(localVal) && isEmpty(remoteVal)) {
+      nextVal = localVal;
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      nextVal = pick(field, localVal, remoteVal);
+    }
+
+    if (JSON.stringify(nextVal) !== JSON.stringify(localVal)) {
+      (merged as Record<string, unknown>)[field] = nextVal as unknown;
+      changed = true;
+    }
+  }
+
+  mergeField("rawText", la.rawText, ra.rawText);
+  mergeField("status", la.status, ra.status);
+  mergeField("owners", la.owners ?? [], ra.owners ?? []);
+  mergeField("startDate", la.startDate, ra.startDate);
+  mergeField("endDate", la.endDate, ra.endDate);
+  mergeField("budget", la.budget, ra.budget);
+  mergeField("personDays", la.personDays, ra.personDays);
+  mergeField("warnDaysBefore", la.warnDaysBefore, ra.warnDaysBefore);
+  mergeField("quarter", la.quarter, ra.quarter);
+  mergeField("description", la.description, ra.description);
+  mergeField("notes", la.notes, ra.notes);
+  mergeField("kpis", la.kpis ?? [], ra.kpis ?? []);
+  mergeField("assistUnits", la.assistUnits ?? [], ra.assistUnits ?? []);
+  mergeField("prerequisites", la.prerequisites ?? [], ra.prerequisites ?? []);
+  mergeField(
+    "relatedActivities",
+    la.relatedActivities ?? [],
+    ra.relatedActivities ?? [],
+  );
+  mergeField(
+    "dashboardLinks",
+    la.dashboardLinks ?? [],
+    ra.dashboardLinks ?? [],
+  );
+  mergeField("tags", la.tags ?? [], ra.tags ?? []);
+  mergeField("frameworks", la.frameworks ?? [], ra.frameworks ?? []);
+  mergeField("planItems", la.planItems ?? [], ra.planItems ?? []);
+  mergeField(
+    "lifecycleStartPeriodId",
+    la.lifecycleStartPeriodId,
+    ra.lifecycleStartPeriodId,
+  );
+  mergeField(
+    "lifecycleEndPeriodId",
+    la.lifecycleEndPeriodId,
+    ra.lifecycleEndPeriodId,
+  );
+
+  if (ra.updatedAt && (!la.updatedAt || ra.updatedAt > la.updatedAt)) {
+    merged.updatedAt = ra.updatedAt;
+  }
+
+  return { merged, changed };
 }
 
 function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
@@ -507,14 +656,11 @@ export function detectConflicts(
         if (!rg || deleted.has(rg.id)) continue;
 
         // 無論 timestamp 是否不同（或缺少），只要內容有差異就列入衝突；
-        // updatedAt 僅影響 LWW 方向，不用來 gate 偵測
+        // updatedAt 僅影響 LWW 方向，不用來 gate 偵測。
         {
           // goalDiffs 已包含 title / fullText / goalKpis（含 tombstone 判斷）
           const diffs = goalDiffs(lg, rg);
-          // 同一 timestamp 且內容相同表示兩層已同步，無需主動送入
-          const sameTs =
-            !!lg.updatedAt && !!rg.updatedAt && lg.updatedAt === rg.updatedAt;
-          if (diffs.length > 0 && !sameTs) {
+          if (diffs.length > 0) {
             entries.push({
               id: lg.id,
               entityType: "goal",
@@ -535,9 +681,7 @@ export function detectConflicts(
           if (!rs || deleted.has(rs.id)) continue;
           {
             const diffs = strategyDiffs(ls, rs);
-            const sameTs =
-              !!ls.updatedAt && !!rs.updatedAt && ls.updatedAt === rs.updatedAt;
-            if (diffs.length > 0 && !sameTs) {
+            if (diffs.length > 0) {
               entries.push({
                 id: ls.id,
                 entityType: "strategy",
@@ -562,9 +706,7 @@ export function detectConflicts(
     if (!rt || deleted.has(rt.id)) continue;
     {
       const diffs = teamDiffs(lt, rt);
-      const sameTs =
-        !!lt.updatedAt && !!rt.updatedAt && lt.updatedAt === rt.updatedAt;
-      if (diffs.length > 0 && !sameTs) {
+      if (diffs.length > 0) {
         entries.push({
           id: lt.id,
           entityType: "team",
@@ -590,10 +732,6 @@ export function detectConflicts(
       if (deleted.has(la.id)) continue;
       const ra = remoteActivityMap.get(la.id);
       if (!ra || deleted.has(ra.id)) continue;
-      // 同 updatedAt 表示兩端已同步，跳過
-      const sameTs =
-        !!la.updatedAt && !!ra.updatedAt && la.updatedAt === ra.updatedAt;
-      if (sameTs) continue;
       const diffs = activityDiffs(la, ra);
       if (diffs.length > 0) {
         entries.push({
@@ -971,6 +1109,7 @@ function mergeDeptActivities(
   local: DeptActivity[],
   remote: DeptActivity[],
   deleted: Set<string>,
+  resolutions?: ConflictResolutions,
 ): { activities: DeptActivity[]; count: number } {
   const safeLocal = local ?? [];
   const filtered = safeLocal.filter((a) => !deleted.has(a.id));
@@ -987,10 +1126,18 @@ function mergeDeptActivities(
       map.set(ra.id, ra);
       count++;
     } else {
-      const winner = newerOf(la, ra);
-      if (winner !== la) {
-        map.set(ra.id, winner);
+      const res = resolutions?.[ra.id];
+      if (res === "remote") {
+        map.set(ra.id, ra);
         count++;
+      } else if (res === "local") {
+        // keep local
+      } else {
+        const fm = fieldMergeActivity(la, ra, ra.id, resolutions);
+        if (fm.changed) {
+          map.set(ra.id, fm.merged);
+          count++;
+        }
       }
     }
   }
@@ -1253,6 +1400,7 @@ function mergeDepts(
         ld.activities ?? [],
         rd.activities ?? [],
         deleted,
+        resolutions,
       );
       const totalCount = pc + ac;
       if (totalCount > 0) {
