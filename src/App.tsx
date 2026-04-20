@@ -19,7 +19,9 @@ import {
   importJSON,
   readFileAsText,
   normalizeWorkspaceData,
+  validateOrWarn,
 } from "./utils/storage";
+import { WorkspaceDataSchema } from "./schemas/ogsm";
 import {
   isFileSystemAccessSupported,
   BACKUP_KEEP_LATEST,
@@ -433,6 +435,7 @@ export default function App() {
           ]);
           ws = JSON.parse(text);
           normalizeWorkspaceData(ws);
+          validateOrWarn(WorkspaceDataSchema, ws, "loadRoot");
           lastModified = lm;
         } catch {
           // Skip files that can't be read
@@ -809,6 +812,7 @@ export default function App() {
         const diskText = await readDataFile(entry.handle);
         let onDisk: WorkspaceData = JSON.parse(diskText);
         normalizeWorkspaceData(onDisk);
+        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
 
         // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
         await new Promise<void>((resolve) => setTimeout(resolve, 3000));
@@ -821,17 +825,23 @@ export default function App() {
 
         // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
         const secondMeta = await readDataFileMeta(freshEntry.handle);
-        if (secondMeta !== firstMeta) {
+        const diskWasModified = secondMeta !== firstMeta;
+        if (diskWasModified) {
           const freshText = await readDataFile(freshEntry.handle);
           onDisk = JSON.parse(freshText);
           normalizeWorkspaceData(onDisk);
+          validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
         }
 
         // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
+        // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
+        // 版號相同但內容不同），兩個條件任一成立都進行衝突偵測。
         const loadedVer = freshEntry.version ?? -1;
         let toWrite = freshEntry.workspace;
+        const versionDiffers =
+          onDisk.version !== undefined && onDisk.version !== loadedVer;
 
-        if (onDisk.version !== undefined && onDisk.version !== loadedVer) {
+        if (versionDiffers || diskWasModified) {
           const conflicts = detectConflicts(freshEntry.workspace, onDisk);
           if (conflicts.length > 0) {
             // 暫停存檔，開衝突 modal
@@ -961,6 +971,7 @@ export default function App() {
         const freshText = await readDataFile(entry.handle);
         freshDisk = JSON.parse(freshText);
         normalizeWorkspaceData(freshDisk);
+        validateOrWarn(WorkspaceDataSchema, freshDisk, "conflictCopy-disk");
       } catch {
         // best-effort：讀不到就沿用原衝突快照
       }
@@ -971,7 +982,7 @@ export default function App() {
       );
       const payload: WorkspaceData = {
         ...merged,
-        version: (entry.version ?? 1) + 1,
+        version: Math.max(entry.version ?? 1, freshDisk.version ?? 1) + 1,
         savedAt: new Date().toISOString(),
       };
       await writeDataFile(entry.handle, JSON.stringify(payload, null, 2));
@@ -1050,6 +1061,7 @@ export default function App() {
         ]);
         const remote: WorkspaceData = JSON.parse(text);
         normalizeWorkspaceData(remote);
+        validateOrWarn(WorkspaceDataSchema, remote, "refreshDept-disk");
         setDeptFiles((prev) =>
           prev.map((f) =>
             f.workspace.departments[0]?.id === deptId
@@ -1094,6 +1106,7 @@ export default function App() {
         const text = await readDataFile(copy.handle);
         const remote: WorkspaceData = JSON.parse(text);
         normalizeWorkspaceData(remote);
+        validateOrWarn(WorkspaceDataSchema, remote, "mergeCopy-disk");
         const conflicts = detectConflicts(entry.workspace, remote);
         conflictDeptDiskWsRef.current = remote;
         conflictDeptSourceCopyRef.current = copy;

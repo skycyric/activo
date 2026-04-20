@@ -807,6 +807,15 @@ function normalizeGoalKpiLinks(
  */
 export function normalizeOneStrategy(strategy: Strategy): boolean {
   let changed = false;
+  // Guard against malformed data where actionPlans may be undefined
+  if (!Array.isArray(strategy.actionPlans)) {
+    strategy.actionPlans = [];
+    changed = true;
+  }
+  if (!Array.isArray(strategy.owners)) {
+    strategy.owners = [];
+    changed = true;
+  }
   // Plan item date field migration
   for (const ap of strategy.actionPlans) {
     for (const item of ap.items) {

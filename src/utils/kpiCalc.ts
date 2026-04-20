@@ -50,7 +50,10 @@ export function computeKpiAchievement(
   // ── 新路徑：formulaType 明確指定 ─────────────────────────────────────────
   if (fType === "direct_rate") {
     if (kpi.actual === null || kpi.actual === undefined) return null;
-    if (!kpi.target) return null;
+    // target == null: 未設定，無法計算
+    // target === 0:   actual=0 → 100% 達成；否則除以零 → null
+    if (kpi.target == null) return null;
+    if (kpi.target === 0) return kpi.actual === 0 ? 100 : null;
     return Math.round((kpi.actual / kpi.target) * 10000) / 100;
   }
 
@@ -89,7 +92,8 @@ export function computeKpiAchievement(
 
   if (kType === "target_rate") {
     if (kpi.actual === null || kpi.actual === undefined) return null;
-    if (!kpi.target) return null;
+    if (kpi.target == null) return null;
+    if (kpi.target === 0) return kpi.actual === 0 ? 100 : null;
     const rawRate = (kpi.actual / kpi.target) * 100;
     const targetRate = kpi.targetRate ?? null;
     if (targetRate === null || targetRate === 0)
@@ -99,7 +103,8 @@ export function computeKpiAchievement(
 
   // value（預設）：actual / target × 100
   if (kpi.actual === null || kpi.actual === undefined) return null;
-  if (!kpi.target) return null;
+  if (kpi.target == null) return null;
+  if (kpi.target === 0) return kpi.actual === 0 ? 100 : null;
   return Math.round((kpi.actual / kpi.target) * 10000) / 100;
 }
 

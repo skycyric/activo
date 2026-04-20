@@ -6,8 +6,15 @@ import {
   migrateToActivityFirst,
   parseAndValidateJSON,
   normalizeOneStrategy,
+  wrapOGSMInWorkspace,
 } from "./storage";
-import type { WorkspaceData, Strategy, Goal, Measure } from "../schemas/ogsm";
+import type {
+  WorkspaceData,
+  Strategy,
+  Goal,
+  Measure,
+  OGSMData,
+} from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
 
@@ -1013,5 +1020,110 @@ describe("migrateToActivityFirst", () => {
     // 活動B：只拿到共用 item（沒有自己的 linked item）
     expect(a2.planItems).toHaveLength(1);
     expect(a2.planItems![0].id).toBe("item_no_link");
+  });
+});
+
+// ─── normalizeOneStrategy ─────────────────────────────────────────────────────
+
+describe("normalizeOneStrategy", () => {
+  function makeRawStrategy(overrides: Partial<Strategy> = {}): Strategy {
+    return {
+      id: "s1",
+      title: "S1",
+      rawText: "",
+      measures: [],
+      actionPlans: [],
+      owners: [],
+      notes: "",
+      completionRate: 0,
+      manualRate: null,
+      ...overrides,
+    };
+  }
+
+  test("owners 缺失（undefined）→ 補為空陣列", () => {
+    const s = makeRawStrategy({ owners: undefined as unknown as string[] });
+    normalizeOneStrategy(s);
+    expect(Array.isArray(s.owners)).toBe(true);
+    expect(s.owners).toHaveLength(0);
+  });
+
+  test("actionPlans 缺失（undefined）→ 補為空陣列", () => {
+    const s = makeRawStrategy({
+      actionPlans: undefined as unknown as Strategy["actionPlans"],
+    });
+    normalizeOneStrategy(s);
+    expect(Array.isArray(s.actionPlans)).toBe(true);
+  });
+
+  test("legacyDate 欄位遷移：endDate → plannedEndDate", () => {
+    const s = makeRawStrategy({
+      actionPlans: [
+        {
+          id: "ap1",
+          quarter: "Q1",
+          title: "",
+          items: [
+            {
+              id: "item1",
+              description: "任務",
+              completed: false,
+              endDate: "2026-03-31",
+            } as unknown as import("../schemas/ogsm").PlanItem,
+          ],
+        },
+      ],
+    });
+    normalizeOneStrategy(s);
+    const item = s.actionPlans[0].items[0];
+    expect(item.plannedEndDate).toBe("2026-03-31");
+    expect(
+      (item as unknown as Record<string, unknown>).endDate,
+    ).toBeUndefined();
+  });
+});
+
+// ─── wrapOGSMInWorkspace ──────────────────────────────────────────────────────
+
+describe("wrapOGSMInWorkspace", () => {
+  function makeOgsm(period = "2026 H1"): OGSMData {
+    return {
+      objectives: { orgO: "公司目標", deptO: "部門目標" },
+      goals: [],
+      period,
+      importedAt: "2026-01-01T00:00:00.000Z",
+      overallRate: 0,
+    };
+  }
+
+  test("傳入 OGSMData → 輸出 WorkspaceData，departments 長度為 1", () => {
+    const ws = wrapOGSMInWorkspace(makeOgsm());
+    expect(ws.departments).toHaveLength(1);
+    expect(ws.version).toBe(1);
+  });
+
+  test("deptName 參數正確設定部門名稱", () => {
+    const ws = wrapOGSMInWorkspace(makeOgsm(), "商務發展部");
+    expect(ws.departments[0].name).toBe("商務發展部");
+  });
+
+  test("H1 period → halfYear=H1", () => {
+    const ws = wrapOGSMInWorkspace(makeOgsm("2026 H1"));
+    expect(ws.departments[0].periods[0].halfYear).toBe("H1");
+    expect(ws.departments[0].periods[0].year).toBe(2026);
+  });
+
+  test("H2 period → halfYear=H2", () => {
+    const ws = wrapOGSMInWorkspace(makeOgsm("2026 H2"));
+    expect(ws.departments[0].periods[0].halfYear).toBe("H2");
+  });
+
+  test("包裝後 ogsm 目標資料完整保留", () => {
+    const ogsm = makeOgsm();
+    ogsm.objectives.orgO = "測試公司目標";
+    const ws = wrapOGSMInWorkspace(ogsm);
+    expect(ws.departments[0].periods[0].ogsm.objectives.orgO).toBe(
+      "測試公司目標",
+    );
   });
 });

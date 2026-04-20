@@ -45,13 +45,13 @@ export interface FieldDiff {
 
 export interface ConflictEntry {
   id: string;
-  entityType: "goal" | "strategy" | "team";
+  entityType: "goal" | "strategy" | "team" | "activity";
   entityLabel: string;
   localUpdatedAt?: string;
   remoteUpdatedAt?: string;
   fieldDiffs: FieldDiff[];
-  localEntity: Goal | Strategy | Team;
-  remoteEntity: Goal | Strategy | Team;
+  localEntity: Goal | Strategy | Team | DeptActivity;
+  remoteEntity: Goal | Strategy | Team | DeptActivity;
 }
 
 /**
@@ -180,11 +180,11 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
       });
     }
   }
-  if (
-    ls.manualRate !== rs.manualRate &&
-    !isEmpty(ls.manualRate) &&
-    !isEmpty(rs.manualRate)
-  ) {
+  // manualRate: null = 自動計算。
+  // - null → value: 自動填補，不算衝突（不通報）
+  // - value → null: 對方可能刻意清除手動覆蓋，需通報衝突
+  // - value → 不同 value: 衝突
+  if (ls.manualRate !== rs.manualRate && !isEmpty(ls.manualRate)) {
     diffs.push({
       field: "manualRate",
       label: "完成率",
@@ -332,6 +332,87 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
   return diffs;
 }
 
+/**
+ * 比對兩個 DeptActivity 的關鍵欄位差異，供 detectConflicts 使用。
+ * Activity 目前無 clearedFields tombstone，僅做值比對。
+ */
+function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
+  const diffs: FieldDiff[] = [];
+
+  if (
+    (la.rawText ?? "") !== (ra.rawText ?? "") &&
+    !isEmpty(la.rawText) &&
+    !isEmpty(ra.rawText)
+  ) {
+    diffs.push({
+      field: "rawText",
+      label: "活動名稱",
+      localVal: fmt(la.rawText),
+      remoteVal: fmt(ra.rawText),
+    });
+  }
+  if (
+    (la.status ?? "") !== (ra.status ?? "") &&
+    !isEmpty(la.status) &&
+    !isEmpty(ra.status)
+  ) {
+    diffs.push({
+      field: "status",
+      label: "狀態",
+      localVal: fmt(la.status),
+      remoteVal: fmt(ra.status),
+    });
+  }
+  const lOwners = la.owners ?? [];
+  const rOwners = ra.owners ?? [];
+  if (
+    JSON.stringify(lOwners) !== JSON.stringify(rOwners) &&
+    !isEmpty(lOwners) &&
+    !isEmpty(rOwners)
+  ) {
+    diffs.push({
+      field: "owners",
+      label: "負責人",
+      localVal: fmt(lOwners, "owners"),
+      remoteVal: fmt(rOwners, "owners"),
+    });
+  }
+  if (
+    (la.startDate ?? "") !== (ra.startDate ?? "") &&
+    !isEmpty(la.startDate) &&
+    !isEmpty(ra.startDate)
+  ) {
+    diffs.push({
+      field: "startDate",
+      label: "開始日期",
+      localVal: fmt(la.startDate),
+      remoteVal: fmt(ra.startDate),
+    });
+  }
+  if (
+    (la.endDate ?? "") !== (ra.endDate ?? "") &&
+    !isEmpty(la.endDate) &&
+    !isEmpty(ra.endDate)
+  ) {
+    diffs.push({
+      field: "endDate",
+      label: "結束日期",
+      localVal: fmt(la.endDate),
+      remoteVal: fmt(ra.endDate),
+    });
+  }
+  // budget: 本地有值、遠端不同（含 undefined）才通報
+  if (la.budget !== ra.budget && !isEmpty(la.budget)) {
+    diffs.push({
+      field: "budget",
+      label: "預算",
+      localVal: la.budget != null ? String(la.budget) : "(未設定)",
+      remoteVal: ra.budget != null ? String(ra.budget) : "(未設定)",
+    });
+  }
+  return diffs;
+}
+
 function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
   const diffs: FieldDiff[] = [];
   // name
@@ -425,10 +506,15 @@ export function detectConflicts(
         const rg = remoteGoalMap.get(lg.id);
         if (!rg || deleted.has(rg.id)) continue;
 
-        if (lg.updatedAt && rg.updatedAt && lg.updatedAt !== rg.updatedAt) {
+        // 無論 timestamp 是否不同（或缺少），只要內容有差異就列入衝突；
+        // updatedAt 僅影響 LWW 方向，不用來 gate 偵測
+        {
           // goalDiffs 已包含 title / fullText / goalKpis（含 tombstone 判斷）
           const diffs = goalDiffs(lg, rg);
-          if (diffs.length > 0) {
+          // 同一 timestamp 且內容相同表示兩層已同步，無需主動送入
+          const sameTs =
+            !!lg.updatedAt && !!rg.updatedAt && lg.updatedAt === rg.updatedAt;
+          if (diffs.length > 0 && !sameTs) {
             entries.push({
               id: lg.id,
               entityType: "goal",
@@ -447,9 +533,11 @@ export function detectConflicts(
           if (deleted.has(ls.id)) continue;
           const rs = remoteStratMap.get(ls.id);
           if (!rs || deleted.has(rs.id)) continue;
-          if (ls.updatedAt && rs.updatedAt && ls.updatedAt !== rs.updatedAt) {
+          {
             const diffs = strategyDiffs(ls, rs);
-            if (diffs.length > 0) {
+            const sameTs =
+              !!ls.updatedAt && !!rs.updatedAt && ls.updatedAt === rs.updatedAt;
+            if (diffs.length > 0 && !sameTs) {
               entries.push({
                 id: ls.id,
                 entityType: "strategy",
@@ -472,9 +560,11 @@ export function detectConflicts(
     if (deleted.has(lt.id)) continue;
     const rt = remoteTeamMap.get(lt.id);
     if (!rt || deleted.has(rt.id)) continue;
-    if (lt.updatedAt && rt.updatedAt && lt.updatedAt !== rt.updatedAt) {
+    {
       const diffs = teamDiffs(lt, rt);
-      if (diffs.length > 0) {
+      const sameTs =
+        !!lt.updatedAt && !!rt.updatedAt && lt.updatedAt === rt.updatedAt;
+      if (diffs.length > 0 && !sameTs) {
         entries.push({
           id: lt.id,
           entityType: "team",
@@ -484,6 +574,37 @@ export function detectConflicts(
           fieldDiffs: diffs,
           localEntity: lt,
           remoteEntity: rt,
+        });
+      }
+    }
+  }
+
+  // ── DeptActivity 衝突偵測 ─────────────────────────────────────────────────
+  for (const ld of local.departments) {
+    const rd = remote.departments.find((d) => d.id === ld.id);
+    if (!rd) continue;
+    const remoteActivityMap = new Map(
+      (rd.activities ?? []).map((a) => [a.id, a]),
+    );
+    for (const la of ld.activities ?? []) {
+      if (deleted.has(la.id)) continue;
+      const ra = remoteActivityMap.get(la.id);
+      if (!ra || deleted.has(ra.id)) continue;
+      // 同 updatedAt 表示兩端已同步，跳過
+      const sameTs =
+        !!la.updatedAt && !!ra.updatedAt && la.updatedAt === ra.updatedAt;
+      if (sameTs) continue;
+      const diffs = activityDiffs(la, ra);
+      if (diffs.length > 0) {
+        entries.push({
+          id: la.id,
+          entityType: "activity",
+          entityLabel: la.rawText ?? la.id,
+          localUpdatedAt: la.updatedAt,
+          remoteUpdatedAt: ra.updatedAt,
+          fieldDiffs: diffs,
+          localEntity: la,
+          remoteEntity: ra,
         });
       }
     }

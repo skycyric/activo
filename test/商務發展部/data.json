@@ -2999,7 +2999,18 @@
           "frameworks": [
             "ogsm"
           ],
-          "lifecycleStartPeriodId": "period_mn48prth_j6lm"
+          "lifecycleStartPeriodId": "period_mn48prth_j6lm",
+          "deptId": "dept_mn48prth_qdgi",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "period_mn48prth_j6lm",
+          "periodLabel": "2026 H1",
+          "goalId": "goal_mn48prtf_p6nm",
+          "goalTitle": "G1:提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "str_mn48prtg_81nn",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-20T01:32:09.463Z"
         },
         {
           "id": "msr_mnpol6sa_00a_2ba4de71",
@@ -3834,7 +3845,7 @@
       "activities": []
     }
   ],
-  "version": 44,
+  "version": 46,
   "_migratedClearOwners": true,
   "teams": [
     {
@@ -4037,7 +4048,7 @@
     "goal_mn48prth_p16v_h2",
     "goal_mn48prtf_p6nm_h2"
   ],
-  "savedAt": "2026-04-17T08:32:46.360Z",
+  "savedAt": "2026-04-20T01:32:14.104Z",
   "_migratedPhase2": true,
   "_migratedPhase3": true,
   "_migratedRelationalV1": true,

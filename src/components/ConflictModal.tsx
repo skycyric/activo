@@ -17,6 +17,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   goal: "目標",
   strategy: "策略",
   team: "團隊",
+  activity: "活動",
 };
 
 function formatTs(iso?: string): string {
