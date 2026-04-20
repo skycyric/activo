@@ -1,5 +1,32 @@
 # OGSM Power Tool — Activity-First V3+ 完整計劃
 
+## 維護更新（2026-04-20）
+
+### P3 收斂完成（3a/3b/3c）
+
+- ✅ 3a：Activity 相容邏輯集中化（activity-first read + legacy fallback）
+  - 實作：[src/utils/activityCompat.ts](src/utils/activityCompat.ts)
+- ✅ 3b：Workspace migration orchestration 合約化
+  - 實作：[src/utils/storage.ts](src/utils/storage.ts)
+  - 內容：`WORKSPACE_FLAGGED_MIGRATIONS` + `WORKSPACE_ALWAYS_RUN_NORMALIZERS`
+- ✅ 3c：deprecated 欄位分層（parse-only / compat-write 禁止）
+  - 政策常數：[src/schemas/ogsm.ts](src/schemas/ogsm.ts)
+  - 禁止欄位剔除：[src/utils/storage.ts](src/utils/storage.ts)
+
+### P4 文件同步完成
+
+- ✅ README 已補「相容性政策 / 遷移執行合約 / Build 警告狀態」
+- ✅ PLAN 與現行實作對齊，作為後續 sunset 的基準文件
+- ✅ Vite deprecated 警告（inlineDynamicImports）已轉為新寫法 `codeSplitting: false`
+  - 設定：[vite.config.ts](vite.config.ts)
+
+### P5 Release Gate 完成
+
+- ✅ 新增 CI workflow：PR/Push 自動執行 `npm run ci:check`
+  - 檔案：[.github/workflows/ci.yml](.github/workflows/ci.yml)
+- ✅ 新增統一命令：`ci:check = lint + test + build`
+  - 檔案：[package.json](package.json)
+
 ## 目標
 
 以 `dept.activities[]` 為唯一資料來源（「活動總覽」即後端，`data.json` 即資料庫）：

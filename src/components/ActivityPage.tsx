@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import type { WorkspaceData, DeptActivity } from "../schemas/ogsm";
-import ActivityFilters, {
+import ActivityFilters from "./activity/ActivityFilters";
+import {
   type ActivityFilterState,
   EMPTY_ACTIVITY_FILTERS,
-} from "./activity/ActivityFilters";
+} from "./activity/activityFilterState";
 import ActivityTable from "./activity/ActivityTable";
 import ActivityKanban from "./activity/ActivityKanban";
 import ActivityCardGrid from "./activity/ActivityCardGrid";
@@ -12,6 +13,7 @@ import ActivityPlanGantt from "./activity/ActivityPlanGantt";
 import ActivityCalendar from "./activity/ActivityCalendar";
 import ActivityAddModal from "./activity/ActivityAddModal";
 import ActivityDetailPanel from "./ActivityDetailPanel";
+import { hasCanonicalDeptActivities } from "../utils/activityCompat";
 
 export interface ActivityWithContext extends DeptActivity {
   deptId: string;
@@ -86,27 +88,6 @@ export default function ActivityPage({
   const [internalGanttSubView, setInternalGanttSubView] = useState<
     "activity" | "plan"
   >(controlledGanttSubView ?? "activity");
-  const view = controlledView ?? internalView;
-  const ganttSubView = controlledGanttSubView ?? internalGanttSubView;
-
-  const setView = (next: ActivityView) => {
-    if (controlledView === undefined) setInternalView(next);
-    onViewChange?.(next);
-  };
-  const setGanttSubView = (next: "activity" | "plan") => {
-    if (controlledGanttSubView === undefined) setInternalGanttSubView(next);
-    onGanttSubViewChange?.(next);
-  };
-
-  useEffect(() => {
-    if (controlledView !== undefined) setInternalView(controlledView);
-  }, [controlledView]);
-
-  useEffect(() => {
-    if (controlledGanttSubView !== undefined)
-      setInternalGanttSubView(controlledGanttSubView);
-  }, [controlledGanttSubView]);
-
   const [showAddModal, setShowAddModal] = useState(false);
   const [filters, setFilters] = useState<ActivityFilterState>(() => ({
     ...EMPTY_FILTERS,
@@ -123,9 +104,38 @@ export default function ActivityPage({
       }
     })(),
   }));
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(
-    initialSelectedActivityId ?? null,
+  const [localExpandedId, setLocalExpandedId] = useState<string | null>(null);
+  const [localSelectedActivityId, setLocalSelectedActivityId] = useState<
+    string | null
+  >(initialSelectedActivityId ?? null);
+
+  const isViewControlled = controlledView !== undefined;
+  const isGanttSubViewControlled = controlledGanttSubView !== undefined;
+  const isDetailControlled = initialSelectedActivityId !== undefined;
+
+  const view = controlledView ?? internalView;
+  const ganttSubView = controlledGanttSubView ?? internalGanttSubView;
+  const selectedActivityId = isDetailControlled
+    ? (initialSelectedActivityId ?? null)
+    : localSelectedActivityId;
+  const expandedId = isDetailControlled
+    ? (initialSelectedActivityId ?? null)
+    : localExpandedId;
+
+  const setView = useCallback(
+    (next: ActivityView) => {
+      if (!isViewControlled) setInternalView(next);
+      onViewChange?.(next);
+    },
+    [isViewControlled, onViewChange],
+  );
+
+  const setGanttSubView = useCallback(
+    (next: "activity" | "plan") => {
+      if (!isGanttSubViewControlled) setInternalGanttSubView(next);
+      onGanttSubViewChange?.(next);
+    },
+    [isGanttSubViewControlled, onGanttSubViewChange],
   );
 
   const handleOpenActivityDetail = useCallback(
@@ -139,16 +149,6 @@ export default function ActivityPage({
     },
     [ganttSubView, onGanttSubViewChange, onJumpToActivity, onViewChange, view],
   );
-
-  // Sync if external navigation changes the target activity.
-  // Keep table expanded row in sync with right detail panel selection.
-  useEffect(() => {
-    if (initialSelectedActivityId !== undefined) {
-      const nextId = initialSelectedActivityId ?? null;
-      setSelectedActivityId(nextId);
-      setExpandedId(nextId);
-    }
-  }, [initialSelectedActivityId]);
 
   // Persist owner filters to localStorage
   useEffect(() => {
@@ -169,21 +169,30 @@ export default function ActivityPage({
   // Table row selection should open/close panel and keep one expanded row.
   const handleSetExpandedId = useCallback(
     (id: string | null) => {
-      setExpandedId(id);
-      setSelectedActivityId(id);
+      if (!isDetailControlled) {
+        setLocalExpandedId(id);
+        setLocalSelectedActivityId(id);
+      }
       if (id !== null) setView("table");
     },
-    [setView],
+    [isDetailControlled, setView],
   );
 
   // Open activity detail panel (without forcing table view)
-  const handleSelectActivity = useCallback((id: string | null) => {
-    setSelectedActivityId(id);
-    setExpandedId(id); // keep table row highlight in sync
-  }, []);
+  const handleSelectActivity = useCallback(
+    (id: string | null) => {
+      if (!isDetailControlled) {
+        setLocalSelectedActivityId(id);
+        setLocalExpandedId(id); // keep table row highlight in sync
+      }
+    },
+    [isDetailControlled],
+  );
 
-  // Flatten all activities from all depts
-  // Phase 3: 優先讀取 dept.activities[]（activity-first），遷移前 fallback 舊 OGSM 遍歷
+  // Flatten all activities from all depts.
+  // Compatibility contract: prefer canonical dept.activities, and only read
+  // legacy strategy.measures when a department has not been materialized into
+  // the activity-first model yet.
   const allActivities = useMemo<ActivityWithContext[]>(() => {
     const result: ActivityWithContext[] = [];
     for (const dept of workspace.departments) {
@@ -210,9 +219,9 @@ export default function ActivityPage({
         }
       }
 
-      if (dept.activities && dept.activities.length > 0) {
+      if (hasCanonicalDeptActivities(dept)) {
         // ─ Activity-first 路徑（遷移後）────────────────────────────────
-        for (const activity of dept.activities) {
+        for (const activity of dept.activities ?? []) {
           const ogsmLinks = (activity.dashboardLinks ?? []).filter(
             (l) => l.type === "ogsm",
           );
@@ -290,6 +299,9 @@ export default function ActivityPage({
     return result;
   }, [workspace, readOnlyDeptIds, activeDeptId]);
 
+  const departments = workspace.departments;
+  const teams = useMemo(() => workspace.teams ?? [], [workspace.teams]);
+
   // Apply filters
   const filtered = useMemo<ActivityWithContext[]>(() => {
     const deptSet = new Set(filters.deptIds);
@@ -302,7 +314,7 @@ export default function ActivityPage({
     const statusSet = new Set(filters.statuses);
 
     const periodLabelById = new Map<string, string>();
-    for (const dept of workspace.departments) {
+    for (const dept of departments) {
       for (const period of dept.periods) {
         periodLabelById.set(period.id, `${period.year} ${period.halfYear}`);
       }
@@ -312,7 +324,7 @@ export default function ActivityPage({
     const selectedTeamMemberNames =
       teamSet.size > 0
         ? new Set(
-            (workspace.teams ?? [])
+            teams
               .filter((t) => teamSet.has(t.id))
               .flatMap((t) => t.members)
               .map((m) => m.name),
@@ -414,7 +426,7 @@ export default function ActivityPage({
       }
       return true;
     });
-  }, [allActivities, filters, workspace.teams]);
+  }, [allActivities, departments, filters, teams]);
 
   const hasFilter =
     filters.deptIds.length > 0 ||
@@ -555,6 +567,7 @@ export default function ActivityPage({
         {/* Detail panel */}
         {selectedActivity && (
           <ActivityDetailPanel
+            key={selectedActivity.id}
             activity={selectedActivity}
             deptId={selectedActivity.deptId}
             workspace={workspace}

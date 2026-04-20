@@ -1,4 +1,10 @@
-﻿import React, { useState, useCallback, useEffect, useRef } from "react";
+﻿import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
 import type {
   OGSMData,
   Goal,
@@ -555,7 +561,8 @@ function KpiCanvas({
   const toggleCollapse = (gId: string) =>
     setCollapsedGoals((prev) => {
       const next = new Set(prev);
-      next.has(gId) ? next.delete(gId) : next.add(gId);
+      if (next.has(gId)) next.delete(gId);
+      else next.add(gId);
       return next;
     });
   if (draftGoals.length === 0) {
@@ -1392,7 +1399,6 @@ function GoalKpiConfigPanel({
 
 interface NodeTypeManagerProps {
   data: OGSMData;
-  deptActivities: DeptActivity[];
   freeNodes: FreeNode[];
   periods?: PeriodData[];
   activePeriodId?: string;
@@ -1408,7 +1414,6 @@ interface NodeTypeManagerProps {
   selectedNodeId: string | null;
   moduleId: ModuleId;
   onSelectNode: (id: string) => void;
-  onUpdateData: (d: OGSMData) => void;
   onAddGoal: () => void;
   onDeleteGoal: (id: string) => void;
   onCopyGoal: (id: string) => void;
@@ -1423,7 +1428,6 @@ interface NodeTypeManagerProps {
 
 function NodeTypeManager({
   data,
-  deptActivities: _deptActivities,
   freeNodes,
   periods = [],
   activePeriodId,
@@ -1435,7 +1439,6 @@ function NodeTypeManager({
   selectedNodeId,
   moduleId,
   onSelectNode,
-  onUpdateData,
   onAddGoal,
   onDeleteGoal,
   onCopyGoal,
@@ -1864,9 +1867,6 @@ function NodeTypeManager({
           )}
         </>
       )}
-
-      {/* dummy usage to avoid unused-var — onUpdateData used by NodeConfig */}
-      {void onUpdateData}
     </div>
   );
 }
@@ -1907,7 +1907,8 @@ function KpiGoalTree({
   const toggle = (key: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
 
@@ -2967,21 +2968,14 @@ export default function KpiDesigner({
   } | null>(null);
 
   // ── FreeNodes state ────────────────────────────────────────────────────────
-  const [freeNodes, setFreeNodes] = useState<FreeNode[]>(
-    () => data.freeNodes ?? [],
-  );
+  const freeNodes = useMemo(() => data.freeNodes ?? [], [data.freeNodes]);
 
   const commitFreeNodes = useCallback(
     (next: FreeNode[]) => {
-      setFreeNodes(next);
       safeUpdateData({ ...data, freeNodes: next });
     },
     [data, safeUpdateData],
   );
-
-  useEffect(() => {
-    setFreeNodes(data.freeNodes ?? []);
-  }, [data.freeNodes]);
 
   const addFreeNode = useCallback(() => {
     const fn: FreeNode = {
@@ -2990,30 +2984,28 @@ export default function KpiDesigner({
       description: "",
       linkedActivityIds: [],
     };
-    commitFreeNodes([...(data.freeNodes ?? []), fn]);
+    commitFreeNodes([...freeNodes, fn]);
     setSelectedNodeId(`free-${fn.id}`);
-  }, [data.freeNodes, commitFreeNodes]);
+  }, [commitFreeNodes, freeNodes]);
 
   const deleteFreeNode = useCallback(
     (id: string) => {
-      commitFreeNodes((data.freeNodes ?? []).filter((f) => f.id !== id));
+      commitFreeNodes(freeNodes.filter((f) => f.id !== id));
       setSelectedNodeId((prev) => (prev === `free-${id}` ? null : prev));
     },
-    [data.freeNodes, commitFreeNodes],
+    [commitFreeNodes, freeNodes],
   );
 
   const updateFreeNode = useCallback(
     (fn: FreeNode) => {
-      commitFreeNodes(
-        (data.freeNodes ?? []).map((f) => (f.id === fn.id ? fn : f)),
-      );
+      commitFreeNodes(freeNodes.map((f) => (f.id === fn.id ? fn : f)));
     },
-    [data.freeNodes, commitFreeNodes],
+    [commitFreeNodes, freeNodes],
   );
 
   const copyFreeNode = useCallback(
     (id: string) => {
-      const orig = (data.freeNodes ?? []).find((f) => f.id === id);
+      const orig = freeNodes.find((f) => f.id === id);
       if (!orig) return;
       const copy: FreeNode = {
         ...orig,
@@ -3021,9 +3013,9 @@ export default function KpiDesigner({
         name: `${orig.name} (複製)`,
         linkedActivityIds: [],
       };
-      commitFreeNodes([...(data.freeNodes ?? []), copy]);
+      commitFreeNodes([...freeNodes, copy]);
     },
-    [data.freeNodes, commitFreeNodes],
+    [commitFreeNodes, freeNodes],
   );
 
   // ── Goal handlers ──────────────────────────────────────────────────────────
@@ -3076,7 +3068,7 @@ export default function KpiDesigner({
         ),
       });
     },
-    [data, onUpdateData],
+    [data, safeUpdateData],
   );
 
   useEffect(() => {
@@ -3308,7 +3300,6 @@ export default function KpiDesigner({
           ) : (
             <NodeTypeManager
               data={data}
-              deptActivities={deptActivities}
               freeNodes={freeNodes}
               periods={availablePeriods}
               activePeriodId={periodId}
@@ -3320,7 +3311,6 @@ export default function KpiDesigner({
               selectedNodeId={selectedNodeId}
               moduleId={moduleId}
               onSelectNode={setSelectedNodeId}
-              onUpdateData={safeUpdateData}
               onAddGoal={onAddGoal}
               onDeleteGoal={onDeleteGoal}
               onCopyGoal={copyGoal}

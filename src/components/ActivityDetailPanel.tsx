@@ -106,19 +106,6 @@ export default function ActivityDetailPanel({
     planItems: activity.planItems ?? [],
     warnDaysBefore: activity.warnDaysBefore ?? 3,
   }));
-
-  // Sync draft when activity prop changes (e.g. switched to new activity)
-  useEffect(() => {
-    setDraft({
-      ...activity,
-      kpis: activity.kpis ?? [],
-      planItems: activity.planItems ?? [],
-      warnDaysBefore: activity.warnDaysBefore ?? 3,
-    });
-    setStatusManuallyChanged(false);
-    setTab("basic");
-  }, [activity.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const [tab, setTab] = useState<Tab>("basic");
   const [dirty, setDirty] = useState(false);
   const [statusManuallyChanged, setStatusManuallyChanged] = useState(false);
@@ -167,8 +154,27 @@ export default function ActivityDetailPanel({
   );
 
   // ── Draft helpers ──────────────────────────────────────────────────────────
+  const applyAutoAttention = (nextDraft: DeptActivity): DeptActivity => {
+    if (statusManuallyChanged) return nextDraft;
+
+    const nextWarnDays = Math.max(
+      0,
+      Math.round(nextDraft.warnDaysBefore ?? warnDaysBefore ?? 3),
+    );
+    const hasOverdue = (nextDraft.planItems ?? []).some(
+      (item) => getPlanItemWarning(item, nextWarnDays) === "overdue",
+    );
+    if (!hasOverdue) return nextDraft;
+    if (nextDraft.status === "attention") return nextDraft;
+    if (nextDraft.status && nextDraft.status !== "not-started") {
+      return nextDraft;
+    }
+
+    return { ...nextDraft, status: "attention" };
+  };
+
   const patch = (partial: Partial<DeptActivity>) => {
-    setDraft((d) => ({ ...d, ...partial }));
+    setDraft((d) => applyAutoAttention({ ...d, ...partial }));
     setDirty(true);
   };
 
@@ -222,14 +228,6 @@ export default function ActivityDetailPanel({
   const overduePlanItems = planItems.filter(
     (item) => getPlanItemWarning(item, effectiveWarnDays) === "overdue",
   );
-
-  useEffect(() => {
-    if (statusManuallyChanged) return;
-    if (overduePlanItems.length === 0) return;
-    if (draft.status === "attention") return;
-    if (draft.status && draft.status !== "not-started") return;
-    setDraft((prev) => ({ ...prev, status: "attention" }));
-  }, [overduePlanItems.length, statusManuallyChanged, draft.status]);
 
   const patchPlanItem = (
     itemId: string,
@@ -337,6 +335,7 @@ export default function ActivityDetailPanel({
         <div className="adp-body">
           {tab === "basic" && (
             <BasicTab
+              key={`${draft.id}:${initialPeriodId ?? ""}:${initialGoalId ?? ""}:${initialStrategyId ?? ""}`}
               draft={draft}
               workspace={workspace}
               isReadOnly={isReadOnly}
@@ -484,26 +483,6 @@ function BasicTab({
       initialStrategyId ??
       "",
   );
-
-  // 同步外部更改（切換活動時重置新增列預設值）
-  useEffect(() => {
-    const first = (draft.dashboardLinks ?? []).find((l) => l.type === "ogsm");
-    setSelPeriodId(
-      first?.periodId ?? draftAny.periodId ?? initialPeriodId ?? "",
-    );
-    setSelGoalId(first?.goalId ?? draftAny.goalId ?? initialGoalId ?? "");
-    setSelStratId(
-      first?.strategyId ?? draftAny.strategyId ?? initialStrategyId ?? "",
-    );
-  }, [
-    draft.id,
-    draftAny.periodId,
-    draftAny.goalId,
-    draftAny.strategyId,
-    initialPeriodId,
-    initialGoalId,
-    initialStrategyId,
-  ]);
 
   // 目前部門的 periods
   const deptPeriods =

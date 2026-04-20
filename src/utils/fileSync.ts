@@ -15,9 +15,14 @@ function pad2(n: number): string {
 }
 
 function sanitizeFileNamePart(input: string): string {
-  return input
+  const stripped = input
     .trim()
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .split("")
+    .map((ch) => (ch.charCodeAt(0) < 32 ? "" : ch))
+    .join("");
+
+  return stripped
     .replace(/\s+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")

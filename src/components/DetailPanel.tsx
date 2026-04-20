@@ -183,16 +183,24 @@ export default function DetailPanel({
 
   useEffect(() => saveWidth(panelWidth), [panelWidth]);
 
-  useEffect(() => {
-    setActiveWarnFilter(initialWarnFilter ?? null);
-  }, [initialWarnFilter, strategy.id]);
-
   useEffect(
     () => () => {
       dragCtrlRef.current?.abort();
     },
     [],
   );
+
+  // Derived state: sync warn filter from prop; reset when strategy changes.
+  // Using render-phase setState (React "getDerivedStateFromProps" pattern) to
+  // avoid a cascading setState-in-effect render cycle.
+  const [warnFilterSyncKey, setWarnFilterSyncKey] = useState(
+    `${strategy.id}:${initialWarnFilter ?? ""}`,
+  );
+  const currentWarnFilterSyncKey = `${strategy.id}:${initialWarnFilter ?? ""}`;
+  if (warnFilterSyncKey !== currentWarnFilterSyncKey) {
+    setWarnFilterSyncKey(currentWarnFilterSyncKey);
+    setActiveWarnFilter(initialWarnFilter ?? null);
+  }
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -236,12 +244,16 @@ export default function DetailPanel({
     [onExpandedActivityChange],
   );
 
-  useEffect(() => {
-    // Controlled mode keeps expansion from URL/history; only reset in local mode.
-    if (expandedActivityId !== undefined) return;
-    if (!strategy) return;
-    setExpandedActivity(null);
-  }, [expandedActivityId, strategy.id, setExpandedActivity]);
+  // Derived state: reset expansion when strategy changes (uncontrolled mode only).
+  const [prevStrategyId, setPrevStrategyId] = useState<string | undefined>(
+    strategy?.id,
+  );
+  if (prevStrategyId !== strategy?.id) {
+    setPrevStrategyId(strategy?.id);
+    if (expandedActivityId === undefined) {
+      setInternalExpandedActivityId(null);
+    }
+  }
 
   const trackedActivities = useMemo<TrackedActivity[]>(() => {
     if (linkedDeptActivities?.length) {
@@ -451,13 +463,13 @@ export default function DetailPanel({
       block: "start",
     });
     if (!targetActivity) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpandedActivity(targetActivity.id);
     // filteredActivities and setExpandedActivity are intentionally the only
     // reactive deps; effectiveExpandedActivityId must NOT be included here —
     // adding it would cause the effect to fire on every manual expansion and
     // force the view back to the first filtered activity, preventing the user
     // from opening any other card while a filter is active.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWarnFilter, filteredActivities, setExpandedActivity]);
 
   return (

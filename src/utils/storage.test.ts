@@ -23,6 +23,10 @@ import type {
   ActivityDashboardLink,
   OGSMData,
 } from "../schemas/ogsm";
+import {
+  DEPRECATED_COMPAT_WRITE_FORBIDDEN_FIELDS,
+  DEPRECATED_PARSE_ONLY_FIELDS,
+} from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
 
@@ -267,6 +271,86 @@ describe("migrateOwnerToOwners", () => {
 // ─── normalizeWorkspaceData（透過 loadWorkspace 驗證）────────────────────────
 
 describe("normalizeWorkspaceData（透過存取 cycle）", () => {
+  test("deprecated 欄位政策分層：parse-only 與 compat-write 禁止", () => {
+    expect(DEPRECATED_PARSE_ONLY_FIELDS).toEqual(
+      expect.arrayContaining([
+        "KPI.label",
+        "KPI.kpiType",
+        "KPI.baseValue",
+        "KPI.currentValue",
+      ]),
+    );
+    expect(DEPRECATED_COMPAT_WRITE_FORBIDDEN_FIELDS).toEqual(
+      expect.arrayContaining([
+        "Strategy.owner",
+        "DeptActivity.ogsmLink",
+        "DeptActivity.excludeFromOgsm",
+        "DeptActivity.actionPlans",
+      ]),
+    );
+  });
+
+  test("_migratedV3=true 時仍會剔除 compat-write 禁止欄位（ogsmLink/exclude/actionPlans）", () => {
+    const rawWs = makeWorkspace({
+      _migratedPhase2: true,
+      _migratedPhase3: true,
+      _migratedActivityFirst: true,
+      _migratedV3: true,
+      _migratedFrameworksV1: true,
+      _migratedTimelineV1: true,
+      _migratedRelationalV1: true,
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [],
+          activities: [
+            {
+              id: "act-legacy",
+              rawText: "舊活動",
+              status: "not-started",
+              kpis: [
+                {
+                  id: "k1",
+                  label: "舊 KPI",
+                  target: 100,
+                  actual: 80,
+                  unit: "%",
+                  achievementRate: 80,
+                  kpiType: "value",
+                },
+              ],
+              ogsmLink: {
+                periodId: "p1",
+                goalId: "g1",
+                strategyId: "s1",
+              },
+              excludeFromOgsm: true,
+              actionPlans: [
+                {
+                  id: "ap1",
+                  quarter: "Q1",
+                  title: "legacy",
+                  items: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    localStorage.setItem("ogsm_workspace_v1", JSON.stringify(rawWs));
+    const loaded = loadWorkspace();
+    const activity = loaded!.departments[0].activities![0];
+
+    expect(activity.ogsmLink).toBeUndefined();
+    expect(activity.excludeFromOgsm).toBeUndefined();
+    expect(activity.actionPlans).toBeUndefined();
+    // parse-only 欄位可讀，正規化不主動移除
+    expect(activity.kpis[0].kpiType).toBe("value");
+  });
+
   test("未設 _migratedPhase3 時 owner→owners 會在 load 時自動遷移", () => {
     // 直接放舊格式進 localStorage（不經過 saveWorkspace）
     const rawWs = makeWorkspace({
@@ -400,6 +484,59 @@ describe("normalizeWorkspaceData（透過存取 cycle）", () => {
     expect(links).toEqual([
       { activityId: "act-1", kpiId: "k1" },
       { activityId: "act-2", kpiId: "k2" },
+    ]);
+  });
+
+  test("_migratedRelationalV1=true 時仍會維持 activityLinks 與 dashboardLinks 同步", () => {
+    const rawWs = makeWorkspace({
+      _migratedPhase2: true,
+      _migratedPhase3: true,
+      _migratedActivityFirst: true,
+      _migratedV3: true,
+      _migratedFrameworksV1: true,
+      _migratedTimelineV1: true,
+      _migratedRelationalV1: true,
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [],
+          activities: [
+            {
+              id: "act-1",
+              rawText: "活動 1",
+              status: "not-started",
+              kpis: [],
+              dashboardLinks: undefined,
+            },
+          ],
+          activityLinks: [
+            {
+              id: "dlink-1",
+              type: "ogsm",
+              activityId: "act-1",
+              periodId: "p1",
+              goalId: "g1",
+              strategyId: "s1",
+              exclude: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    localStorage.setItem("ogsm_workspace_v1", JSON.stringify(rawWs));
+    const loaded = loadWorkspace();
+    expect(loaded!.departments[0].activityLinks).toHaveLength(1);
+    expect(loaded!.departments[0].activities?.[0].dashboardLinks).toEqual([
+      {
+        id: "dlink-1",
+        type: "ogsm",
+        periodId: "p1",
+        goalId: "g1",
+        strategyId: "s1",
+        exclude: false,
+      },
     ]);
   });
 });

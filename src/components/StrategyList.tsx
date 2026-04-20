@@ -243,6 +243,19 @@ export default function StrategyList({
     null,
   );
 
+  const previewGoals = useMemo(
+    () => (goal ? (allGoals.length > 0 ? allGoals : [goal]) : []),
+    [allGoals, goal],
+  );
+  const goalKpiPreviews = useMemo(() => {
+    if (!goal) return [];
+    const goalKpis = goal.goalKpis ?? [];
+    return goalKpis.map((gk) => ({
+      gk,
+      result: computeGoalKpiResult(gk, goal, deptActivities, previewGoals),
+    }));
+  }, [goal, deptActivities, previewGoals]);
+
   if (!goal) {
     return (
       <div className="strategy-list strategy-list-empty">
@@ -254,17 +267,6 @@ export default function StrategyList({
       </div>
     );
   }
-
-  const goalKpis = goal.goalKpis ?? [];
-  const previewGoals = allGoals.length > 0 ? allGoals : [goal];
-  const goalKpiPreviews = useMemo(
-    () =>
-      goalKpis.map((gk) => ({
-        gk,
-        result: computeGoalKpiResult(gk, goal, deptActivities, previewGoals),
-      })),
-    [goalKpis, goal, deptActivities, previewGoals],
-  );
 
   const renderScorecardCard = (gk: GoalKPI) => {
     const {

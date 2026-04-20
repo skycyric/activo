@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "ci:check": "npm run lint && npm run test && npm run build",
     "preview": "vite preview",
     "check:data-links": "node scripts/validate-data-links.mjs",
     "test": "vitest run",

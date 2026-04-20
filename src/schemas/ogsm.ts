@@ -9,6 +9,26 @@
  */
 import { z } from "zod";
 
+/**
+ * Deprecated 欄位政策：
+ * - parse-only：允許讀取舊檔，正規化後可暫時保留原值供相容邏輯參考
+ * - compat-write-forbidden：允許解析舊檔，但 canonical writer 不得寫回
+ */
+export const DEPRECATED_PARSE_ONLY_FIELDS = [
+  "KPI.label",
+  "KPI.kpiType",
+  "KPI.baseValue",
+  "KPI.currentValue",
+  "OgsmLink",
+] as const;
+
+export const DEPRECATED_COMPAT_WRITE_FORBIDDEN_FIELDS = [
+  "Strategy.owner",
+  "DeptActivity.ogsmLink",
+  "DeptActivity.excludeFromOgsm",
+  "DeptActivity.actionPlans",
+] as const;
+
 // ── Primitives ───────────────────────────────────────────────────────────────
 
 /** ISO 日期字串，格式 YYYY-MM-DD */

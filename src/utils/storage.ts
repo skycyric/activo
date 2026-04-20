@@ -656,7 +656,16 @@ export function syncRelationalLinksV1(ws: WorkspaceData): boolean {
     for (const activity of activities) {
       const relForActivity = mergedLinks
         .filter((l) => l.activityId === activity.id)
-        .map(({ activityId: _activityId, ...link }): DashboardLink => link);
+        .map(
+          (link): DashboardLink => ({
+            id: link.id,
+            type: link.type,
+            periodId: link.periodId,
+            goalId: link.goalId,
+            strategyId: link.strategyId,
+            exclude: link.exclude,
+          }),
+        );
       const nextDashboardLinks =
         relForActivity.length > 0 ? sortById(relForActivity) : undefined;
       const prevDashboardLinks = activity.dashboardLinks
@@ -675,66 +684,49 @@ export function syncRelationalLinksV1(ws: WorkspaceData): boolean {
   return changed;
 }
 
-export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
-  let changed = false;
-  // One-time heavy migrations — gated by _migratedPhase2 so they run only once
-  if (!ws._migratedPhase2) {
-    if (migrateSyncDuplicates(ws)) changed = true;
-    if (migratePlanItemDateFields(ws)) changed = true;
-    for (const dept of ws.departments) {
-      for (const period of dept.periods) {
-        for (const goal of period.ogsm.goals) {
-          for (const strategy of goal.strategies) {
-            if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
-          }
-        }
-      }
-    }
-    if (migrateActionPlansFromQText(ws)) changed = true;
-    ws._migratedPhase2 = true;
-    changed = true;
-  }
-  if (!ws._migratedPhase3) {
-    if (migrateOwnerToOwners(ws)) changed = true;
-    ws._migratedPhase3 = true;
-    changed = true;
-  }
-  if (!ws._migratedActivityFirst) {
-    if (migrateToActivityFirst(ws)) changed = true;
-    ws._migratedActivityFirst = true;
-    changed = true;
-  }
-  if (!ws._migratedV3) {
-    if (migrateToV3(ws)) changed = true;
-    ws._migratedV3 = true;
-    changed = true;
-  }
-  if (!ws._migratedFrameworksV1) {
-    if (migrateFrameworksV1(ws)) changed = true;
-    ws._migratedFrameworksV1 = true;
-    changed = true;
-  }
-  if (!ws._migratedTimelineV1) {
-    if (migrateTimelineV1(ws)) changed = true;
-    ws._migratedTimelineV1 = true;
-    changed = true;
-  }
-  if (!ws._migratedRelationalV1) {
-    ws._migratedRelationalV1 = true;
-    changed = true;
-  }
-  if (syncRelationalLinksV1(ws)) changed = true;
+type WorkspaceMigrationFlag =
+  | "_migratedPhase2"
+  | "_migratedPhase3"
+  | "_migratedActivityFirst"
+  | "_migratedV3"
+  | "_migratedFrameworksV1"
+  | "_migratedTimelineV1"
+  | "_migratedRelationalV1";
 
-  // Always-run invariant: ensure owners is always an array regardless of migration state.
-  // Guards against externally-modified or imported files where owners may be missing.
+type WorkspaceFlaggedMigration = {
+  flag: WorkspaceMigrationFlag;
+  description: string;
+  sunset: string;
+  run: (ws: WorkspaceData) => boolean;
+};
+
+type WorkspaceAlwaysRunNormalizer = {
+  description: string;
+  run: (ws: WorkspaceData) => boolean;
+};
+
+function runPhase2Migrations(ws: WorkspaceData): boolean {
+  let changed = false;
+  if (migrateSyncDuplicates(ws)) changed = true;
+  if (migratePlanItemDateFields(ws)) changed = true;
   for (const dept of ws.departments) {
     for (const period of dept.periods) {
       for (const goal of period.ogsm.goals) {
-        if (
-          normalizeGoalKpiLinks(goal as unknown as { goalKpis?: unknown[] })
-        ) {
-          changed = true;
+        for (const strategy of goal.strategies) {
+          if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
         }
+      }
+    }
+  }
+  if (migrateActionPlansFromQText(ws)) changed = true;
+  return changed;
+}
+
+function normalizeWorkspaceOwnerArraysInvariant(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
         for (const strategy of goal.strategies) {
           if (!Array.isArray(strategy.owners)) {
             strategy.owners = [];
@@ -744,6 +736,155 @@ export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
       }
     }
   }
+  return changed;
+}
+
+function normalizeWorkspaceGoalKpiLinksInvariant(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        if (
+          normalizeGoalKpiLinks(goal as unknown as { goalKpis?: unknown[] })
+        ) {
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+function stripCompatWriteForbiddenDeprecatedFields(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      if (activity.ogsmLink !== undefined) {
+        activity.ogsmLink = undefined;
+        changed = true;
+      }
+      if (activity.excludeFromOgsm !== undefined) {
+        activity.excludeFromOgsm = undefined;
+        changed = true;
+      }
+      if (activity.actionPlans !== undefined) {
+        activity.actionPlans = undefined;
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+function applyWorkspaceFlaggedMigration(
+  ws: WorkspaceData,
+  migration: WorkspaceFlaggedMigration,
+): boolean {
+  if (ws[migration.flag]) return false;
+
+  migration.run(ws);
+  ws[migration.flag] = true;
+  return true;
+}
+
+export const WORKSPACE_FLAGGED_MIGRATIONS: readonly WorkspaceFlaggedMigration[] =
+  [
+    {
+      flag: "_migratedPhase2",
+      description:
+        "Legacy plan-item/date/action-plan cleanup before modern models.",
+      sunset:
+        "Remove after all persisted workspaces are guaranteed to be post-Phase2.",
+      run: runPhase2Migrations,
+    },
+    {
+      flag: "_migratedPhase3",
+      description:
+        "Owner field migration from deprecated owner to canonical owners[]",
+      sunset:
+        "Remove after deprecated strategy.owner is no longer load-compatible.",
+      run: migrateOwnerToOwners,
+    },
+    {
+      flag: "_migratedActivityFirst",
+      description:
+        "Promote strategy.measures into canonical dept.activities records.",
+      sunset:
+        "Remove after activity-first is the only supported persisted activity shape.",
+      run: migrateToActivityFirst,
+    },
+    {
+      flag: "_migratedV3",
+      description:
+        "Upgrade OGSM links and plan structures to dashboardLinks + planItems.",
+      sunset:
+        "Remove after legacy ogsmLink/excludeFromOgsm/actionPlans are unsupported.",
+      run: migrateToV3,
+    },
+    {
+      flag: "_migratedFrameworksV1",
+      description: "Backfill frameworks for activity-first records.",
+      sunset:
+        "Remove after frameworks are always materialized by writers/importers.",
+      run: migrateFrameworksV1,
+    },
+    {
+      flag: "_migratedTimelineV1",
+      description: "Backfill timeline and OGSM link ordering metadata.",
+      sunset:
+        "Remove after timeline defaults are guaranteed in all persisted workspaces.",
+      run: migrateTimelineV1,
+    },
+    {
+      flag: "_migratedRelationalV1",
+      description:
+        "Record that relational activityLinks compatibility has been initialized.",
+      sunset:
+        "Remove only after activityLinks becomes canonical and dashboardLinks compatibility is retired.",
+      run: () => false,
+    },
+  ] as const;
+
+const WORKSPACE_ALWAYS_RUN_NORMALIZERS: readonly WorkspaceAlwaysRunNormalizer[] =
+  [
+    {
+      description:
+        "Enforce compat-write forbidden policy for deprecated legacy fields.",
+      run: stripCompatWriteForbiddenDeprecatedFields,
+    },
+    {
+      description:
+        "RelationalV1 compatibility sync between dept.activityLinks and activity.dashboardLinks.",
+      run: syncRelationalLinksV1,
+    },
+    {
+      description:
+        "GoalKPI link invariant repair for imported or externally edited files.",
+      run: normalizeWorkspaceGoalKpiLinksInvariant,
+    },
+    {
+      description:
+        "owners[] invariant repair for imported or externally edited files.",
+      run: normalizeWorkspaceOwnerArraysInvariant,
+    },
+  ] as const;
+
+export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+  let changed = false;
+
+  for (const migration of WORKSPACE_FLAGGED_MIGRATIONS) {
+    if (applyWorkspaceFlaggedMigration(ws, migration)) {
+      changed = true;
+    }
+  }
+
+  for (const normalizer of WORKSPACE_ALWAYS_RUN_NORMALIZERS) {
+    if (normalizer.run(ws)) {
+      changed = true;
+    }
+  }
+
   return changed;
 }
 

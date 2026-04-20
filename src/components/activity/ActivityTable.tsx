@@ -233,8 +233,6 @@ export default function ActivityTable({
     const stopResize = () => {
       if (!resizeStateRef.current) return;
       resizeStateRef.current = null;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -352,8 +350,6 @@ export default function ActivityTable({
       startX: event.clientX,
       startWidth: columnWidths[columnId],
     };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
   };
 
   const toggleColumnVisibility = (columnId: ColumnId) => {

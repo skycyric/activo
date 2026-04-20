@@ -21,6 +21,7 @@ import {
   normalizeWorkspaceData,
   validateOrWarn,
 } from "./utils/storage";
+import { getDeptActivitiesForPeriodRead } from "./utils/activityCompat";
 import { WorkspaceDataSchema } from "./schemas/ogsm";
 import {
   isFileSystemAccessSupported,
@@ -480,7 +481,6 @@ export default function App() {
         setActivePeriodId(firstDept.periods[0]?.id ?? "");
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -738,7 +738,6 @@ export default function App() {
     };
     const timer = setInterval(poll, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fsSupported, isMultiFileMode, conflictDeptId]);
 
   // ─── Multi-file mode handlers ─────────────────────────────────────────
@@ -788,132 +787,125 @@ export default function App() {
   );
 
   /** Save a single dept file in multi-file mode (with OneDrive-safe conflict detection). */
-  const saveDeptFile = useCallback(
-    async (deptId: string) => {
-      const entry = deptFilesRef.current.find(
+  const saveDeptFile = useCallback(async (deptId: string) => {
+    const entry = deptFilesRef.current.find(
+      (f) => f.workspace.departments[0]?.id === deptId,
+    );
+    if (!entry || entry.isReadOnly || !entry.isDirty) {
+      return "skipped" as SaveDeptResult;
+    }
+
+    // Mark saving
+    setDeptFiles((prev) =>
+      prev.map((f) =>
+        f.workspace.departments[0]?.id === deptId
+          ? { ...f, syncStatus: "saving" as SyncStatus }
+          : f,
+      ),
+    );
+
+    try {
+      // ── 第一次讀磁碟 ─────────────────────────────────────────────
+      const firstMeta = await readDataFileMeta(entry.handle);
+      const diskText = await readDataFile(entry.handle);
+      let onDisk: WorkspaceData = JSON.parse(diskText);
+      normalizeWorkspaceData(onDisk);
+      validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
+
+      // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
+      await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+
+      // ── 重新取最新本地狀態（避免等待期間的編輯遺失）──────────────
+      const freshEntry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
-      if (!entry || entry.isReadOnly || !entry.isDirty) {
-        return "skipped" as SaveDeptResult;
+      if (!freshEntry) return;
+
+      // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
+      const secondMeta = await readDataFileMeta(freshEntry.handle);
+      const diskWasModified = secondMeta !== firstMeta;
+      if (diskWasModified) {
+        const freshText = await readDataFile(freshEntry.handle);
+        onDisk = JSON.parse(freshText);
+        normalizeWorkspaceData(onDisk);
+        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
       }
 
-      // Mark saving
+      // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
+      // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
+      // 版號相同但內容不同），兩個條件任一成立都進行衝突偵測。
+      const loadedVer = freshEntry.version ?? -1;
+      let toWrite = freshEntry.workspace;
+      const versionDiffers =
+        onDisk.version !== undefined && onDisk.version !== loadedVer;
+
+      if (versionDiffers || diskWasModified) {
+        const conflicts = detectConflicts(freshEntry.workspace, onDisk);
+        if (conflicts.length > 0) {
+          // 暫停存檔，開衝突 modal
+          conflictDeptDiskWsRef.current = onDisk;
+          setConflictDeptId(deptId);
+          setConflictDeptEntries(conflicts);
+          setConflictDeptResolutions({});
+          setDeptFiles((prev) =>
+            prev.map((f) =>
+              f.workspace.departments[0]?.id === deptId
+                ? { ...f, syncStatus: "pending" as SyncStatus }
+                : f,
+            ),
+          );
+          return "conflict" as SaveDeptResult;
+        }
+        // 無衝突：自動合併並繼續
+        const { workspace: merged, autoMerged } = mergeWorkspaces(
+          freshEntry.workspace,
+          onDisk,
+        );
+        toWrite = merged;
+        if (autoMerged > 0) {
+          setDeptMergeToast(
+            `[${freshEntry.subfolderName}] 已自動合併 ${autoMerged} 項遠端新增/刪除`,
+          );
+          setTimeout(() => setDeptMergeToast(""), 4000);
+        }
+      }
+
+      // ── 寫入 ────────────────────────────────────────────────────
+      const payload: WorkspaceData = {
+        ...toWrite,
+        version: (freshEntry.version ?? 1) + 1,
+        savedAt: new Date().toISOString(),
+      };
+      await writeDataFile(freshEntry.handle, JSON.stringify(payload, null, 2));
+      const lm = await readDataFileMeta(freshEntry.handle);
+
       setDeptFiles((prev) =>
         prev.map((f) =>
           f.workspace.departments[0]?.id === deptId
-            ? { ...f, syncStatus: "saving" as SyncStatus }
+            ? {
+                ...f,
+                workspace: payload,
+                isDirty: false,
+                syncStatus: "saved" as SyncStatus,
+                version: payload.version ?? null,
+                lastModified: lm,
+                hasRemoteUpdate: false,
+              }
             : f,
         ),
       );
-
-      try {
-        // ── 第一次讀磁碟 ─────────────────────────────────────────────
-        const firstMeta = await readDataFileMeta(entry.handle);
-        const diskText = await readDataFile(entry.handle);
-        let onDisk: WorkspaceData = JSON.parse(diskText);
-        normalizeWorkspaceData(onDisk);
-        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
-
-        // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
-        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-
-        // ── 重新取最新本地狀態（避免等待期間的編輯遺失）──────────────
-        const freshEntry = deptFilesRef.current.find(
-          (f) => f.workspace.departments[0]?.id === deptId,
-        );
-        if (!freshEntry) return;
-
-        // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
-        const secondMeta = await readDataFileMeta(freshEntry.handle);
-        const diskWasModified = secondMeta !== firstMeta;
-        if (diskWasModified) {
-          const freshText = await readDataFile(freshEntry.handle);
-          onDisk = JSON.parse(freshText);
-          normalizeWorkspaceData(onDisk);
-          validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
-        }
-
-        // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
-        // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
-        // 版號相同但內容不同），兩個條件任一成立都進行衝突偵測。
-        const loadedVer = freshEntry.version ?? -1;
-        let toWrite = freshEntry.workspace;
-        const versionDiffers =
-          onDisk.version !== undefined && onDisk.version !== loadedVer;
-
-        if (versionDiffers || diskWasModified) {
-          const conflicts = detectConflicts(freshEntry.workspace, onDisk);
-          if (conflicts.length > 0) {
-            // 暫停存檔，開衝突 modal
-            conflictDeptDiskWsRef.current = onDisk;
-            setConflictDeptId(deptId);
-            setConflictDeptEntries(conflicts);
-            setConflictDeptResolutions({});
-            setDeptFiles((prev) =>
-              prev.map((f) =>
-                f.workspace.departments[0]?.id === deptId
-                  ? { ...f, syncStatus: "pending" as SyncStatus }
-                  : f,
-              ),
-            );
-            return "conflict" as SaveDeptResult;
-          }
-          // 無衝突：自動合併並繼續
-          const { workspace: merged, autoMerged } = mergeWorkspaces(
-            freshEntry.workspace,
-            onDisk,
-          );
-          toWrite = merged;
-          if (autoMerged > 0) {
-            setDeptMergeToast(
-              `[${freshEntry.subfolderName}] 已自動合併 ${autoMerged} 項遠端新增/刪除`,
-            );
-            setTimeout(() => setDeptMergeToast(""), 4000);
-          }
-        }
-
-        // ── 寫入 ────────────────────────────────────────────────────
-        const payload: WorkspaceData = {
-          ...toWrite,
-          version: (freshEntry.version ?? 1) + 1,
-          savedAt: new Date().toISOString(),
-        };
-        await writeDataFile(
-          freshEntry.handle,
-          JSON.stringify(payload, null, 2),
-        );
-        const lm = await readDataFileMeta(freshEntry.handle);
-
-        setDeptFiles((prev) =>
-          prev.map((f) =>
-            f.workspace.departments[0]?.id === deptId
-              ? {
-                  ...f,
-                  workspace: payload,
-                  isDirty: false,
-                  syncStatus: "saved" as SyncStatus,
-                  version: payload.version ?? null,
-                  lastModified: lm,
-                  hasRemoteUpdate: false,
-                }
-              : f,
-          ),
-        );
-        return "saved" as SaveDeptResult;
-      } catch {
-        setDeptFiles((prev) =>
-          prev.map((f) =>
-            f.workspace.departments[0]?.id === deptId
-              ? { ...f, syncStatus: "error" as SyncStatus }
-              : f,
-          ),
-        );
-        return "error" as SaveDeptResult;
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+      return "saved" as SaveDeptResult;
+    } catch {
+      setDeptFiles((prev) =>
+        prev.map((f) =>
+          f.workspace.departments[0]?.id === deptId
+            ? { ...f, syncStatus: "error" as SyncStatus }
+            : f,
+        ),
+      );
+      return "error" as SaveDeptResult;
+    }
+  }, []);
 
   // ─── Multi-file conflict resolution handlers ──────────────────────────
 
@@ -1332,15 +1324,19 @@ export default function App() {
 
   // Derive active dept/period with fallback
   // In multi-file mode, the effective workspace is the union of all dept workspaces.
-  const effectiveWorkspace: WorkspaceData = isMultiFileMode
-    ? {
-        ...deptFiles[0]!.workspace,
-        departments: deptFiles
-          .map((f) => f.workspace.departments[0]!)
-          .filter(Boolean),
-        teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
-      }
-    : workspace;
+  const effectiveWorkspace = useMemo<WorkspaceData>(
+    () =>
+      isMultiFileMode
+        ? {
+            ...deptFiles[0]!.workspace,
+            departments: deptFiles
+              .map((f) => f.workspace.departments[0]!)
+              .filter(Boolean),
+            teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
+          }
+        : workspace,
+    [isMultiFileMode, deptFiles, workspace],
+  );
 
   const handleBackup = useCallback(async () => {
     // Fallback: no multi-file root linked -> keep existing download behavior.
@@ -1424,23 +1420,24 @@ export default function App() {
   const activePeriod =
     activeDept?.periods.find((p) => p.id === activePeriodId) ??
     activeDept?.periods[0];
-  const data: OGSMData = activePeriod?.ogsm ?? {
-    objectives: { orgO: "", deptO: "" },
-    goals: [],
-    period: `${new Date().getFullYear()} H1`,
-    importedAt: new Date().toISOString(),
-    overallRate: 0,
-  };
+  const data = useMemo<OGSMData>(
+    () =>
+      activePeriod?.ogsm ?? {
+        objectives: { orgO: "", deptO: "" },
+        goals: [],
+        period: `${new Date().getFullYear()} H1`,
+        importedAt: new Date().toISOString(),
+        overallRate: 0,
+      },
+    [activePeriod],
+  );
 
-  // V3 活動清單：優先使用 dept.activities；若尚未遷移則從 strategy.measures 取得 fallback
+  // Compatibility contract: read old strategy.measures only when canonical
+  // dept.activities has not been materialized yet. All writes still go to
+  // dept.activities, so the legacy path remains read-only and removable.
   const effectiveDeptActivities = useMemo((): DeptActivity[] => {
-    const deptActs = activeDept?.activities ?? [];
-    if (deptActs.length > 0) return deptActs;
-    // Migration fallback: use measures from strategies as DeptActivity
-    return data.goals.flatMap((g) =>
-      g.strategies.flatMap((s) => s.measures as unknown as DeptActivity[]),
-    );
-  }, [activeDept, data.goals]);
+    return getDeptActivitiesForPeriodRead(activeDept, data).activities;
+  }, [activeDept, data]);
 
   const updateWorkspace = useCallback(
     (next: WorkspaceData) => {

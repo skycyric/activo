@@ -11,8 +11,11 @@ export default defineConfig({
     tailwindcss(),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
-    viteSingleFile(),
+    // v2.3.2 still writes deprecated inlineDynamicImports in its recommended config,
+    // so we opt out and provide equivalent modern build config ourselves.
+    viteSingleFile({ useRecommendedBuildConfig: false }),
   ],
+  base: "./",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -21,5 +24,12 @@ export default defineConfig({
   build: {
     cssCodeSplit: false,
     assetsInlineLimit: 100_000_000,
+    assetsDir: "",
+    chunkSizeWarningLimit: 100_000_000,
+    rollupOptions: {
+      output: {
+        codeSplitting: false,
+      },
+    },
   },
 });
