@@ -938,7 +938,12 @@ describe("detectConflicts — Activity 衝突", () => {
     );
     const remote = makeWorkspace(
       [],
-      [makeActivity({ status: "done", updatedAt: "2026-01-02T00:00:00.000Z" })],
+      [
+        makeActivity({
+          status: "completed",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ],
     );
     const result = detectConflicts(local, remote);
     expect(result).toHaveLength(1);
