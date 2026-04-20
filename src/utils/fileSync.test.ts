@@ -1,9 +1,20 @@
-import { describe, test, expect } from "vitest";
+import { afterEach, describe, test, expect } from "vitest";
 import {
   makeBackupTimestamp,
   makeWorkspaceBackupFileName,
   makeDeptBackupFileName,
+  isFileSystemAccessSupported,
 } from "./fileSync";
+
+const originalWindow = (globalThis as { window?: unknown }).window;
+
+afterEach(() => {
+  if (originalWindow === undefined) {
+    delete (globalThis as { window?: unknown }).window;
+    return;
+  }
+  (globalThis as { window?: unknown }).window = originalWindow;
+});
 
 // ─── makeBackupTimestamp ──────────────────────────────────────────────────────
 
@@ -53,5 +64,24 @@ describe("makeDeptBackupFileName", () => {
       .replace(/^dept_/, "")
       .replace(/_2026-01-01_000000_v1\.json$/, "");
     expect(safe.length).toBeLessThanOrEqual(80);
+  });
+});
+
+// ─── isFileSystemAccessSupported ─────────────────────────────────────────────
+
+describe("isFileSystemAccessSupported", () => {
+  test("window 不存在或沒有 showDirectoryPicker 時回傳 false", () => {
+    delete (globalThis as { window?: unknown }).window;
+    expect(isFileSystemAccessSupported()).toBe(false);
+
+    (globalThis as { window?: unknown }).window = {};
+    expect(isFileSystemAccessSupported()).toBe(false);
+  });
+
+  test("window 存在且包含 showDirectoryPicker 時回傳 true", () => {
+    (globalThis as { window?: unknown }).window = {
+      showDirectoryPicker: () => Promise.resolve(null),
+    };
+    expect(isFileSystemAccessSupported()).toBe(true);
   });
 });
