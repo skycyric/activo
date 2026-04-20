@@ -451,14 +451,14 @@ export default function DetailPanel({
       block: "start",
     });
     if (!targetActivity) return;
-    if (effectiveExpandedActivityId === targetActivity.id) return;
     setExpandedActivity(targetActivity.id);
-  }, [
-    activeWarnFilter,
-    filteredActivities,
-    effectiveExpandedActivityId,
-    setExpandedActivity,
-  ]);
+    // filteredActivities and setExpandedActivity are intentionally the only
+    // reactive deps; effectiveExpandedActivityId must NOT be included here —
+    // adding it would cause the effect to fire on every manual expansion and
+    // force the view back to the first filtered activity, preventing the user
+    // from opening any other card while a filter is active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWarnFilter, filteredActivities, setExpandedActivity]);
 
   return (
     <aside

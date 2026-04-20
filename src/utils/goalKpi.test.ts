@@ -677,3 +677,33 @@ describe("recomputeActivityKpis", () => {
     expect(recomputeActivityKpis([])).toHaveLength(0);
   });
 });
+
+// ─── getKpiDisplayName ────────────────────────────────────────────────────────
+
+import { getKpiDisplayName } from "./kpiCalc";
+
+describe("getKpiDisplayName", () => {
+  test("name 有值 → 回傳 name（優先）", () => {
+    expect(
+      getKpiDisplayName({ ...makeKpi(), name: "銷售額", label: "舊標籤" }),
+    ).toBe("銷售額");
+  });
+
+  test("name 為空、label 有值 → fallback 回傳 label", () => {
+    expect(
+      getKpiDisplayName({ ...makeKpi(), name: "", label: "目標達成率" }),
+    ).toBe("目標達成率");
+  });
+
+  test("name 與 label 都為空 → 回傳 'KPI'", () => {
+    expect(getKpiDisplayName({ ...makeKpi(), name: "", label: "" })).toBe(
+      "KPI",
+    );
+  });
+
+  test("name 為空白字元 → 視為空，fallback 到 label", () => {
+    expect(
+      getKpiDisplayName({ ...makeKpi(), name: "   ", label: "有效標籤" }),
+    ).toBe("有效標籤");
+  });
+});

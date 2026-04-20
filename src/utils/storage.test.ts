@@ -1,9 +1,15 @@
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import {
   saveWorkspace,
   loadWorkspace,
+  loadLegacyData,
   migrateOwnerToOwners,
   migrateToActivityFirst,
+  migrateToV3,
+  migrateFrameworksV1,
+  migrateTimelineV1,
+  validateOrWarn,
+  syncRelationalLinksV1,
   parseAndValidateJSON,
   normalizeOneStrategy,
   wrapOGSMInWorkspace,
@@ -13,6 +19,8 @@ import type {
   Strategy,
   Goal,
   Measure,
+  DeptActivity,
+  ActivityDashboardLink,
   OGSMData,
 } from "../schemas/ogsm";
 
@@ -1125,5 +1133,536 @@ describe("wrapOGSMInWorkspace", () => {
     expect(ws.departments[0].periods[0].ogsm.objectives.orgO).toBe(
       "測試公司目標",
     );
+  });
+});
+
+// ─── 遷移測試用輔助工廠 ──────────────────────────────────────────────────────
+
+function makeDeptActivity(overrides: Partial<DeptActivity> = {}): DeptActivity {
+  return {
+    id: "act1",
+    rawText: "活動A",
+    kpis: [],
+    status: "not-started",
+    ...overrides,
+  };
+}
+
+function makeV3Workspace(
+  activities: DeptActivity[],
+  goals: Goal[] = [],
+): WorkspaceData {
+  return {
+    version: 1,
+    _migratedPhase2: true,
+    _migratedPhase3: true,
+    departments: [
+      {
+        id: "dept1",
+        name: "部門A",
+        activities,
+        periods: [
+          {
+            id: "p1",
+            halfYear: "H1",
+            year: 2026,
+            ogsm: {
+              objectives: { orgO: "", deptO: "" },
+              goals,
+              period: "2026 H1",
+              importedAt: "2026-01-01T00:00:00.000Z",
+              overallRate: 0,
+            },
+          },
+        ],
+      },
+    ],
+    teams: [],
+  };
+}
+
+// ─── migrateToV3 ──────────────────────────────────────────────────────────────
+
+describe("migrateToV3", () => {
+  test("ogsmLink → dashboardLinks 轉換，並清除 ogsmLink / excludeFromOgsm", () => {
+    const act = makeDeptActivity({
+      id: "a1",
+      ogsmLink: {
+        periodId: "p1",
+        goalId: "g1",
+        strategyId: "s1",
+      } as unknown as DeptActivity["ogsmLink"],
+      excludeFromOgsm: false,
+    });
+    const ws = makeV3Workspace([act]);
+    const changed = migrateToV3(ws);
+    const result = ws.departments[0].activities![0];
+    expect(changed).toBe(true);
+    expect(result.dashboardLinks).toHaveLength(1);
+    expect(result.dashboardLinks![0].type).toBe("ogsm");
+    expect(result.dashboardLinks![0].periodId).toBe("p1");
+    expect(result.dashboardLinks![0].exclude).toBe(false);
+    expect(result.ogsmLink).toBeUndefined();
+    expect(result.excludeFromOgsm).toBeUndefined();
+  });
+
+  test("actionPlans → planItems 平坦化，並清除 actionPlans", () => {
+    const act = makeDeptActivity({
+      id: "a2",
+      actionPlans: [
+        {
+          id: "ap1",
+          quarter: "Q1",
+          title: "",
+          items: [{ id: "item1", description: "任務1", completed: false }],
+        },
+      ] as DeptActivity["actionPlans"],
+    });
+    const ws = makeV3Workspace([act]);
+    const changed = migrateToV3(ws);
+    const result = ws.departments[0].activities![0];
+    expect(changed).toBe(true);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems![0].quarter).toBe("Q1");
+    expect(result.actionPlans).toBeUndefined();
+  });
+
+  test("dept.activities 非空時，strategy.measures 被清空", () => {
+    const strategy = makeStrategy({
+      id: "s1",
+      measures: [makeMeasure({ id: "msr1" })],
+    });
+    const goal = makeGoal([strategy]);
+    const ws = makeV3Workspace([makeDeptActivity()], [goal]);
+    const changed = migrateToV3(ws);
+    expect(changed).toBe(true);
+    expect(
+      ws.departments[0].periods[0].ogsm.goals[0].strategies[0].measures,
+    ).toHaveLength(0);
+  });
+
+  test("linkedKpis: 只有 measureId → 升遷為 activityId", () => {
+    const goal = makeGoal([], {
+      goalKpis: [
+        {
+          id: "gk1",
+          title: "KPI",
+          label: "",
+          unit: "",
+          target: null,
+          aggregation: "SUM",
+          goalKpiType: "direct",
+          linkedKpis: [
+            {
+              measureId: "msr1",
+              kpiId: "kpi1",
+            } as unknown as import("../schemas/ogsm").GoalKpiLink,
+          ],
+        } as import("../schemas/ogsm").GoalKPI,
+      ],
+    });
+    const ws = makeV3Workspace([makeDeptActivity()], [goal]);
+    const changed = migrateToV3(ws);
+    expect(changed).toBe(true);
+    const link =
+      ws.departments[0].periods[0].ogsm.goals[0].goalKpis![0].linkedKpis[0];
+    expect((link as Record<string, unknown>).activityId).toBe("msr1");
+    expect((link as Record<string, unknown>).measureId).toBeUndefined();
+  });
+
+  test("冪等：ogsmLink 已清、dashboardLinks 已有值 → changed=false", () => {
+    const act = makeDeptActivity({
+      id: "a3",
+      dashboardLinks: [
+        {
+          id: "dl1",
+          type: "ogsm",
+          periodId: "p1",
+          goalId: "g1",
+          strategyId: "s1",
+          exclude: false,
+        },
+      ],
+    });
+    const ws = makeV3Workspace([act]);
+    const changed = migrateToV3(ws);
+    expect(changed).toBe(false);
+  });
+});
+
+// ─── migrateFrameworksV1 ─────────────────────────────────────────────────────
+
+describe("migrateFrameworksV1", () => {
+  test("frameworks=[] → 設為 ['ogsm']，changed=true", () => {
+    const ws = makeV3Workspace([makeDeptActivity({ frameworks: [] })]);
+    const changed = migrateFrameworksV1(ws);
+    expect(changed).toBe(true);
+    expect(ws.departments[0].activities![0].frameworks).toEqual(["ogsm"]);
+  });
+
+  test("frameworks=undefined → 設為 ['ogsm']，changed=true", () => {
+    const ws = makeV3Workspace([makeDeptActivity({ frameworks: undefined })]);
+    const changed = migrateFrameworksV1(ws);
+    expect(changed).toBe(true);
+    expect(ws.departments[0].activities![0].frameworks).toEqual(["ogsm"]);
+  });
+
+  test("frameworks=['custom'] → 不覆蓋，changed=false", () => {
+    const ws = makeV3Workspace([makeDeptActivity({ frameworks: ["custom"] })]);
+    const changed = migrateFrameworksV1(ws);
+    expect(changed).toBe(false);
+    expect(ws.departments[0].activities![0].frameworks).toEqual(["custom"]);
+  });
+});
+
+// ─── migrateTimelineV1 ───────────────────────────────────────────────────────
+
+describe("migrateTimelineV1", () => {
+  test("重複 ogsm link（同 periodId|goalId|strategyId）→ 保留第一個，changed=true", () => {
+    const dupLink = {
+      id: "dl1",
+      type: "ogsm" as const,
+      periodId: "p1",
+      goalId: "g1",
+      strategyId: "s1",
+      exclude: false,
+    };
+    const act = makeDeptActivity({
+      dashboardLinks: [dupLink, { ...dupLink, id: "dl2" }],
+    });
+    const ws = makeV3Workspace([act]);
+    const changed = migrateTimelineV1(ws);
+    expect(changed).toBe(true);
+    expect(ws.departments[0].activities![0].dashboardLinks).toHaveLength(1);
+  });
+
+  test("非 ogsm type link → pass-through，不被去重", () => {
+    const act = makeDeptActivity({
+      dashboardLinks: [
+        {
+          id: "dl1",
+          type: "custom" as unknown as "ogsm",
+          periodId: "p1",
+          goalId: "g1",
+          strategyId: "s1",
+          exclude: false,
+        },
+        {
+          id: "dl2",
+          type: "custom" as unknown as "ogsm",
+          periodId: "p1",
+          goalId: "g1",
+          strategyId: "s1",
+          exclude: false,
+        },
+      ],
+    });
+    const ws = makeV3Workspace([act]);
+    migrateTimelineV1(ws);
+    expect(ws.departments[0].activities![0].dashboardLinks).toHaveLength(2);
+  });
+
+  test("ogsm link 缺 id → 補上 id", () => {
+    const act = makeDeptActivity({
+      dashboardLinks: [
+        {
+          id: "",
+          type: "ogsm",
+          periodId: "p1",
+          goalId: "g1",
+          strategyId: "s1",
+          exclude: false,
+        } as unknown as import("../schemas/ogsm").DashboardLink,
+      ],
+    });
+    const ws = makeV3Workspace([act]);
+    const changed = migrateTimelineV1(ws);
+    expect(changed).toBe(true);
+    expect(ws.departments[0].activities![0].dashboardLinks![0].id).toBeTruthy();
+  });
+
+  test("ogsm link 存在 → frameworks 自動加入 'ogsm'", () => {
+    const act = makeDeptActivity({
+      frameworks: [],
+      dashboardLinks: [
+        {
+          id: "dl1",
+          type: "ogsm",
+          periodId: "p1",
+          goalId: "g1",
+          strategyId: "s1",
+          exclude: false,
+        },
+      ],
+    });
+    const ws = makeV3Workspace([act]);
+    migrateTimelineV1(ws);
+    expect(ws.departments[0].activities![0].frameworks).toContain("ogsm");
+  });
+
+  test("多個 period 的 ogsm links → lifecycleStartPeriodId 設為最早期別", () => {
+    const act = makeDeptActivity({
+      dashboardLinks: [
+        {
+          id: "dl1",
+          type: "ogsm",
+          periodId: "p2",
+          goalId: "g1",
+          strategyId: "s1",
+          exclude: false,
+        },
+        {
+          id: "dl2",
+          type: "ogsm",
+          periodId: "p1",
+          goalId: "g1",
+          strategyId: "s2",
+          exclude: false,
+        },
+      ],
+    });
+    const ws: WorkspaceData = {
+      ...makeV3Workspace([act]),
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          activities: [act],
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [],
+                period: "2026 H1",
+                importedAt: "",
+                overallRate: 0,
+              },
+            },
+            {
+              id: "p2",
+              halfYear: "H2",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [],
+                period: "2026 H2",
+                importedAt: "",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    migrateTimelineV1(ws);
+    expect(ws.departments[0].activities![0].lifecycleStartPeriodId).toBe("p1");
+  });
+});
+
+// ─── validateOrWarn ──────────────────────────────────────────────────────────
+
+describe("validateOrWarn", () => {
+  test("合法資料 → console.warn 不被呼叫", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    validateOrWarn(
+      { safeParse: () => ({ success: true }) },
+      {},
+      "test-context",
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  test("非法資料 → console.warn 被呼叫，且訊息含 context 字串", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    validateOrWarn(
+      {
+        safeParse: () => ({
+          success: false,
+          error: { message: "field missing" },
+        }),
+      },
+      {},
+      "my-context",
+    );
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0]).toContain("my-context");
+    spy.mockRestore();
+  });
+
+  test("非法資料 → 不拋出例外，函式正常 return", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(() =>
+      validateOrWarn(
+        { safeParse: () => ({ success: false, error: { message: "err" } }) },
+        {},
+        "ctx",
+      ),
+    ).not.toThrow();
+    vi.restoreAllMocks();
+  });
+});
+
+// ─── syncRelationalLinksV1 ────────────────────────────────────────────────────
+
+function makeRelWorkspace(
+  activities: DeptActivity[],
+  activityLinks: ActivityDashboardLink[] = [],
+): WorkspaceData {
+  return {
+    version: 1,
+    _migratedPhase2: true,
+    _migratedPhase3: true,
+    departments: [
+      {
+        id: "dept1",
+        name: "部門A",
+        activities,
+        activityLinks: activityLinks.length > 0 ? activityLinks : undefined,
+        periods: [],
+      },
+    ],
+    teams: [],
+  };
+}
+
+function makeRelActivity(
+  id: string,
+  dashboardLinks: DeptActivity["dashboardLinks"] = [],
+): DeptActivity {
+  return {
+    id,
+    rawText: `活動${id}`,
+    kpis: [],
+    status: "not-started",
+    dashboardLinks: dashboardLinks.length > 0 ? dashboardLinks : undefined,
+  };
+}
+
+describe("syncRelationalLinksV1", () => {
+  test("activity.dashboardLinks → 同步新增至 dept.activityLinks", () => {
+    const act = makeRelActivity("a1", [
+      {
+        id: "dl1",
+        type: "ogsm",
+        periodId: "p1",
+        goalId: "g1",
+        strategyId: "s1",
+        exclude: false,
+      },
+    ]);
+    const ws = makeRelWorkspace([act]);
+    const changed = syncRelationalLinksV1(ws);
+    expect(changed).toBe(true);
+    const links = ws.departments[0].activityLinks!;
+    expect(links).toHaveLength(1);
+    expect(links[0].activityId).toBe("a1");
+    expect(links[0].strategyId).toBe("s1");
+  });
+
+  test("activityLinks 中孤立外鍵（activityId 不存在）→ 刪除，changed=true", () => {
+    const orphanLink: ActivityDashboardLink = {
+      id: "dl_orphan",
+      type: "ogsm",
+      activityId: "non-existent",
+      exclude: false,
+    };
+    const ws = makeRelWorkspace([], [orphanLink]);
+    const changed = syncRelationalLinksV1(ws);
+    expect(changed).toBe(true);
+    expect(ws.departments[0].activityLinks ?? []).toHaveLength(0);
+  });
+
+  test("重複 link（相同 key）→ 去重，保留一個", () => {
+    const link = {
+      id: "dl1",
+      type: "ogsm",
+      periodId: "p1",
+      goalId: "g1",
+      strategyId: "s1",
+      exclude: false,
+    };
+    const act = makeRelActivity("a1", [link, { ...link, id: "dl2" }]);
+    const ws = makeRelWorkspace([act]);
+    syncRelationalLinksV1(ws);
+    const links = ws.departments[0].activityLinks!;
+    // 相同 key 只保留一筆
+    expect(links).toHaveLength(1);
+  });
+
+  test("activityLinks 已與 dashboardLinks 完全同步 → changed=false", () => {
+    const link: ActivityDashboardLink = {
+      id: "dl1",
+      type: "ogsm",
+      periodId: "p1",
+      goalId: "g1",
+      strategyId: "s1",
+      exclude: false,
+      activityId: "a1",
+    };
+    const act = makeRelActivity("a1", [
+      {
+        id: "dl1",
+        type: "ogsm",
+        periodId: "p1",
+        goalId: "g1",
+        strategyId: "s1",
+        exclude: false,
+      },
+    ]);
+    const ws = makeRelWorkspace([act], [link]);
+    const changed = syncRelationalLinksV1(ws);
+    expect(changed).toBe(false);
+  });
+
+  test("hydration：activity.dashboardLinks 與 activityLinks 不一致 → 用 activityLinks 覆蓋", () => {
+    // activityLinks 有資料、activity.dashboardLinks 為空
+    const relLink: ActivityDashboardLink = {
+      id: "dl1",
+      type: "ogsm",
+      periodId: "p1",
+      goalId: "g1",
+      strategyId: "s1",
+      exclude: false,
+      activityId: "a1",
+    };
+    const act = makeRelActivity("a1"); // dashboardLinks = undefined
+    const ws = makeRelWorkspace([act], [relLink]);
+    syncRelationalLinksV1(ws);
+    const hydrated = ws.departments[0].activities![0].dashboardLinks;
+    expect(hydrated).toHaveLength(1);
+    expect(hydrated![0].strategyId).toBe("s1");
+  });
+});
+
+// ─── loadLegacyData ───────────────────────────────────────────────────────────
+
+describe("loadLegacyData", () => {
+  test("key 不存在 → 回傳 null", () => {
+    // localStorage already cleared in beforeEach
+    expect(loadLegacyData()).toBeNull();
+  });
+
+  test("有合法 OGSMData → 正常讀回並 normalize", () => {
+    const legacy = {
+      objectives: { orgO: "組織目標", deptO: "部門目標" },
+      goals: [],
+      period: "2026 H1",
+      importedAt: "2026-01-01T00:00:00.000Z",
+      overallRate: 0,
+    };
+    localStorage.setItem("ogsm_power_tool_data", JSON.stringify(legacy));
+    const result = loadLegacyData();
+    expect(result).not.toBeNull();
+    expect(result!.objectives.orgO).toBe("組織目標");
+    expect(Array.isArray(result!.goals)).toBe(true);
+  });
+
+  test("JSON 損毀 → 吞例外，回傳 null", () => {
+    localStorage.setItem("ogsm_power_tool_data", "{not-valid-json");
+    expect(loadLegacyData()).toBeNull();
   });
 });

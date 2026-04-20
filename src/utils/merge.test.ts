@@ -1,5 +1,10 @@
 import { describe, test, expect } from "vitest";
-import { detectConflicts, mergeWorkspaces } from "./merge";
+import {
+  detectConflicts,
+  mergeWorkspaces,
+  trackClearedFields,
+  resolveField,
+} from "./merge";
 import { migrateOwnerToOwners } from "./storage";
 import type {
   WorkspaceData,
@@ -1178,5 +1183,167 @@ describe("mergeWorkspaces — Activities", () => {
     const ids = workspace.departments[0].activities!.map((a) => a.id);
     expect(ids).toContain("act_L");
     expect(ids).toContain("act_R");
+  });
+});
+
+// ─── trackClearedFields ───────────────────────────────────────────────────────
+
+describe("trackClearedFields", () => {
+  type Entity = { budget?: number; rawText?: string; clearedFields?: string[] };
+
+  test("prev 有值、next 為空 → 加入 clearedFields", () => {
+    const prev: Entity = { budget: 100 };
+    const next: Entity = { budget: undefined };
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields).toContain("budget");
+  });
+
+  test("prev 為空、next 有值 → 從 clearedFields 移除", () => {
+    const prev: Entity = { budget: undefined, clearedFields: ["budget"] };
+    const next: Entity = { budget: 200, clearedFields: ["budget"] };
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields ?? []).not.toContain("budget");
+  });
+
+  test("prev/next 都為空 → clearedFields 不新增該欄位", () => {
+    const prev: Entity = {};
+    const next: Entity = {};
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields ?? []).not.toContain("budget");
+  });
+
+  test("next[field]=0（數字零）→ 不視為空，不加入 clearedFields", () => {
+    const prev: Entity = { budget: 100 };
+    const next: Entity = { budget: 0 };
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields ?? []).not.toContain("budget");
+  });
+
+  test("next[field]=''（空字串）→ 視為空，加入 clearedFields", () => {
+    const prev: Entity = { rawText: "有值" };
+    const next: Entity = { rawText: "" };
+    const result = trackClearedFields(prev, next, ["rawText"]);
+    expect(result.clearedFields).toContain("rawText");
+  });
+});
+
+// ─── resolveField ─────────────────────────────────────────────────────────────
+
+describe("resolveField", () => {
+  test("field-level key 存在 → 回傳對應值", () => {
+    const res = resolveField({ "e1.title": "local" }, "e1", "title");
+    expect(res).toBe("local");
+  });
+
+  test("field-level 不存在、entity-level 存在 → fallback 回傳 entity-level", () => {
+    const res = resolveField({ e1: "remote" }, "e1", "title");
+    expect(res).toBe("remote");
+  });
+
+  test("兩層都不存在 → 回傳 null", () => {
+    const res = resolveField({ e2: "local" }, "e1", "title");
+    expect(res).toBeNull();
+  });
+
+  test("resolutions=undefined → 回傳 null", () => {
+    const res = resolveField(undefined, "e1", "title");
+    expect(res).toBeNull();
+  });
+});
+
+// ─── clearedFields tombstone 整合 ─────────────────────────────────────────────
+
+describe("clearedFields tombstone 整合 — mergeWorkspaces", () => {
+  test("本地刻意清空 notes（clearedFields）→ merge 不自動填補遠端值", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          clearedFields: ["notes"],
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.notes).toBe("");
+  });
+
+  test("本地 notes 為空但無 clearedFields → merge 自動填補遠端值", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.notes).toBe("遠端備註");
+  });
+});
+
+describe("clearedFields tombstone 整合 — detectConflicts", () => {
+  test("本地刻意清空 notes → 通報衝突，localVal 為 '(已清空)'", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          clearedFields: ["notes"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const conflicts = detectConflicts(local, remote);
+    expect(conflicts).toHaveLength(1);
+    const notesDiff = conflicts[0].fieldDiffs.find((d) => d.field === "notes");
+    expect(notesDiff).toBeDefined();
+    expect(notesDiff!.localVal).toBe("(已清空)");
+  });
+
+  test("本地 notes 為空但無 clearedFields → 不通報衝突（靜默自動合併）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const conflicts = detectConflicts(local, remote);
+    expect(conflicts).toHaveLength(0);
   });
 });
