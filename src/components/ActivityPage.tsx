@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { WorkspaceData, DeptActivity } from "../schemas/ogsm";
 import ActivityFilters from "./activity/ActivityFilters";
 import {
@@ -66,6 +66,8 @@ interface Props {
   ) => void;
   /** 從外部（DetailPanel M tab）預先開啟某活動 ID */
   initialSelectedActivityId?: string | null;
+  /** controlled detail id 變更回呼（含關閉時傳 null） */
+  onSelectedActivityIdChange?: (activityId: string | null) => void;
 }
 
 export default function ActivityPage({
@@ -81,6 +83,7 @@ export default function ActivityPage({
   onAddActivity,
   onJumpToActivity,
   initialSelectedActivityId,
+  onSelectedActivityIdChange,
 }: Props) {
   const [internalView, setInternalView] = useState<ActivityView>(
     controlledView ?? "table",
@@ -113,6 +116,9 @@ export default function ActivityPage({
   const isGanttSubViewControlled = controlledGanttSubView !== undefined;
   const isDetailControlled = initialSelectedActivityId !== undefined;
 
+  /** Tracks whether the currently open detail panel has unsaved changes. */
+  const panelDirtyRef = useRef(false);
+
   const view = controlledView ?? internalView;
   const ganttSubView = controlledGanttSubView ?? internalGanttSubView;
   const selectedActivityId = isDetailControlled
@@ -121,6 +127,16 @@ export default function ActivityPage({
   const expandedId = isDetailControlled
     ? (initialSelectedActivityId ?? null)
     : localExpandedId;
+
+  /** Returns false (and shows a confirm) if the panel is dirty and the user cancels switching. */
+  const confirmSwitchAway = useCallback(
+    (nextId: string | null) =>
+      nextId === null ||
+      nextId === selectedActivityId ||
+      !panelDirtyRef.current ||
+      window.confirm("有尚未儲存的修改，切換後將會放棄，確定繼續嗎？"),
+    [selectedActivityId],
+  );
 
   const setView = useCallback(
     (next: ActivityView) => {
@@ -169,24 +185,29 @@ export default function ActivityPage({
   // Table row selection should open/close panel and keep one expanded row.
   const handleSetExpandedId = useCallback(
     (id: string | null) => {
+      if (!confirmSwitchAway(id)) return;
+      panelDirtyRef.current = false;
       if (!isDetailControlled) {
         setLocalExpandedId(id);
         setLocalSelectedActivityId(id);
       }
       if (id !== null) setView("table");
     },
-    [isDetailControlled, setView],
+    [confirmSwitchAway, isDetailControlled, setView],
   );
 
   // Open activity detail panel (without forcing table view)
   const handleSelectActivity = useCallback(
     (id: string | null) => {
+      if (!confirmSwitchAway(id)) return;
+      panelDirtyRef.current = false;
       if (!isDetailControlled) {
         setLocalSelectedActivityId(id);
         setLocalExpandedId(id); // keep table row highlight in sync
       }
+      onSelectedActivityIdChange?.(id);
     },
-    [isDetailControlled],
+    [confirmSwitchAway, isDetailControlled, onSelectedActivityIdChange],
   );
 
   // Flatten all activities from all depts.
@@ -576,6 +597,9 @@ export default function ActivityPage({
             initialPeriodId={selectedActivity.periodId || undefined}
             initialGoalId={selectedActivity.goalId || undefined}
             initialStrategyId={selectedActivity.strategyId || undefined}
+            onDirtyChange={(d) => {
+              panelDirtyRef.current = d;
+            }}
             onUpdate={(deptId, act) => {
               onUpdateActivity(deptId, act);
             }}

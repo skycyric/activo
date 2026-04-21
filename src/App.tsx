@@ -1388,19 +1388,18 @@ export default function App() {
 
   // Derive active dept/period with fallback
   // In multi-file mode, the effective workspace is the union of all dept workspaces.
-  const effectiveWorkspace = useMemo<WorkspaceData>(
-    () =>
-      isMultiFileMode
-        ? {
-            ...deptFiles[0]!.workspace,
-            departments: deptFiles
-              .map((f) => f.workspace.departments[0]!)
-              .filter(Boolean),
-            teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
-          }
-        : workspace,
-    [isMultiFileMode, deptFiles, workspace],
-  );
+  const effectiveWorkspace = useMemo<WorkspaceData>(() => {
+    if (!isMultiFileMode) return workspace;
+    const firstWorkspace = deptFiles[0]?.workspace;
+    if (!firstWorkspace) return workspace;
+    return {
+      ...firstWorkspace,
+      departments: deptFiles
+        .map((f) => f.workspace.departments[0])
+        .filter((d): d is NonNullable<typeof d> => Boolean(d)),
+      teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
+    };
+  }, [isMultiFileMode, deptFiles, workspace]);
 
   const handleBackup = useCallback(async () => {
     // Fallback: no multi-file root linked -> keep existing download behavior.
@@ -2245,6 +2244,10 @@ export default function App() {
           ...entry.workspace,
           departments: patchDepts(entry.workspace.departments),
         });
+        showDeptSaveToast(
+          `已新增活動到「${entry.subfolderName}」，尚未寫入檔案；請按「儲存目前部門」或 Ctrl+S。`,
+          "warning",
+        );
       } else {
         updateWorkspace({
           ...workspace,
@@ -2258,6 +2261,7 @@ export default function App() {
       isMultiFileMode,
       deptFiles,
       updateDeptWorkspace,
+      showDeptSaveToast,
     ],
   );
 
@@ -3289,6 +3293,7 @@ export default function App() {
             onAddActivity={handleAddDeptActivity}
             onJumpToActivity={handleJumpToActivity}
             initialSelectedActivityId={pendingActivityDetailId}
+            onSelectedActivityIdChange={setPendingActivityDetailId}
           />
         ) : (
           ogsmSettingContent

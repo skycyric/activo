@@ -121,14 +121,16 @@ function getSubKpiSources(gk: GoalKPI, deptActivities: DeptActivity[]) {
         kpi.achievementRate ??
         null)
       : null;
-    if (!groups.has(activityId)) {
-      groups.set(activityId, {
+    let group = groups.get(activityId);
+    if (!group) {
+      group = {
         activityId,
         activityName: activity?.rawText || "（未命名活動）",
         items: [],
-      });
+      };
+      groups.set(activityId, group);
     }
-    groups.get(activityId)!.items.push({
+    group.items.push({
       kpiId: link.kpiId,
       name: kpi?.name || kpi?.label || "(未知 KPI)",
       actual: kpi?.actual,

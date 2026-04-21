@@ -261,8 +261,12 @@ function getSubGkActivityStats(
     const r =
       computeKpiAchievement(kpi, act?.kpis ?? []) ?? kpi.achievementRate;
     if (r == null) continue;
-    if (!actRates.has(actId)) actRates.set(actId, []);
-    actRates.get(actId)!.push(r);
+    const ratesForAct = actRates.get(actId);
+    if (ratesForAct) {
+      ratesForAct.push(r);
+    } else {
+      actRates.set(actId, [r]);
+    }
   }
   const threshold = subGk.target ?? 0;
   let metCount = 0;
@@ -383,12 +387,13 @@ function GkComputeTree({
   for (const link of links) {
     const actId =
       link.activityId || (link as Record<string, string>).measureId || "";
-    if (!seen.has(actId)) {
+    let group = actGroups.find((g) => g.actId === actId);
+    if (!group) {
       seen.add(actId);
       const act = deptActivities.find((a) => a.id === actId);
-      actGroups.push({ actId, act, kpis: [] });
+      group = { actId, act, kpis: [] };
+      actGroups.push(group);
     }
-    const group = actGroups.find((g) => g.actId === actId)!;
     const kpi = group.act?.kpis.find((k) => k.id === link.kpiId);
     group.kpis.push({ link, kpi });
   }
@@ -2450,7 +2455,8 @@ function NodeConfig({
     }
 
     // Item mode: editable G panel
-    const goal = data.goals.find((g) => g.id === gid)!;
+    const goal = data.goals.find((g) => g.id === gid);
+    if (!goal) return null;
     return (
       <div className="kpid-node-config">
         <div className="kpid-config-header">
@@ -3228,16 +3234,17 @@ export default function KpiDesigner({
   const copyGoalKpi = useCallback((gkId: string) => {
     setDraftGoals((prev) =>
       prev.map((g) => {
-        const idx = (g.goalKpis ?? []).findIndex((gk) => gk.id === gkId);
+        const goalKpis = g.goalKpis ?? [];
+        const idx = goalKpis.findIndex((gk) => gk.id === gkId);
         if (idx === -1) return g;
         draftGoalIds.current.add(g.id);
-        const src = g.goalKpis![idx];
+        const src = goalKpis[idx];
         const copy: GoalKPI = {
           ...src,
           id: genId("gk"),
           label: src.label + " (副本)",
         };
-        const next = [...g.goalKpis!];
+        const next = [...goalKpis];
         next.splice(idx + 1, 0, copy);
         return { ...g, goalKpis: next };
       }),

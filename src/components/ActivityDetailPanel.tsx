@@ -82,6 +82,7 @@ interface Props {
   onUpdate: (deptId: string, activity: DeptActivity) => void;
   onDelete: (deptId: string, activityId: string) => void;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 // ─── Main Component ─────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ export default function ActivityDetailPanel({
   onUpdate,
   onDelete,
   onClose,
+  onDirtyChange,
 }: Props) {
   // ── Local draft state ──────────────────────────────────────────────────────
   const [draft, setDraft] = useState<DeptActivity>(() => ({
@@ -176,6 +178,7 @@ export default function ActivityDetailPanel({
   const patch = (partial: Partial<DeptActivity>) => {
     setDraft((d) => applyAutoAttention({ ...d, ...partial }));
     setDirty(true);
+    onDirtyChange?.(true);
   };
 
   const handleSave = () => {
@@ -187,11 +190,20 @@ export default function ActivityDetailPanel({
     };
     onUpdate(deptId, saved);
     setDirty(false);
+    onDirtyChange?.(false);
   };
 
   const handleDelete = () => {
     if (!window.confirm(`確定要刪除活動「${draft.rawText}」？`)) return;
     onDelete(deptId, draft.id);
+  };
+
+  const handleRequestClose = () => {
+    if (dirty && !window.confirm("有尚未儲存的修改，確定要關閉嗎？")) {
+      return;
+    }
+    onDirtyChange?.(false);
+    onClose();
   };
 
   // ── KPI helpers ────────────────────────────────────────────────────────────
@@ -300,7 +312,11 @@ export default function ActivityDetailPanel({
           <div className="adp-header-title" title={draft.rawText}>
             {draft.rawText || "（未命名活動）"}
           </div>
-          <button className="adp-close-btn" onClick={onClose} title="關閉">
+          <button
+            className="adp-close-btn"
+            onClick={handleRequestClose}
+            title="關閉"
+          >
             ×
           </button>
         </div>
