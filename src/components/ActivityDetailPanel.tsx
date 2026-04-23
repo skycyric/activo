@@ -18,6 +18,7 @@ import {
   computeKpiAchievement,
   getKpiDisplayName,
   recomputeActivityKpis,
+  resolveBaseline,
 } from "../utils/kpiCalc";
 import { countPlanWarnings, getPlanItemWarning } from "../utils/planWarnings";
 import KpiConfigModal from "./activity/KpiConfigModal";
@@ -971,11 +972,13 @@ function KpiTab({
       {kpis.map((kpi) => {
         const siblings = kpis.filter((k) => k.id !== kpi.id);
         const achieved = computeKpiAchievement(kpi, siblings);
+        const baseline = resolveBaseline(kpi, siblings);
         return (
           <KpiRow
             key={kpi.id}
             kpi={kpi}
             achieved={achieved}
+            baseline={baseline}
             isReadOnly={isReadOnly}
             onPatch={(changes) => onPatchKpi(kpi.id, changes)}
             onDelete={() => onDeleteKpi(kpi.id)}
@@ -996,6 +999,7 @@ function KpiTab({
 function KpiRow({
   kpi,
   achieved,
+  baseline,
   isReadOnly,
   onPatch,
   onDelete,
@@ -1003,6 +1007,7 @@ function KpiRow({
 }: {
   kpi: KPI;
   achieved: number | null;
+  baseline: number | null;
   isReadOnly: boolean;
   onPatch: (c: Partial<KPI>) => void;
   onDelete: () => void;
@@ -1017,6 +1022,29 @@ function KpiRow({
         : achieved >= 70
           ? "var(--yellow)"
           : "var(--red)";
+  const formulaType =
+    kpi.formulaType ??
+    (kpi.kpiType === "growth"
+      ? "growth"
+      : kpi.kpiType === "target_rate"
+        ? "target_pct"
+        : kpi.kpiType === "progress"
+          ? "completion"
+          : "direct_rate");
+  const showTarget = formulaType !== "completion";
+  const targetLabel =
+    formulaType === "growth"
+      ? "目標成長率"
+      : formulaType === "target_pct"
+        ? "目標值"
+        : "目標";
+  const targetUnit = formulaType === "growth" ? "%" : kpi.unit || "—";
+  const targetValue =
+    formulaType === "growth"
+      ? kpi.targetGrowthRate
+      : formulaType === "completion"
+        ? null
+        : kpi.target;
 
   return (
     <div className="adp-kpi-row">
@@ -1053,40 +1081,85 @@ function KpiRow({
 
       <div className="adp-kpi-fields">
         {/* 目標 */}
-        <div className="adp-kpi-field">
-          <span className="adp-kpi-field-label">目標</span>
-          {isReadOnly ? (
-            <span className="adp-kpi-field-val">
-              {kpi.target !== null && kpi.target !== undefined
-                ? `${kpi.target} ${kpi.unit}`
-                : "—"}
-            </span>
-          ) : (
-            <div className="adp-kpi-input-unit">
-              <input
-                className="adp-input adp-input-sm"
-                type="number"
-                value={
-                  kpi.target !== null && kpi.target !== undefined
-                    ? kpi.target
-                    : ""
-                }
-                onChange={(e) =>
-                  onPatch({
-                    target:
-                      e.target.value !== "" ? parseFloat(e.target.value) : null,
-                  })
-                }
-                placeholder="目標值"
-              />
-              <span className="adp-kpi-unit">{kpi.unit || "—"}</span>
-            </div>
-          )}
-        </div>
+        {showTarget && (
+          <div className="adp-kpi-field">
+            <span className="adp-kpi-field-label">{targetLabel}</span>
+            {isReadOnly ? (
+              <span className="adp-kpi-field-val">
+                {targetValue !== null && targetValue !== undefined
+                  ? `${targetValue} ${targetUnit}`
+                  : "—"}
+              </span>
+            ) : (
+              <div className="adp-kpi-input-unit">
+                <input
+                  className="adp-input adp-input-sm"
+                  type="number"
+                  value={
+                    targetValue !== null && targetValue !== undefined
+                      ? targetValue
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const value =
+                      e.target.value !== "" ? parseFloat(e.target.value) : null;
+                    if (formulaType === "growth") {
+                      onPatch({ targetGrowthRate: value });
+                      return;
+                    }
+                    onPatch({ target: value });
+                  }}
+                  placeholder={
+                    formulaType === "growth" ? "目標成長率" : "目標值"
+                  }
+                />
+                <span className="adp-kpi-unit">{targetUnit}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 百分比達成率：目標達成率 */}
+        {formulaType === "target_pct" && (
+          <div className="adp-kpi-field">
+            <span className="adp-kpi-field-label">目標達成率</span>
+            {isReadOnly ? (
+              <span className="adp-kpi-field-val">
+                {kpi.targetRate !== null && kpi.targetRate !== undefined
+                  ? `${kpi.targetRate} %`
+                  : "—"}
+              </span>
+            ) : (
+              <div className="adp-kpi-input-unit">
+                <input
+                  className="adp-input adp-input-sm"
+                  type="number"
+                  value={
+                    kpi.targetRate !== null && kpi.targetRate !== undefined
+                      ? kpi.targetRate
+                      : ""
+                  }
+                  onChange={(e) =>
+                    onPatch({
+                      targetRate:
+                        e.target.value !== ""
+                          ? parseFloat(e.target.value)
+                          : null,
+                    })
+                  }
+                  placeholder="目標達成率"
+                />
+                <span className="adp-kpi-unit">%</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 實際值 */}
         <div className="adp-kpi-field">
-          <span className="adp-kpi-field-label">實際</span>
+          <span className="adp-kpi-field-label">
+            {formulaType === "completion" ? "完成率" : "實際"}
+          </span>
           {isReadOnly ? (
             <span className="adp-kpi-field-val">
               {kpi.actual !== null && kpi.actual !== undefined
@@ -1115,6 +1188,25 @@ function KpiRow({
             </div>
           )}
         </div>
+
+        {/* 基底值（成長型、直接達成率、百分比達成率在配置 baseline 時顯示） */}
+        {["growth", "direct_rate", "target_pct"].includes(formulaType) &&
+          kpi.baseline && (
+            <div className="adp-kpi-field">
+              <span className="adp-kpi-field-label">
+                {formulaType === "growth"
+                  ? "基底"
+                  : formulaType === "direct_rate"
+                    ? "參考值"
+                    : "目標來源"}
+              </span>
+              <span className="adp-kpi-field-val">
+                {baseline !== null && baseline !== undefined
+                  ? `${baseline} ${kpi.unit}`
+                  : "—"}
+              </span>
+            </div>
+          )}
 
         {/* 達成率 */}
         <div className="adp-kpi-field">

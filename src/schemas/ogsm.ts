@@ -63,11 +63,21 @@ export const KPISchema = z.object({
    * 計算達成率的公式類型：
    * - "direct_rate"：achievementRate = actual / target × 100
    * - "growth"：achievementRate = ((actual / resolvedBaseline - 1) × 100) / targetGrowthRate × 100
+   * - "target_pct"：achievementRate = (actual / target × 100) / targetRate × 100
+   * - "completion"：achievementRate = actual（0-100 完成率）
    * 未設定時沿用舊 kpiType 欄位行為（向下相容）。
    */
-  formulaType: z.enum(["direct_rate", "growth"]).optional(),
+  formulaType: z
+    .enum(["direct_rate", "growth", "target_pct", "completion"])
+    .optional(),
   /**
-   * 成長型（formulaType="growth"）專用：基底值來源。
+   * 基底值/參考值來源（formulaType="direct_rate"|"growth"|"target_pct" 時可用）。
+   * - "direct_rate" 時：actual / baseline.value × 100%（baseline 作為目標分母）
+   * - "growth" 時：(actual / baseline - 1) × 100%（baseline 作為基期值）
+   * - "target_pct" 時：(actual / baseline × 100%) / targetRate × 100%（baseline 作為動態目標）
+   * - "completion" 時：不適用
+   *
+   * baseline 類型：
    * - fixed：固定常數
    * - kpiRef：同活動內另一個 KPI 的 actual 值
    */

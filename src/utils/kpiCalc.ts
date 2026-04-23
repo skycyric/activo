@@ -34,6 +34,8 @@ export function resolveBaseline(kpi: KPI, siblingKpis: KPI[]): number | null {
  * formulaType 優先：
  *   - "direct_rate"：actual / target × 100
  *   - "growth"：((actual / baseline − 1) × 100) / targetGrowthRate × 100
+ *   - "target_pct"：(actual / target × 100) / targetRate × 100
+ *   - "completion"：actual（0-100 完成率）
  *
  * 無 formulaType 時 fallback 到舊 kpiType 行為（向下相容）。
  *
@@ -50,11 +52,15 @@ export function computeKpiAchievement(
   // ── 新路徑：formulaType 明確指定 ─────────────────────────────────────────
   if (fType === "direct_rate") {
     if (kpi.actual === null || kpi.actual === undefined) return null;
-    // target == null: 未設定，無法計算
-    // target === 0:   actual=0 → 100% 達成；否則除以零 → null
-    if (kpi.target == null) return null;
-    if (kpi.target === 0) return kpi.actual === 0 ? 100 : null;
-    return Math.round((kpi.actual / kpi.target) * 10000) / 100;
+    // 優先使用 baseline（支援 kpiRef），否則使用 target
+    let denominator: number | null = null;
+    if (kpi.baseline) {
+      denominator = resolveBaseline(kpi, siblingKpis);
+    }
+    if (denominator === null) denominator = kpi.target;
+    if (denominator == null) return null;
+    if (denominator === 0) return kpi.actual === 0 ? 100 : null;
+    return Math.round((kpi.actual / denominator) * 10000) / 100;
   }
 
   if (fType === "growth") {
@@ -69,6 +75,27 @@ export function computeKpiAchievement(
       return Math.round(growthRate * 100) / 100;
     }
     return Math.round((growthRate / targetGrowth) * 10000) / 100;
+  }
+
+  if (fType === "target_pct") {
+    if (kpi.actual === null || kpi.actual === undefined) return null;
+    // 優先使用 baseline（支援 kpiRef），否則使用 target
+    let denominator: number | null = null;
+    if (kpi.baseline) {
+      denominator = resolveBaseline(kpi, siblingKpis);
+    }
+    if (denominator === null) denominator = kpi.target;
+    if (denominator == null) return null;
+    if (denominator === 0) return kpi.actual === 0 ? 100 : null;
+    const rawRate = (kpi.actual / denominator) * 100;
+    const targetRate = kpi.targetRate ?? null;
+    if (targetRate === null || targetRate === 0)
+      return Math.round(rawRate * 100) / 100;
+    return Math.round((rawRate / targetRate) * 10000) / 100;
+  }
+
+  if (fType === "completion") {
+    return kpi.actual ?? null;
   }
 
   // ── 舊路徑：kpiType fallback（向下相容） ────────────────────────────────
