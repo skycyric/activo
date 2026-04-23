@@ -30,14 +30,18 @@ export default function ActivityCardGrid({
 
   return (
     <div className="card-grid">
-      {sorted.map((act) => (
-        <ActivityCard
+      {sorted.map((act, idx) => (
+        <div
           key={act.id}
-          act={act}
-          allActivities={allActivities}
-          onUpdateActivity={onUpdateActivity}
-          onJumpToActivity={onJumpToActivity}
-        />
+          data-tour={idx === 0 ? "activity-card-detail" : undefined}
+        >
+          <ActivityCard
+            act={act}
+            allActivities={allActivities}
+            onUpdateActivity={onUpdateActivity}
+            onJumpToActivity={onJumpToActivity}
+          />
+        </div>
       ))}
     </div>
   );

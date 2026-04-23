@@ -1,4 +1,5 @@
 import type { ConflictEntry, ConflictResolutions } from "../utils/merge";
+import { Tooltip } from "./ui/tooltip";
 
 interface Props {
   conflicts: ConflictEntry[];
@@ -64,13 +65,15 @@ export default function ConflictModal({
         {/* Header */}
         <div className="conflict-header">
           <span>🔀 發現 {conflicts.length} 項衝突</span>
-          <button
-            className="conflict-close"
-            onClick={onCancel}
-            title="取消存檔"
-          >
-            ×
-          </button>
+          <Tooltip content="取消存檔">
+            <button
+              className="conflict-close"
+              onClick={onCancel}
+              title="取消存檔"
+            >
+              ×
+            </button>
+          </Tooltip>
         </div>
 
         <p className="conflict-desc">

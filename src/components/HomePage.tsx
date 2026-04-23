@@ -1,3 +1,6 @@
+import { LATEST_VERSION } from "../data/changelog";
+import { useTour } from "../contexts/TourContext";
+
 // ── App cards definition ──────────────────────────────────────────────────────
 
 interface AppCard {
@@ -36,6 +39,8 @@ export default function HomePage({
   onSwitchToKpiDesigner,
   onSwitchToDeptSettings,
 }: Props) {
+  const { startTour } = useTour();
+
   const handleCardClick = (id: string) => {
     if (id === "ogsm") onSwitchToOgsm();
     else if (id === "activities") onSwitchToActivities();
@@ -45,7 +50,19 @@ export default function HomePage({
 
   return (
     <main className="home-page">
-      <div className="home-app-grid">
+      <div className="home-version-banner">
+        <span className="home-version-badge">{LATEST_VERSION.version}</span>
+        <div className="home-announcement">
+          <span className="home-announcement-date">{LATEST_VERSION.date}</span>
+          <p className="home-announcement-text">{LATEST_VERSION.summary}</p>
+        </div>
+      </div>
+      <div className="home-actions">
+        <button className="home-tour-btn" onClick={startTour}>
+          🚀 開始導覽
+        </button>
+      </div>
+      <div className="home-app-grid" data-tour="home-cards">
         {APP_CARDS.map((card) => (
           <button
             key={card.id}

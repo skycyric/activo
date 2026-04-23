@@ -7,6 +7,7 @@
 import { useState } from "react";
 import type { KPI, KpiBaseline } from "../../schemas/ogsm";
 import { getKpiDisplayName } from "../../utils/kpiCalc";
+import { Tooltip } from "../ui/tooltip";
 
 interface Props {
   kpi: KPI;
@@ -77,9 +78,11 @@ export default function KpiConfigModal({
           <span className="kpi-modal-title">
             KPI 設定 — {getKpiDisplayName(kpi)}
           </span>
-          <button className="kpi-modal-close" onClick={onClose}>
-            ×
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpi-modal-close" onClick={onClose}>
+              ×
+            </button>
+          </Tooltip>
         </div>
 
         <div className="kpi-modal-body">

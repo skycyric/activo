@@ -5,6 +5,7 @@ import type {
   DeptActivity,
 } from "../../schemas/ogsm";
 import type { ActivityWithContext } from "../ActivityPage";
+import { Tooltip } from "../ui/tooltip";
 
 type SortField = "rawText" | "deptName" | "owner" | "startDate" | "status";
 type SortDir = "asc" | "desc";
@@ -599,30 +600,36 @@ export default function ActivityTable({
                 )}
                 {columnVisibility.actions && (
                   <td className="act-td act-td-actions">
-                    <button
-                      className="act-action-btn act-edit-btn"
-                      title="開啟詳情面板"
-                      onClick={() =>
-                        onSetExpandedId(isExpanded ? null : act.id)
-                      }
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      className="act-action-btn act-jump-btn"
-                      title="開啟活動詳情面板"
-                      onClick={() => onJumpToActivity(act.deptId, act.id)}
-                    >
-                      🔗
-                    </button>
-                    {!act.isReadOnly && (
+                    <Tooltip content="開啟詳情面板">
                       <button
-                        className="act-action-btn act-del-btn"
-                        title="刪除活動"
-                        onClick={() => onDeleteActivity(act.deptId, act.id)}
+                        className="act-action-btn act-edit-btn"
+                        title="開啟詳情面板"
+                        onClick={() =>
+                          onSetExpandedId(isExpanded ? null : act.id)
+                        }
                       >
-                        🗑
+                        ✏️
                       </button>
+                    </Tooltip>
+                    <Tooltip content="跳到活動詳情頁">
+                      <button
+                        className="act-action-btn act-jump-btn"
+                        title="開啟活動詳情面板"
+                        onClick={() => onJumpToActivity(act.deptId, act.id)}
+                      >
+                        🔗
+                      </button>
+                    </Tooltip>
+                    {!act.isReadOnly && (
+                      <Tooltip content="刪除活動">
+                        <button
+                          className="act-action-btn act-del-btn"
+                          title="刪除活動"
+                          onClick={() => onDeleteActivity(act.deptId, act.id)}
+                        >
+                          🗑
+                        </button>
+                      </Tooltip>
                     )}
                   </td>
                 )}
