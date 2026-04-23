@@ -3024,7 +3024,7 @@ export default function KpiDesigner({
   onAddStrategyToGoal,
   onDeleteStrategy,
 }: Props) {
-  const { startPageTour } = useTour();
+  const { startPageTour, isActive, step } = useTour();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     initialGoalId ? `g-${initialGoalId}` : null,
   );
@@ -3230,6 +3230,56 @@ export default function KpiDesigner({
 
   const [viewMode, setViewMode] = useState<ViewMode>("item");
   const [moduleId, setModuleId] = useState<ModuleId>("ogsm");
+  const firstGoal = draftGoals[0] ?? null;
+  const firstGoalWithStrategy = useMemo(
+    () => draftGoals.find((goal) => goal.strategies.length > 0) ?? firstGoal,
+    [draftGoals, firstGoal],
+  );
+  const firstGoalKpi = useMemo(
+    () =>
+      draftGoals.find((goal) => (goal.goalKpis ?? []).length > 0)
+        ?.goalKpis?.[0] ?? null,
+    [draftGoals],
+  );
+
+  useEffect(() => {
+    if (!isActive || step?.page !== "kpi") return;
+
+    setModuleId("ogsm");
+
+    if (step.id === "kpi-node-manager") {
+      setViewMode("item");
+      setSelectedNodeId(
+        firstGoalWithStrategy
+          ? `g-${firstGoalWithStrategy.id}`
+          : firstGoal
+            ? `g-${firstGoal.id}`
+            : "o",
+      );
+      return;
+    }
+
+    if (
+      step.id === "kpi-goalkpi-tree" ||
+      step.id === "kpi-node-config-panel" ||
+      step.id === "kpi-types"
+    ) {
+      setViewMode("kpi");
+      setSelectedNodeId(
+        firstGoalKpi
+          ? `gk-${firstGoalKpi.id}`
+          : firstGoal
+            ? `g-${firstGoal.id}`
+            : "o",
+      );
+      return;
+    }
+
+    if (step.id === "kpi-intro") {
+      setViewMode("item");
+      return;
+    }
+  }, [firstGoal, firstGoalKpi, firstGoalWithStrategy, isActive, step]);
 
   const updateDraftGk = useCallback((updatedGk: GoalKPI, goalId: string) => {
     setDraftGoals((prev) =>

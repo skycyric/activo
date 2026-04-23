@@ -107,7 +107,7 @@ export default function Sidebar({
       )}
       <div className="sidebar-divider" />
 
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" data-tour="ogsm-sidebar">
         {data.goals.map((goal: Goal) => {
           const isActive = goal.id === selectedGoalId;
           return (

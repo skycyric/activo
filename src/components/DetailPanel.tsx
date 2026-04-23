@@ -477,6 +477,7 @@ export default function DetailPanel({
       className="detail-panel detail-panel-dashboard"
       style={{ width: panelWidth }}
       data-tour="ogsm-strategy-detail"
+      data-testid="ogsm-strategy-detail"
     >
       <div className="panel-resizer" onMouseDown={handleMouseDown} />
 

@@ -1,11 +1,11 @@
 {
   "departments": [
     {
-      "id": "dept_mnsazgxc_001_05995463",
+      "id": "DEP-2026-DEPT",
       "name": "設計企畫部",
       "periods": [
         {
-          "id": "period_mnsazgxc_000_7526b7c0",
+          "id": "PER-2026-H1-DEPT",
           "halfYear": "H1",
           "year": 2026,
           "ogsm": {
@@ -17,10 +17,11 @@
             "period": "2026 H1",
             "importedAt": "2026-04-10T02:45:07.823Z",
             "overallRate": 0
-          }
+          },
+          "bizKey": "PER-2026-H1-DEPT"
         },
         {
-          "id": "period_mnsazgxc_000_7526b7c0_h2",
+          "id": "PER-2026-H2-DEPT",
           "halfYear": "H2",
           "year": 2026,
           "ogsm": {
@@ -32,9 +33,11 @@
             "period": "2026 H1",
             "importedAt": "2026-04-10T02:45:07.823Z",
             "overallRate": 0
-          }
+          },
+          "bizKey": "PER-2026-H2-DEPT"
         }
-      ]
+      ],
+      "bizKey": "DEP-2026-DEPT"
     }
   ],
   "teams": [],

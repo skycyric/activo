@@ -1,11 +1,11 @@
 {
   "departments": [
     {
-      "id": "dept_mnsazgxc_001_05995463",
+      "id": "DEP-1",
       "name": "設計企畫部",
       "periods": [
         {
-          "id": "period_mnsazgxc_000_7526b7c0",
+          "id": "PER-2026-H1-1-1",
           "halfYear": "H1",
           "year": 2026,
           "ogsm": {
@@ -20,7 +20,7 @@
           }
         },
         {
-          "id": "period_mnsazgxc_000_7526b7c0_h2",
+          "id": "PER-2026-H2-1-2",
           "halfYear": "H2",
           "year": 2026,
           "ogsm": {

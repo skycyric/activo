@@ -22,7 +22,6 @@ interface Props {
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
   isReadOnly?: boolean;
-  onNavigateToActivity?: (activityId: string) => void;
   /** V3 架構：部門活動清單，供 GoalKPI 計算使用 */
   deptActivities?: DeptActivity[];
 }
@@ -127,7 +126,6 @@ export default function OverviewPage({
   onSelectGoal,
   onSelectStrategy,
   onSelectMeasure,
-  onNavigateToActivity,
   onEditObjective,
   onAddGoal,
   isReadOnly = false,
@@ -533,9 +531,7 @@ export default function OverviewPage({
                         key={m.id}
                         className="ov-status-list-item"
                         onClick={() =>
-                          onNavigateToActivity
-                            ? onNavigateToActivity(m.id)
-                            : onSelectMeasure(m.goalId, m.stratId, m.id)
+                          onSelectMeasure(m.goalId, m.stratId, m.id)
                         }
                         title="點擊開啟行動項目"
                       >
@@ -599,13 +595,9 @@ export default function OverviewPage({
                   <div
                     key={x.itemId}
                     className="ov-warn-list-item"
-                    onClick={() => {
-                      if (x.activityId && onNavigateToActivity) {
-                        onNavigateToActivity(x.activityId);
-                        return;
-                      }
-                      onSelectStrategy(x.goalId, x.stratId, x.warnType);
-                    }}
+                    onClick={() =>
+                      onSelectStrategy(x.goalId, x.stratId, x.warnType)
+                    }
                     title="點擊跳到活動或行動計畫"
                   >
                     <span className="ov-warn-list-measure">

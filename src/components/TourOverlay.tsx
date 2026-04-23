@@ -49,7 +49,7 @@ interface PopoverProps {
   content: string;
   onPrev: () => void;
   onNext: () => void;
-  onEnd: () => void;
+  onComplete: () => void;
   isFirst: boolean;
   isLast: boolean;
 }
@@ -63,7 +63,7 @@ function StepPopover({
   content,
   onPrev,
   onNext,
-  onEnd,
+  onComplete,
   isFirst,
   isLast,
 }: PopoverProps) {
@@ -121,15 +121,9 @@ function StepPopover({
     >
       <div className="tour-popover-header">
         <span className="tour-popover-title">{title}</span>
-        <button
-          className="tour-popover-close"
-          onClick={onEnd}
-          aria-label="關閉導覽"
-        >
-          ✕
-        </button>
       </div>
       <p className="tour-popover-content">{content}</p>
+      <p className="tour-popover-hint">按 Esc 可中止導覽並離開目前流程。</p>
       <div className="tour-popover-footer">
         <span className="tour-popover-progress">
           {stepIndex + 1} / {totalSteps}
@@ -141,7 +135,7 @@ function StepPopover({
             </button>
           )}
           {isLast ? (
-            <button className="tour-btn tour-btn-primary" onClick={onEnd}>
+            <button className="tour-btn tour-btn-primary" onClick={onComplete}>
               完成 🎉
             </button>
           ) : (
@@ -168,6 +162,19 @@ export function TourOverlay() {
     endTour,
   } = useTour();
   const [targetRect, setTargetRect] = useState<Rect | null>(null);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      endTour();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [endTour, isActive]);
 
   useEffect(() => {
     if (!isActive || !step?.target) {
@@ -204,7 +211,7 @@ export function TourOverlay() {
   return (
     <>
       {/* 半透明遮罩 */}
-      <div className="tour-overlay" onClick={endTour} />
+      <div className="tour-overlay" aria-hidden="true" />
       {/* Spotlight 挖洞 */}
       {targetRect && <Spotlight rect={targetRect} />}
       {/* 說明泡泡 */}
@@ -217,7 +224,7 @@ export function TourOverlay() {
         content={step.content}
         onPrev={prevStep}
         onNext={nextStep}
-        onEnd={endTour}
+        onComplete={endTour}
         isFirst={currentStep === 0}
         isLast={currentStep === totalSteps - 1}
       />

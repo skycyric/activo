@@ -76,6 +76,7 @@ interface Props {
   workspace: WorkspaceData;
   isReadOnly?: boolean;
   warnDaysBefore: number;
+  forcedTab?: Tab | null;
   /** 舊格式措施沒有 dashboardLinks，由 ActivityWithContext 傳入初始歸屬 */
   initialPeriodId?: string;
   initialGoalId?: string;
@@ -94,6 +95,7 @@ export default function ActivityDetailPanel({
   workspace,
   isReadOnly = false,
   warnDaysBefore,
+  forcedTab = null,
   initialPeriodId,
   initialGoalId,
   initialStrategyId,
@@ -112,6 +114,12 @@ export default function ActivityDetailPanel({
   const [tab, setTab] = useState<Tab>("basic");
   const [dirty, setDirty] = useState(false);
   const [statusManuallyChanged, setStatusManuallyChanged] = useState(false);
+
+  useEffect(() => {
+    if (forcedTab) {
+      setTab(forcedTab);
+    }
+  }, [forcedTab]);
 
   // ── KPI Config Modal ───────────────────────────────────────────────────────
   const [configKpiId, setConfigKpiId] = useState<string | null>(null);

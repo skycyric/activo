@@ -51,6 +51,7 @@ export const KpiBaselineSchema = z.discriminatedUnion("type", [
 
 export const KPISchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   /** 使用者自訂 KPI 名稱，如「業績達成率」「新增客戶數」 */
   name: z.string().optional(),
   /** @deprecated 改用 name；label 保留供舊資料讀取 */
@@ -99,6 +100,7 @@ export const KPISchema = z.object({
 
 export const PlanItemSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   description: z.string(),
   plannedEndDate: IsoDate,
   actualEndDate: IsoDate,
@@ -113,6 +115,7 @@ export const PlanItemSchema = z.object({
 
 export const ActionPlanSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   quarter: z.string(),
   title: z.string(),
   items: z.array(PlanItemSchema),
@@ -138,6 +141,7 @@ export const MeasureStatusSchema = z.enum([
 
 export const MeasureSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   rawText: z.string(),
   kpis: z.array(KPISchema),
   /** 每個活動自己的預警提前天數（到期日前 n 天開始 warning），預設 3 */
@@ -177,6 +181,7 @@ export const OgsmLinkSchema = z.object({
  */
 export const DashboardLinkSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   /** 儀表板類型，目前支援 "ogsm"，設計為可延伸字串 */
   type: z.string(),
   // ── OGSM 專屬欄位 ──────────────────────────────────────────────────────────
@@ -259,6 +264,7 @@ export const DeptActivitySchema = MeasureSchema.extend({
 
 export const StrategySchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   title: z.string(),
   rawText: z.string(),
   measures: z.array(MeasureSchema),
@@ -285,6 +291,7 @@ export const GoalKpiLinkSchema = z.object({
 
 export const GoalKPISchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   label: z.string(),
   unit: z.string(),
   target: z.number().nullable(),
@@ -337,6 +344,7 @@ export const GoalKPISchema = z.object({
 
 export const GoalSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   label: z.string(),
   title: z.string(),
   fullText: z.string(),
@@ -357,6 +365,7 @@ export const GoalSchema = z.object({
  */
 export const FreeNodeSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   name: z.string(),
   description: z.string().optional(),
   /** 連結的 DeptActivity id 列表（活動由 ActivityPage 統一管理） */
@@ -382,6 +391,7 @@ export const OGSMDataSchema = z.object({
 
 export const PeriodDataSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   halfYear: z.enum(["H1", "H2"]),
   year: z.number(),
   ogsm: OGSMDataSchema,
@@ -389,6 +399,7 @@ export const PeriodDataSchema = z.object({
 
 export const DepartmentSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   name: z.string(),
   periods: z.array(PeriodDataSchema),
   /** 部門直屬活動清單（activity-first 架構的核心） */
@@ -399,11 +410,13 @@ export const DepartmentSchema = z.object({
 
 export const TeamMemberSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   name: z.string(),
 });
 
 export const TeamSchema = z.object({
   id: z.string(),
+  bizKey: z.string().optional(),
   name: z.string(),
   deptId: z.string().optional(), // 所屬部門
   members: z.array(TeamMemberSchema),

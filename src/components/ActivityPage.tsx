@@ -86,7 +86,7 @@ export default function ActivityPage({
   initialSelectedActivityId,
   onSelectedActivityIdChange,
 }: Props) {
-  const { startPageTour } = useTour();
+  const { startPageTour, isActive, step } = useTour();
   const [internalView, setInternalView] = useState<ActivityView>(
     controlledView ?? "table",
   );
@@ -117,6 +117,17 @@ export default function ActivityPage({
   const isViewControlled = controlledView !== undefined;
   const isGanttSubViewControlled = controlledGanttSubView !== undefined;
   const isDetailControlled = initialSelectedActivityId !== undefined;
+  const forcedDetailTab =
+    isActive && step?.page === "activity"
+      ? ((
+          {
+            "activity-detail-basic": "basic",
+            "activity-detail-kpi": "kpi",
+            "activity-detail-plans": "plans",
+            "activity-detail-notes": "notes",
+          } as const
+        )[step.id] ?? null)
+      : null;
 
   /** Tracks whether the currently open detail panel has unsaved changes. */
   const panelDirtyRef = useRef(false);
@@ -471,6 +482,57 @@ export default function ActivityPage({
 
   const isActiveDeptReadOnly = readOnlyDeptIds?.includes(activeDeptId) ?? false;
 
+  useEffect(() => {
+    if (!isActive || step?.page !== "activity") return;
+
+    const detailStepIds = new Set([
+      "activity-detail-tabs",
+      "activity-detail-basic",
+      "activity-detail-kpi",
+      "activity-detail-plans",
+      "activity-detail-notes",
+    ]);
+    const shouldShowAddModal =
+      step.id === "activity-add-modal" || step.id === "activity-add-ogsm-link";
+
+    setShowAddModal(shouldShowAddModal);
+
+    if (step.id === "activity-gantt-subtabs") {
+      setView("gantt");
+      setGanttSubView("activity");
+      return;
+    }
+
+    if (step.id === "activity-card-detail") {
+      setView("cards");
+      return;
+    }
+
+    if (!detailStepIds.has(step.id)) return;
+
+    const nextActivity =
+      selectedActivity ?? filtered[0] ?? allActivities[0] ?? null;
+    if (!nextActivity || nextActivity.id === selectedActivityId) return;
+
+    panelDirtyRef.current = false;
+    if (!isDetailControlled) {
+      setLocalSelectedActivityId(nextActivity.id);
+      setLocalExpandedId(nextActivity.id);
+    }
+    onSelectedActivityIdChange?.(nextActivity.id);
+  }, [
+    allActivities,
+    filtered,
+    isActive,
+    isDetailControlled,
+    onSelectedActivityIdChange,
+    selectedActivity,
+    selectedActivityId,
+    setGanttSubView,
+    setView,
+    step,
+  ]);
+
   return (
     <div className="activity-page">
       {/* Page header */}
@@ -614,6 +676,7 @@ export default function ActivityPage({
             workspace={workspace}
             isReadOnly={selectedActivity.isReadOnly}
             warnDaysBefore={7}
+            forcedTab={forcedDetailTab}
             initialPeriodId={selectedActivity.periodId || undefined}
             initialGoalId={selectedActivity.goalId || undefined}
             initialStrategyId={selectedActivity.strategyId || undefined}

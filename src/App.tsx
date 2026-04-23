@@ -391,7 +391,11 @@ export default function App() {
   const isApplyingBrowserRouteRef = useRef(false);
 
   // ─── Tour integration ──────────────────────────────────────────────────
-  const { registerNavigate } = useTour();
+  const {
+    registerNavigate,
+    isActive: isTourActive,
+    step: tourStep,
+  } = useTour();
   useEffect(() => {
     registerNavigate((page: TourPage) => {
       if (page === "home") {
@@ -422,6 +426,37 @@ export default function App() {
       }
     });
   }, [registerNavigate]);
+
+  // 當 tourStep.page 變動時，自動切換到對應頁面
+  useEffect(() => {
+    if (!isTourActive || !tourStep?.page) return;
+    if (tourStep.page === "home") {
+      setShowHomePage(true);
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "activity") {
+      setShowActivityPage(true);
+      setShowHomePage(false);
+      setShowDeptSettings(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "ogsm") {
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "kpi") {
+      setShowKpiDesigner(true);
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+    } else if (tourStep.page === "settings") {
+      setShowDeptSettings(true);
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowKpiDesigner(false);
+    }
+  }, [isTourActive, tourStep?.page]);
 
   const lastBrowserRouteKeyRef = useRef("");
   const lastNavigationKeyRef = useRef("");
@@ -1556,6 +1591,29 @@ export default function App() {
       },
     [activePeriod],
   );
+
+  useEffect(() => {
+    if (!isTourActive || tourStep?.page !== "ogsm") return;
+
+    const firstGoal = data.goals[0] ?? null;
+    const firstGoalWithStrategy =
+      data.goals.find((goal) => goal.strategies.length > 0) ?? firstGoal;
+    const targetGoal =
+      tourStep.id === "ogsm-intro" ? firstGoal : firstGoalWithStrategy;
+
+    if (!targetGoal) return;
+
+    if (selectedGoalId !== targetGoal.id) {
+      setSelectedGoalId(targetGoal.id);
+    }
+
+    if (tourStep.id === "ogsm-intro") return;
+
+    const targetStrategy = targetGoal.strategies[0] ?? null;
+    if (targetStrategy && selectedStrategyId !== targetStrategy.id) {
+      setSelectedStrategyId(targetStrategy.id);
+    }
+  }, [data.goals, isTourActive, selectedGoalId, selectedStrategyId, tourStep]);
 
   // Compatibility contract: read old strategy.measures only when canonical
   // dept.activities has not been materialized yet. All writes still go to
