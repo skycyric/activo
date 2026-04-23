@@ -3,6 +3,7 @@ import type { Goal, GoalKPI, DeptActivity, Strategy } from "../schemas/ogsm";
 import { countStrategyWarnings } from "../utils/planWarnings";
 import { computeGoalKpiResult } from "../utils/goalKpi";
 import { computeKpiAchievement } from "../utils/kpiCalc";
+import { useTour } from "../contexts/TourContext";
 
 interface Props {
   goal: Goal | null;
@@ -241,6 +242,7 @@ export default function StrategyList({
   warnDaysBefore,
   deptActivities = [],
 }: Props) {
+  const { startPageTour } = useTour();
   const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(
     null,
   );
@@ -468,8 +470,8 @@ export default function StrategyList({
   };
 
   return (
-    <div className="strategy-list">
-      <div className="goal-header">
+    <div className="strategy-list" data-tour="ogsm-strategy-list">
+      <div className="goal-header" data-tour="ogsm-goal-header">
         <div className="goal-header-top">
           <span className="goal-label-badge">{goal.label}</span>
           <h1 className="goal-header-title">
@@ -480,6 +482,16 @@ export default function StrategyList({
             )}
           </h1>
         </div>
+        <div
+          style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}
+        >
+          <button
+            className="page-tour-btn"
+            onClick={() => startPageTour("ogsm")}
+          >
+            🔎 本頁導覽
+          </button>
+        </div>
 
         {!selectedStrategyId &&
           (() => {
@@ -488,7 +500,10 @@ export default function StrategyList({
             return (
               <>
                 {gKpiList.length > 0 && (
-                  <div className="kpi-scorecard-section kpi-scorecard-section--primary">
+                  <div
+                    className="kpi-scorecard-section kpi-scorecard-section--primary"
+                    data-tour="ogsm-kpi-scorecard"
+                  >
                     <div className="kpi-scorecard-header">
                       <div className="kpi-scorecard-header-left">
                         <span className="kpi-sc-section-chip kpi-sc-section-chip--gkpi">
@@ -519,7 +534,10 @@ export default function StrategyList({
                 )}
 
                 {subGKpiList.length > 0 && (
-                  <div className="kpi-scorecard-section kpi-scorecard-section--sub">
+                  <div
+                    className="kpi-scorecard-section kpi-scorecard-section--sub"
+                    data-tour="ogsm-subkpi-scorecard"
+                  >
                     <div className="kpi-scorecard-header kpi-scorecard-header--sub">
                       <div className="kpi-scorecard-header-left">
                         <span className="kpi-sc-section-chip kpi-sc-section-chip--sub">
@@ -555,7 +573,7 @@ export default function StrategyList({
           })()}
 
         {selectedStrategyId && strategies.length > 0 && (
-          <div className="strategy-rows">
+          <div className="strategy-rows" data-tour="ogsm-strategy-rows">
             {strategies.map((s, i) => (
               <StrategyRow
                 key={s.id}

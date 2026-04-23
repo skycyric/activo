@@ -16,8 +16,30 @@ import type {
   PeriodData,
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
+import {
+  generateUniqueGoalBizKey,
+  generateUniqueStrategyBizKey,
+} from "../utils/bizKey";
 import { computeGoalKpiResult } from "../utils/goalKpi";
 import { computeKpiAchievement } from "../utils/kpiCalc";
+import { useTour } from "../contexts/TourContext";
+import { Tooltip } from "./ui/tooltip";
+
+function toDeptCode(name: string | undefined): string {
+  const base = (name ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return (base || "DEPT").slice(0, 12);
+}
+
+function parseGoalOrder(label: string | undefined, fallback: number): number {
+  const matched = (label ?? "").match(/^G(\d+)/i);
+  const parsed = matched ? Number.parseInt(matched[1], 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -685,20 +707,24 @@ function GoalKpiConfigPanel({
   const [gkSearch, setGkSearch] = useState("");
   const [gkPickerOpen, setGkPickerOpen] = useState(false);
   return (
-    <div className="kpid-node-config">
+    <div className="kpid-node-config" data-tour="kpi-types">
       {/* Header */}
       <div className="kpid-config-header">
         <span className="kpid-config-title">GK｜{gk.label}</span>
-        <button
-          className="kpid-config-close kpid-config-delete"
-          title="刪除此 KPI"
-          onClick={onDelete}
-        >
-          🗑
-        </button>
-        <button className="kpid-config-close" onClick={onClose}>
-          ✕
-        </button>
+        <Tooltip content="刪除此 KPI">
+          <button
+            className="kpid-config-close kpid-config-delete"
+            title="刪除此 KPI"
+            onClick={onDelete}
+          >
+            🗑
+          </button>
+        </Tooltip>
+        <Tooltip content="關閉設定">
+          <button className="kpid-config-close" onClick={onClose}>
+            ✕
+          </button>
+        </Tooltip>
       </div>
 
       {/* Label */}
@@ -846,19 +872,21 @@ function GoalKpiConfigPanel({
                         {pct}%
                       </span>
                     )}
-                    <button
-                      className="kpid-remove-btn"
-                      onClick={() =>
-                        onUpdate({
-                          ...gk,
-                          thresholdGoalKpiIds: (
-                            gk.thresholdGoalKpiIds ?? []
-                          ).filter((id) => id !== gkId),
-                        })
-                      }
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="移除此 G-sub-KPI 連結">
+                      <button
+                        className="kpid-remove-btn"
+                        onClick={() =>
+                          onUpdate({
+                            ...gk,
+                            thresholdGoalKpiIds: (
+                              gk.thresholdGoalKpiIds ?? []
+                            ).filter((id) => id !== gkId),
+                          })
+                        }
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   </div>
                 );
               })}
@@ -1032,19 +1060,21 @@ function GoalKpiConfigPanel({
                         {rate}%
                       </span>
                     )}
-                    <button
-                      className="kpid-remove-btn"
-                      onClick={() =>
-                        onUpdate({
-                          ...gk,
-                          linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
-                            (_, i) => i !== idx,
-                          ),
-                        })
-                      }
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="移除此 GoalKPI 連結">
+                      <button
+                        className="kpid-remove-btn"
+                        onClick={() =>
+                          onUpdate({
+                            ...gk,
+                            linkedGoalKpis: (gk.linkedGoalKpis ?? []).filter(
+                              (_, i) => i !== idx,
+                            ),
+                          })
+                        }
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   </div>
                 );
               })}
@@ -1469,7 +1499,7 @@ function NodeTypeManager({
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
   return (
-    <div className="ntm-root" style={style}>
+    <div className="ntm-root" style={style} data-tour="kpi-node-manager">
       {!moduleId && (
         <div className="ntm-no-module">請先從頂部下拉選單選擇模組</div>
       )}
@@ -1662,16 +1692,18 @@ function NodeTypeManager({
             </button>
             <span className="ntm-section-label">目標 G</span>
             <span className="ntm-count-badge">{data.goals.length}</span>
-            <button
-              className="ntm-add-btn"
-              title="新增目標"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddGoal();
-              }}
-            >
-              ＋
-            </button>
+            <Tooltip content="新增目標">
+              <button
+                className="ntm-add-btn"
+                title="新增目標"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddGoal();
+                }}
+              >
+                ＋
+              </button>
+            </Tooltip>
           </div>
           {!collapsed["g"] && (
             <>
@@ -1689,26 +1721,30 @@ function NodeTypeManager({
                     {g.label} {g.title}
                   </span>
                   <div className="ntm-item-actions">
-                    <button
-                      className="ntm-action-btn"
-                      title="複製目標"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCopyGoal(g.id);
-                      }}
-                    >
-                      ⧉
-                    </button>
-                    <button
-                      className="ntm-action-btn del"
-                      title="刪除目標"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteGoal(g.id);
-                      }}
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="複製目標">
+                      <button
+                        className="ntm-action-btn"
+                        title="複製目標"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCopyGoal(g.id);
+                        }}
+                      >
+                        ⧉
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="刪除目標">
+                      <button
+                        className="ntm-action-btn del"
+                        title="刪除目標"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteGoal(g.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               ))}
@@ -1724,20 +1760,22 @@ function NodeTypeManager({
             <span className="ntm-count-badge">
               {data.goals.reduce((n, g) => n + g.strategies.length, 0)}
             </span>
-            <button
-              className="ntm-add-btn"
-              title="新增策略"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (data.goals.length === 1) {
-                  onAddStrategy(data.goals[0].id);
-                } else {
-                  setAddingStratFor(addingStratFor ? null : "__pick__");
-                }
-              }}
-            >
-              ＋
-            </button>
+            <Tooltip content="新增策略">
+              <button
+                className="ntm-add-btn"
+                title="新增策略"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (data.goals.length === 1) {
+                    onAddStrategy(data.goals[0].id);
+                  } else {
+                    setAddingStratFor(addingStratFor ? null : "__pick__");
+                  }
+                }}
+              >
+                ＋
+              </button>
+            </Tooltip>
           </div>
           {addingStratFor === "__pick__" && (
             <div className="ntm-goal-picker">
@@ -1780,26 +1818,30 @@ function NodeTypeManager({
                       {s.title}
                     </span>
                     <div className="ntm-item-actions">
-                      <button
-                        className="ntm-action-btn"
-                        title="複製策略"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCopyStrategy(s.id);
-                        }}
-                      >
-                        ⧉
-                      </button>
-                      <button
-                        className="ntm-action-btn del"
-                        title="刪除策略"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteStrategy(s.id);
-                        }}
-                      >
-                        ✕
-                      </button>
+                      <Tooltip content="複製策略">
+                        <button
+                          className="ntm-action-btn"
+                          title="複製策略"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCopyStrategy(s.id);
+                          }}
+                        >
+                          ⧉
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="刪除策略">
+                        <button
+                          className="ntm-action-btn del"
+                          title="刪除策略"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteStrategy(s.id);
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
                 )),
@@ -1818,16 +1860,18 @@ function NodeTypeManager({
             </button>
             <span className="ntm-section-label">其他 (自由節點)</span>
             <span className="ntm-count-badge">{freeNodes.length}</span>
-            <button
-              className="ntm-add-btn"
-              title="新增自由節點"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddFreeNode();
-              }}
-            >
-              ＋
-            </button>
+            <Tooltip content="新增自由節點">
+              <button
+                className="ntm-add-btn"
+                title="新增自由節點"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddFreeNode();
+                }}
+              >
+                ＋
+              </button>
+            </Tooltip>
           </div>
           {!collapsed["free"] && (
             <>
@@ -1845,26 +1889,30 @@ function NodeTypeManager({
                     {fn.name || "自由節點"}
                   </span>
                   <div className="ntm-item-actions">
-                    <button
-                      className="ntm-action-btn"
-                      title="複製"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCopyFreeNode(fn.id);
-                      }}
-                    >
-                      ⧉
-                    </button>
-                    <button
-                      className="ntm-action-btn del"
-                      title="刪除"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteFreeNode(fn.id);
-                      }}
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="複製自由節點">
+                      <button
+                        className="ntm-action-btn"
+                        title="複製"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCopyFreeNode(fn.id);
+                        }}
+                      >
+                        ⧉
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="刪除自由節點">
+                      <button
+                        className="ntm-action-btn del"
+                        title="刪除"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteFreeNode(fn.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               ))}
@@ -1918,7 +1966,7 @@ function KpiGoalTree({
     });
 
   return (
-    <div className="kpid-ogs-tree" style={style}>
+    <div className="kpid-ogs-tree" style={style} data-tour="kpi-goalkpi-tree">
       <div className="kpid-tree-section-label">KPI 模式 — 目標 GoalKPI</div>
       {periods.length > 0 && (
         <div
@@ -2027,26 +2075,30 @@ function KpiGoalTree({
                     {badgeText}
                   </span>
                   <div className="ntm-item-actions kpid-tree-gk-actions">
-                    <button
-                      className="ntm-action-btn"
-                      title="複製"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCopyGoalKpi(gk.id);
-                      }}
-                    >
-                      ⧉
-                    </button>
-                    <button
-                      className="ntm-action-btn del"
-                      title="刪除"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteGoalKpi(gk.id);
-                      }}
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="複製 GoalKPI">
+                      <button
+                        className="ntm-action-btn"
+                        title="複製"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCopyGoalKpi(gk.id);
+                        }}
+                      >
+                        ⧉
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="刪除 GoalKPI">
+                      <button
+                        className="ntm-action-btn del"
+                        title="刪除"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteGoalKpi(gk.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
                 {isPct && result.metCount != null && (
@@ -2080,16 +2132,18 @@ function KpiGoalTree({
                 </button>
                 <span className="ntm-section-label">G-KPI</span>
                 <span className="ntm-count-badge">{aggKpis.length}</span>
-                <button
-                  className="ntm-add-btn"
-                  title="新增 G-KPI"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAddGoalKpiOfType(g.id, "aggregate");
-                  }}
-                >
-                  ＋
-                </button>
+                <Tooltip content="新增 G-KPI">
+                  <button
+                    className="ntm-add-btn"
+                    title="新增 G-KPI"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddGoalKpiOfType(g.id, "aggregate");
+                    }}
+                  >
+                    ＋
+                  </button>
+                </Tooltip>
               </div>
               {!collapsed.has(gkpiKey) && aggKpis.length > 0 && (
                 <div className="kpid-tree-gk-rows">
@@ -2107,16 +2161,18 @@ function KpiGoalTree({
                 </button>
                 <span className="ntm-section-label">G-sub-KPI</span>
                 <span className="ntm-count-badge">{directKpis.length}</span>
-                <button
-                  className="ntm-add-btn"
-                  title="新增 G-sub-KPI"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAddGoalKpiOfType(g.id, "direct");
-                  }}
-                >
-                  ＋
-                </button>
+                <Tooltip content="新增 G-sub-KPI">
+                  <button
+                    className="ntm-add-btn"
+                    title="新增 G-sub-KPI"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddGoalKpiOfType(g.id, "direct");
+                    }}
+                  >
+                    ＋
+                  </button>
+                </Tooltip>
               </div>
               {!collapsed.has(subKey) && directKpis.length > 0 && (
                 <div className="kpid-tree-gk-rows">
@@ -2251,26 +2307,30 @@ function GoalKpiSummaryPanel({
         )}
         <span className={`kpid-gks-rate${rateClass}`}>{rateText}</span>
         <div className="ntm-item-actions kpid-gks-row-actions">
-          <button
-            className="ntm-action-btn"
-            title="複製"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCopyGoalKpi(gk.id);
-            }}
-          >
-            ⧉
-          </button>
-          <button
-            className="ntm-action-btn del"
-            title="刪除"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteGoalKpi(gk.id);
-            }}
-          >
-            ✕
-          </button>
+          <Tooltip content="複製 GoalKPI">
+            <button
+              className="ntm-action-btn"
+              title="複製"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCopyGoalKpi(gk.id);
+              }}
+            >
+              ⧉
+            </button>
+          </Tooltip>
+          <Tooltip content="刪除 GoalKPI">
+            <button
+              className="ntm-action-btn del"
+              title="刪除"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteGoalKpi(gk.id);
+              }}
+            >
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <span className="kpid-gks-arrow">›</span>
       </div>
@@ -2281,9 +2341,11 @@ function GoalKpiSummaryPanel({
     <div className="kpid-node-config">
       <div className="kpid-config-header">
         <span className="kpid-config-title">{draftGoal.label}｜KPI 總覽</span>
-        <button className="kpid-config-close" onClick={onClose}>
-          ✕
-        </button>
+        <Tooltip content="關閉設定">
+          <button className="kpid-config-close" onClick={onClose}>
+            ✕
+          </button>
+        </Tooltip>
       </div>
 
       <div className="kpid-g-summary-bar">
@@ -2403,9 +2465,11 @@ function NodeConfig({
       <div className="kpid-node-config">
         <div className="kpid-config-header">
           <span className="kpid-config-title">O 組織目標</span>
-          <button className="kpid-config-close" onClick={onClose}>
-            ✕
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpid-config-close" onClick={onClose}>
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <div className="kpid-config-section">
           <div className="kpid-config-label">部門目標</div>
@@ -2463,9 +2527,11 @@ function NodeConfig({
           <span className="kpid-config-title">
             G｜{goal.label} {goal.title}
           </span>
-          <button className="kpid-config-close" onClick={onClose}>
-            ✕
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpid-config-close" onClick={onClose}>
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <div className="kpid-config-section">
           <div className="kpid-config-label">標題 (Title)</div>
@@ -2539,9 +2605,11 @@ function NodeConfig({
       <div className="kpid-node-config">
         <div className="kpid-config-header">
           <span className="kpid-config-title">S｜{s.title}</span>
-          <button className="kpid-config-close" onClick={onClose}>
-            ✕
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpid-config-close" onClick={onClose}>
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <div className="kpid-config-section">
           <div className="kpid-config-label">標題 (Title)</div>
@@ -2609,26 +2677,28 @@ function NodeConfig({
                     {a.rawText || a.id}
                   </span>
                   {!isReadOnly && onUpdateActivity && (
-                    <button
-                      className="kpid-remove-btn"
-                      title="統除連結"
-                      onClick={() => {
-                        const other = (a.dashboardLinks ?? []).filter(
-                          (l) =>
-                            !(
-                              l.type === "ogsm" &&
-                              l.strategyId === sid &&
-                              (!periodId || l.periodId === periodId)
-                            ),
-                        );
-                        onUpdateActivity({
-                          ...a,
-                          dashboardLinks: other.length ? other : undefined,
-                        });
-                      }}
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="移除此活動連結">
+                      <button
+                        className="kpid-remove-btn"
+                        title="統除連結"
+                        onClick={() => {
+                          const other = (a.dashboardLinks ?? []).filter(
+                            (l) =>
+                              !(
+                                l.type === "ogsm" &&
+                                l.strategyId === sid &&
+                                (!periodId || l.periodId === periodId)
+                              ),
+                          );
+                          onUpdateActivity({
+                            ...a,
+                            dashboardLinks: other.length ? other : undefined,
+                          });
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               ))}
@@ -2713,9 +2783,11 @@ function NodeConfig({
       <div className="kpid-node-config">
         <div className="kpid-config-header">
           <span className="kpid-config-title">M｜{act.rawText || "活動"}</span>
-          <button className="kpid-config-close" onClick={onClose}>
-            ✕
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpid-config-close" onClick={onClose}>
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <div className="kpid-config-section">
           <div className="kpid-config-label">活動 KPI</div>
@@ -2767,9 +2839,11 @@ function NodeConfig({
           <span className="kpid-config-title">
             其他｜{fn.name || "自由節點"}
           </span>
-          <button className="kpid-config-close" onClick={onClose}>
-            ✕
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpid-config-close" onClick={onClose}>
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <div className="kpid-config-section">
           <div className="kpid-config-label">名稱</div>
@@ -2795,19 +2869,21 @@ function NodeConfig({
               {linkedActs.map((a) => (
                 <div key={a.id} className="kpid-linked-row">
                   <span className="kpid-linked-name">{a.rawText || a.id}</span>
-                  <button
-                    className="kpid-remove-btn"
-                    onClick={() =>
-                      onUpdateFreeNode({
-                        ...fn,
-                        linkedActivityIds: fn.linkedActivityIds.filter(
-                          (id) => id !== a.id,
-                        ),
-                      })
-                    }
-                  >
-                    ✕
-                  </button>
+                  <Tooltip content="移除此活動連結">
+                    <button
+                      className="kpid-remove-btn"
+                      onClick={() =>
+                        onUpdateFreeNode({
+                          ...fn,
+                          linkedActivityIds: fn.linkedActivityIds.filter(
+                            (id) => id !== a.id,
+                          ),
+                        })
+                      }
+                    >
+                      ✕
+                    </button>
+                  </Tooltip>
                 </div>
               ))}
             </>
@@ -2856,9 +2932,11 @@ function NodeConfig({
         <div className="kpid-node-config">
           <div className="kpid-config-header">
             <span className="kpid-config-title">GoalKPI</span>
-            <button className="kpid-config-close" onClick={onClose}>
-              ✕
-            </button>
+            <Tooltip content="關閉設定">
+              <button className="kpid-config-close" onClick={onClose}>
+                ✕
+              </button>
+            </Tooltip>
           </div>
           <p className="kpid-config-hint" style={{ padding: "12px" }}>
             找不到此 KPI，請重新整理。
@@ -2890,9 +2968,11 @@ function NodeConfig({
       <div className="kpid-node-config">
         <div className="kpid-config-header">
           <span className="kpid-config-title">M｜{act.rawText || "活動"}</span>
-          <button className="kpid-config-close" onClick={onClose}>
-            ✕
-          </button>
+          <Tooltip content="關閉設定">
+            <button className="kpid-config-close" onClick={onClose}>
+              ✕
+            </button>
+          </Tooltip>
         </div>
         <div className="kpid-config-section">
           <div className="kpid-config-label">活動 KPI</div>
@@ -2944,6 +3024,7 @@ export default function KpiDesigner({
   onAddStrategyToGoal,
   onDeleteStrategy,
 }: Props) {
+  const { startPageTour } = useTour();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     initialGoalId ? `g-${initialGoalId}` : null,
   );
@@ -2967,6 +3048,14 @@ export default function KpiDesigner({
   );
   const [leftWidth, setLeftWidth] = useState(280);
   const [rightWidth, setRightWidth] = useState(320);
+  const currentPeriod = useMemo(
+    () => availablePeriods.find((p) => p.id === periodId),
+    [availablePeriods, periodId],
+  );
+  const deptCode = useMemo(
+    () => toDeptCode(data.objectives.deptO),
+    [data.objectives.deptO],
+  );
   const dragging = useRef<{
     which: "left" | "right";
     startX: number;
@@ -3030,9 +3119,17 @@ export default function KpiDesigner({
       // Bug 3 fix: use draftGoals to capture unsaved GoalKPI changes in the copy
       const orig = draftGoals.find((g) => g.id === id);
       if (!orig) return;
+      const goalOrder = data.goals.length + 1;
       const copy: Goal = {
         ...orig,
         id: genId("goa"),
+        bizKey: generateUniqueGoalBizKey({
+          year: currentPeriod?.year,
+          halfYear: currentPeriod?.halfYear,
+          deptCode,
+          goalOrder,
+          goals: data.goals,
+        }),
         title: `${orig.title} (副本)`,
         strategies: [],
         goalKpis: (orig.goalKpis ?? []).map((gk) => ({
@@ -3044,7 +3141,7 @@ export default function KpiDesigner({
       };
       safeUpdateData({ ...data, goals: [...data.goals, copy] });
     },
-    [draftGoals, data, safeUpdateData],
+    [draftGoals, data, safeUpdateData, currentPeriod, deptCode],
   );
 
   // ── Strategy handlers ──────────────────────────────────────────────────────
@@ -3055,9 +3152,20 @@ export default function KpiDesigner({
       );
       const orig = parentGoal?.strategies.find((s) => s.id === stratId);
       if (!orig || !parentGoal) return;
+      const goalIndex = data.goals.findIndex((g) => g.id === parentGoal.id);
+      const goalOrder = parseGoalOrder(parentGoal.label, goalIndex + 1);
+      const strategyOrder = parentGoal.strategies.length + 1;
       const copy: Strategy = {
         ...orig,
         id: genId("str"),
+        bizKey: generateUniqueStrategyBizKey({
+          year: currentPeriod?.year,
+          halfYear: currentPeriod?.halfYear,
+          deptCode,
+          goalOrder,
+          strategyOrder,
+          strategies: parentGoal.strategies,
+        }),
         title: `${orig.title} (複製)`,
         measures: [],
         actionPlans: [],
@@ -3074,7 +3182,7 @@ export default function KpiDesigner({
         ),
       });
     },
-    [data, safeUpdateData],
+    [data, safeUpdateData, currentPeriod, deptCode],
   );
 
   useEffect(() => {
@@ -3273,10 +3381,15 @@ export default function KpiDesigner({
       )}
       {/* Left: module select + panel */}
       <div className="kpid-root-inner">
-        <div className="kpid-left-wrap" style={{ width: leftWidth }}>
+        <div
+          className="kpid-left-wrap"
+          style={{ width: leftWidth }}
+          data-tour="kpi-left-panel"
+        >
           <div className="kpid-left-module-bar">
             <select
               className="kpid-left-module-select"
+              data-tour="kpi-module-select"
               value={moduleId ?? ""}
               onChange={(e) => {
                 const v = e.target.value;
@@ -3336,9 +3449,15 @@ export default function KpiDesigner({
         />
 
         {/* Center: Canvas */}
-        <div className="kpid-canvas-wrap">
-          <div className="kpid-canvas-toolbar">
+        <div className="kpid-canvas-wrap" data-tour="kpi-canvas">
+          <div className="kpid-canvas-toolbar" data-tour="kpi-view-mode">
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                className="page-tour-btn"
+                onClick={() => startPageTour("kpi")}
+              >
+                🔎 本頁導覽
+              </button>
               <button
                 className={`kpid-mode-btn${viewMode === "item" ? " active" : ""}`}
                 onClick={() => setViewMode("item")}
@@ -3359,7 +3478,11 @@ export default function KpiDesigner({
             {hasDraftGkChanges && (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className="kpid-unsaved-badge">KPI 未儲存</span>
-                <button className="kpid-save-btn" onClick={handleSaveGkChanges}>
+                <button
+                  className="kpid-save-btn"
+                  data-tour="kpi-save-changes"
+                  onClick={handleSaveGkChanges}
+                >
                   💾 儲存 KPI 變更
                 </button>
               </div>
@@ -3401,6 +3524,7 @@ export default function KpiDesigner({
                 display: "flex",
                 overflow: "hidden",
               }}
+              data-tour="kpi-node-config-panel"
             >
               <NodeConfig
                 selectedNodeId={selectedNodeId}

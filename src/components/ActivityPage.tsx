@@ -14,6 +14,7 @@ import ActivityCalendar from "./activity/ActivityCalendar";
 import ActivityAddModal from "./activity/ActivityAddModal";
 import ActivityDetailPanel from "./ActivityDetailPanel";
 import { hasCanonicalDeptActivities } from "../utils/activityCompat";
+import { useTour } from "../contexts/TourContext";
 
 export interface ActivityWithContext extends DeptActivity {
   deptId: string;
@@ -85,6 +86,7 @@ export default function ActivityPage({
   initialSelectedActivityId,
   onSelectedActivityIdChange,
 }: Props) {
+  const { startPageTour } = useTour();
   const [internalView, setInternalView] = useState<ActivityView>(
     controlledView ?? "table",
   );
@@ -475,7 +477,10 @@ export default function ActivityPage({
       <div className="activity-page-header">
         <div className="activity-title-row">
           <h2 className="activity-page-title">活動總覽</h2>
-          <span className="activity-count-badge">
+          <span
+            className="activity-count-badge"
+            data-tour="activity-count-badge"
+          >
             {hasFilter
               ? `${filtered.length} / ${allActivities.length}`
               : allActivities.length}{" "}
@@ -483,7 +488,16 @@ export default function ActivityPage({
           </span>
         </div>
         <div className="activity-header-right">
-          <div className="activity-view-tabs">
+          <button
+            className="page-tour-btn"
+            onClick={() => startPageTour("activity")}
+          >
+            🔎 本頁導覽
+          </button>
+          <div
+            className="activity-view-tabs"
+            data-tour="activity-view-switcher"
+          >
             {VIEWS.map((v) => (
               <button
                 key={v.id}
@@ -498,6 +512,7 @@ export default function ActivityPage({
           </div>
           <button
             className="activity-add-btn"
+            data-tour="activity-add-btn"
             onClick={() => setShowAddModal(true)}
             disabled={isActiveDeptReadOnly}
             title={isActiveDeptReadOnly ? "目前部門為唯讀" : "新增活動"}
@@ -508,11 +523,13 @@ export default function ActivityPage({
       </div>
 
       {/* Filters */}
-      <ActivityFilters
-        workspace={workspace}
-        filters={filters}
-        onChange={setFilters}
-      />
+      <div data-tour="activity-filter">
+        <ActivityFilters
+          workspace={workspace}
+          filters={filters}
+          onChange={setFilters}
+        />
+      </div>
 
       {/* View area + detail panel (two-column) */}
       <div className="activity-main-row">
@@ -540,7 +557,10 @@ export default function ActivityPage({
           )}
           {view === "gantt" && (
             <div className="activity-gantt-shell">
-              <div className="activity-gantt-subtabs">
+              <div
+                className="activity-gantt-subtabs"
+                data-tour="activity-gantt-subtabs"
+              >
                 <button
                   className={`activity-gantt-subtab${ganttSubView === "activity" ? " active" : ""}`}
                   onClick={() => setGanttSubView("activity")}

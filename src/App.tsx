@@ -11,6 +11,14 @@ import type {
 } from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
+  generateBizKey,
+  generateUniqueBizKey,
+  generateUniqueGoalBizKey,
+  generateUniqueStrategyBizKey,
+  getActivityScopeExistingKeys,
+  resolveActivityBizKeyScope,
+} from "./utils/bizKey";
+import {
   saveWorkspace,
   loadWorkspace,
   loadLegacyData,
@@ -60,6 +68,10 @@ import DeptSettingsPage from "./components/DeptSettingsPage";
 import ActivityPage from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
 import KpiDesigner from "./components/KpiDesigner";
+import { TourOverlay } from "./components/TourOverlay";
+import { Tooltip } from "./components/ui/tooltip";
+import { useTour } from "./contexts/TourContext";
+import type { TourPage } from "./contexts/TourContext";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
 type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
@@ -181,6 +193,22 @@ function parseRouteHash(hash: string): Partial<AppRouteState> | null {
     pendingActivityDetailId: params.get("activity"),
     expandedDetailActivityId: null,
   };
+}
+
+function toDeptCode(name: string | undefined): string {
+  const base = (name ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return (base || "DEPT").slice(0, 12);
+}
+
+function parseGoalOrder(label: string | undefined, fallback: number): number {
+  const matched = (label ?? "").match(/^G(\d+)/i);
+  const parsed = matched ? Number.parseInt(matched[1], 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function normalizeAppRouteState(
@@ -361,6 +389,40 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isApplyingBrowserRouteRef = useRef(false);
+
+  // ─── Tour integration ──────────────────────────────────────────────────
+  const { registerNavigate } = useTour();
+  useEffect(() => {
+    registerNavigate((page: TourPage) => {
+      if (page === "home") {
+        setShowHomePage(true);
+        setShowActivityPage(false);
+        setShowDeptSettings(false);
+        setShowKpiDesigner(false);
+      } else if (page === "activity") {
+        setShowActivityPage(true);
+        setShowHomePage(false);
+        setShowDeptSettings(false);
+        setShowKpiDesigner(false);
+      } else if (page === "ogsm") {
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowDeptSettings(false);
+        setShowKpiDesigner(false);
+      } else if (page === "kpi") {
+        setShowKpiDesigner(true);
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowDeptSettings(false);
+      } else if (page === "settings") {
+        setShowDeptSettings(true);
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowKpiDesigner(false);
+      }
+    });
+  }, [registerNavigate]);
+
   const lastBrowserRouteKeyRef = useRef("");
   const lastNavigationKeyRef = useRef("");
 
@@ -1984,6 +2046,7 @@ export default function App() {
       }
       const src = dept.periods.find((p) => p.id === sourcePeriodId);
       if (!src) return;
+      const deptCode = toDeptCode(dept.name);
 
       // 深拷貝 OGSM，重發所有 ID（避免 merge 衝突），重設實際御完成狀態
       const now = new Date().toISOString();
@@ -1992,20 +2055,44 @@ export default function App() {
         period: `${year} ${halfYear}`,
         importedAt: now,
         overallRate: 0,
-        goals: src.ogsm.goals.map((g) => ({
+        goals: src.ogsm.goals.map((g, goalIndex) => ({
           ...g,
           id: genId("goal"),
+          bizKey: generateUniqueGoalBizKey({
+            year,
+            halfYear,
+            deptCode,
+            goalOrder: goalIndex + 1,
+            goals: src.ogsm.goals.slice(0, goalIndex),
+          }),
           completionRate: 0,
           updatedAt: now,
-          strategies: g.strategies.map((s) => ({
+          strategies: g.strategies.map((s, strategyIndex) => ({
             ...s,
             id: genId("str"),
+            bizKey: generateUniqueStrategyBizKey({
+              year,
+              halfYear,
+              deptCode,
+              goalOrder: goalIndex + 1,
+              strategyOrder: strategyIndex + 1,
+              strategies: g.strategies.slice(0, strategyIndex),
+            }),
             completionRate: 0,
             manualRate: null,
             updatedAt: now,
-            measures: s.measures.map((m) => ({
+            measures: s.measures.map((m, activityIndex) => ({
               ...m,
               id: genId("msr"),
+              bizKey: generateBizKey({
+                entityType: "activity",
+                year,
+                halfYear,
+                deptCode,
+                goalOrder: goalIndex + 1,
+                strategyOrder: strategyIndex + 1,
+                activityOrder: activityIndex + 1,
+              }),
               kpis: m.kpis.map((k) => ({
                 ...k,
                 id: genId("kpi"),
@@ -2233,7 +2320,32 @@ export default function App() {
         deps.map((d) =>
           d.id !== deptId
             ? d
-            : { ...d, activities: [...(d.activities ?? []), activity] },
+            : {
+                ...d,
+                activities: [
+                  ...(d.activities ?? []),
+                  activity.bizKey
+                    ? activity
+                    : {
+                        ...activity,
+                        bizKey: generateUniqueBizKey({
+                          input: {
+                            entityType: "activity",
+                            year: activePeriod?.year,
+                            halfYear: activePeriod?.halfYear,
+                            deptCode: toDeptCode(d.name),
+                            activityOrder: (d.activities?.length ?? 0) + 1,
+                          },
+                          existingKeys: getActivityScopeExistingKeys(
+                            d.activities ?? [],
+                            resolveActivityBizKeyScope(
+                              activity.dashboardLinks ?? [],
+                            ),
+                          ),
+                        }),
+                      },
+                ],
+              },
         );
       if (isMultiFileMode) {
         const entry = deptFiles.find(
@@ -2262,6 +2374,7 @@ export default function App() {
       deptFiles,
       updateDeptWorkspace,
       showDeptSaveToast,
+      activePeriod,
     ],
   );
 
@@ -2342,11 +2455,43 @@ export default function App() {
 
   const handleAddStrategy = useCallback(() => {
     if (!selectedGoalId) return;
+    const goalIndex = data.goals.findIndex((g) => g.id === selectedGoalId);
+    if (goalIndex < 0) return;
+    const goal = data.goals[goalIndex];
+    const goalOrder = parseGoalOrder(goal.label, goalIndex + 1);
+    const strategyOrder = goal.strategies.length + 1;
+    const deptCode = toDeptCode(activeDept?.name);
     const s: Strategy = {
       id: genId("str"),
+      bizKey: generateUniqueStrategyBizKey({
+        year: activePeriod?.year,
+        halfYear: activePeriod?.halfYear,
+        deptCode,
+        goalOrder,
+        strategyOrder,
+        strategies: goal.strategies,
+      }),
       title: "新策略（點擊編輯名稱）",
       rawText: "",
-      measures: [{ id: genId("msr"), rawText: "", kpis: [] }],
+      measures: [
+        {
+          id: genId("msr"),
+          bizKey: generateUniqueBizKey({
+            input: {
+              entityType: "activity",
+              year: activePeriod?.year,
+              halfYear: activePeriod?.halfYear,
+              deptCode,
+              goalOrder,
+              strategyOrder,
+              activityOrder: 1,
+            },
+            existingKeys: [],
+          }),
+          rawText: "",
+          kpis: [],
+        },
+      ],
       actionPlans: [],
       owners: [],
       notes: "",
@@ -2364,7 +2509,7 @@ export default function App() {
     };
     updateData(next);
     setSelectedStrategyId(s.id);
-  }, [data, selectedGoalId, updateData]);
+  }, [data, selectedGoalId, updateData, activeDept, activePeriod]);
 
   const handleDeleteStrategy = useCallback(
     (strategyId: string) => {
@@ -2436,8 +2581,16 @@ export default function App() {
   );
 
   const handleAddGoal = useCallback(() => {
+    const goalOrder = data.goals.length + 1;
     const g: Goal = {
       id: genId("goal"),
+      bizKey: generateUniqueGoalBizKey({
+        year: activePeriod?.year,
+        halfYear: activePeriod?.halfYear,
+        deptCode: toDeptCode(activeDept?.name),
+        goalOrder,
+        goals: data.goals,
+      }),
       label: `G${data.goals.length + 1}`,
       title: "新目標",
       fullText: "點擊右側編輯目標描述",
@@ -2449,7 +2602,7 @@ export default function App() {
     updateData(next);
     setSelectedGoalId(g.id);
     setSelectedStrategyId(null);
-  }, [data, updateData]);
+  }, [data, updateData, activeDept, activePeriod]);
 
   const handleUpdateGoal = useCallback(
     (updated: Goal) => {
@@ -2546,11 +2699,43 @@ export default function App() {
   /** 目標編輯器用：直接以 goalId 新增策略（不依賴 selectedGoalId state） */
   const handleAddStrategyToGoal = useCallback(
     (goalId: string) => {
+      const goalIndex = data.goals.findIndex((g) => g.id === goalId);
+      if (goalIndex < 0) return;
+      const goal = data.goals[goalIndex];
+      const goalOrder = parseGoalOrder(goal.label, goalIndex + 1);
+      const strategyOrder = goal.strategies.length + 1;
+      const deptCode = toDeptCode(activeDept?.name);
       const s: Strategy = {
         id: genId("str"),
+        bizKey: generateUniqueStrategyBizKey({
+          year: activePeriod?.year,
+          halfYear: activePeriod?.halfYear,
+          deptCode,
+          goalOrder,
+          strategyOrder,
+          strategies: goal.strategies,
+        }),
         title: "新策略（點擊編輯名稱）",
         rawText: "",
-        measures: [{ id: genId("msr"), rawText: "", kpis: [] }],
+        measures: [
+          {
+            id: genId("msr"),
+            bizKey: generateUniqueBizKey({
+              input: {
+                entityType: "activity",
+                year: activePeriod?.year,
+                halfYear: activePeriod?.halfYear,
+                deptCode,
+                goalOrder,
+                strategyOrder,
+                activityOrder: 1,
+              },
+              existingKeys: [],
+            }),
+            rawText: "",
+            kpis: [],
+          },
+        ],
         actionPlans: [],
         owners: [],
         notes: "",
@@ -2565,7 +2750,7 @@ export default function App() {
         ),
       });
     },
-    [data, updateData],
+    [data, updateData, activeDept, activePeriod],
   );
 
   /** 目標編輯器用：以 stratId 掃描所有目標刪除（不依賴 selectedGoalId state） */
@@ -2739,11 +2924,6 @@ export default function App() {
           setSelectedStrategyId(stratId);
           setPendingDetailNav({ tab: "plans", measureId });
         }}
-        onNavigateToActivity={(actId) => {
-          setPendingActivityDetailId(actId);
-          setShowActivityPage(true);
-          setShowHomePage(false);
-        }}
         onEditObjective={handleEditObjective}
         onAddGoal={handleAddGoal}
         isReadOnly={true}
@@ -2820,13 +3000,15 @@ export default function App() {
       <header className="app-header">
         <div className="header-left">
           <div className="header-menu-wrap" ref={menuRef}>
-            <button
-              className="header-menu-btn"
-              title="主選單"
-              onClick={() => setMenuOpen((v) => !v)}
-            >
-              ☰
-            </button>
+            <Tooltip content="主選單" side="bottom">
+              <button
+                className="header-menu-btn"
+                title="主選單"
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                ☰
+              </button>
+            </Tooltip>
             {menuOpen && (
               <div className="header-menu-dropdown">
                 <button
@@ -2901,7 +3083,7 @@ export default function App() {
           </div>
           <span className="header-logo">A</span>
           <span className="header-title">Activo</span>
-          <nav className="header-nav-tabs">
+          <nav className="header-nav-tabs" data-tour="nav-tabs">
             <button
               className={`header-nav-tab${showHomePage ? " active" : ""}`}
               onClick={() =>
@@ -2974,9 +3156,10 @@ export default function App() {
           </nav>
         </div>
 
-        <div className="header-toolbar">
+        <div className="header-toolbar" data-tour="header-toolbar">
           <select
             className="header-dept-select"
+            data-tour="dept-select"
             value={activeDeptId}
             onChange={(e) => handleSwitchDept(e.target.value)}
           >
@@ -2989,7 +3172,7 @@ export default function App() {
           <div className="header-section-sep" />
 
           {isMultiFileMode && (
-            <div className="header-sync-group">
+            <div className="header-sync-group" data-tour="sync-mechanism">
               <span
                 className={`sp-sync-badge ${activeDeptSyncBadge.className}`}
               >
@@ -3001,6 +3184,7 @@ export default function App() {
                     ? "btn-save-dirty"
                     : "btn-secondary btn-disabled"
                 }
+                data-tour="save-dirty"
                 onClick={handleSaveCurrentDept}
                 disabled={!canSaveCurrentDept}
                 title={
@@ -3015,6 +3199,7 @@ export default function App() {
               </button>
               <button
                 className="btn-secondary"
+                data-tour="save-all-dirty"
                 onClick={handleSaveAllDirty}
                 disabled={!canSaveAnyDept}
                 title={
@@ -3032,6 +3217,7 @@ export default function App() {
             (isMultiFileMode ? (
               <button
                 className="btn-secondary"
+                data-tour="link-folder"
                 onClick={handleUnlinkRootFolder}
                 title="中斷根資料夾連結"
               >
@@ -3040,6 +3226,7 @@ export default function App() {
             ) : (
               <button
                 className="btn-secondary"
+                data-tour="link-folder"
                 onClick={handleLinkRootFolder}
                 title="選擇 OGSM 根資料夾，自動載入每個子資料夾的部門 JSON"
               >
@@ -3047,12 +3234,17 @@ export default function App() {
               </button>
             ))}
 
-          <button className="btn-secondary" onClick={() => void handleBackup()}>
+          <button
+            className="btn-secondary"
+            data-tour="backup-btn"
+            onClick={() => void handleBackup()}
+          >
             💾 備份
           </button>
 
           <label
             className="btn-secondary"
+            data-tour="restore-btn"
             style={{ cursor: importing ? "wait" : "pointer" }}
           >
             {importing ? "匯入中…" : "📂 還原"}
@@ -3299,6 +3491,7 @@ export default function App() {
           ogsmSettingContent
         )}
       </div>
+      <TourOverlay />
     </div>
   );
 }

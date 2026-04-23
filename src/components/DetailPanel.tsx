@@ -476,6 +476,7 @@ export default function DetailPanel({
     <aside
       className="detail-panel detail-panel-dashboard"
       style={{ width: panelWidth }}
+      data-tour="ogsm-strategy-detail"
     >
       <div className="panel-resizer" onMouseDown={handleMouseDown} />
 
@@ -570,6 +571,7 @@ export default function DetailPanel({
         <section
           ref={activitySectionRef}
           className="detail-dashboard-activity-section"
+          data-tour="ogsm-linked-activity-dashboard"
         >
           <div className="detail-dashboard-section-head">
             <div>

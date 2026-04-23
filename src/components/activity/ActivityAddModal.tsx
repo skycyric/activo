@@ -5,6 +5,10 @@ import type {
   AssistUnit,
 } from "../../schemas/ogsm";
 import { genId } from "../../utils/csvParser";
+import {
+  generateUniqueBizKey,
+  getActivityScopeExistingKeys,
+} from "../../utils/bizKey";
 import AssistUnitPicker from "./AssistUnitPicker";
 import OwnerPicker from "./OwnerPicker";
 
@@ -34,6 +38,22 @@ const EMPTY_FORM: FormData = {
   goalId: "",
   stratId: "",
 };
+
+function toDeptCode(name: string | undefined): string {
+  const base = (name ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return (base || "DEPT").slice(0, 12);
+}
+
+function parseGoalOrder(label: string | undefined, fallback: number): number {
+  const matched = (label ?? "").match(/^G(\d+)/i);
+  const parsed = matched ? Number.parseInt(matched[1], 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 interface Props {
   workspace: WorkspaceData;
@@ -105,8 +125,38 @@ export default function ActivityAddModal({
           ]
         : [];
 
+    const goalIndex = goals.findIndex((g) => g.id === form.goalId);
+    const goalOrder =
+      goalIndex >= 0
+        ? parseGoalOrder(goals[goalIndex]?.label, goalIndex + 1)
+        : undefined;
+    const strategyIndex = strategies.findIndex((s) => s.id === form.stratId);
+    const strategyOrder = strategyIndex >= 0 ? strategyIndex + 1 : undefined;
+    const activityOrder = (activeDept?.activities?.length ?? 0) + 1;
+
     const activity: DeptActivity = {
       id: genId("msr"),
+      bizKey: generateUniqueBizKey({
+        input: {
+          entityType: "activity",
+          year: activePeriod?.year,
+          halfYear: activePeriod?.halfYear,
+          deptCode: toDeptCode(activeDept?.name),
+          goalOrder,
+          strategyOrder,
+          activityOrder,
+        },
+        existingKeys: getActivityScopeExistingKeys(
+          activeDept?.activities ?? [],
+          form.periodId && form.goalId && form.stratId
+            ? {
+                periodId: form.periodId,
+                goalId: form.goalId,
+                strategyId: form.stratId,
+              }
+            : undefined,
+        ),
+      }),
       rawText: form.rawText.trim(),
       kpis: [],
       warnDaysBefore: 3,
@@ -124,7 +174,11 @@ export default function ActivityAddModal({
   };
 
   return (
-    <div className="act-modal-overlay" onClick={handleRequestClose}>
+    <div
+      className="act-modal-overlay"
+      onClick={handleRequestClose}
+      data-tour="activity-add-modal"
+    >
       <div className="act-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="act-modal-header">
@@ -238,6 +292,7 @@ export default function ActivityAddModal({
               <button
                 type="button"
                 className="act-modal-ogsm-toggle"
+                data-tour="activity-add-ogsm-link"
                 onClick={() => setShowOgsmLink((v) => !v)}
               >
                 <span>OGSM 連結（選填）</span>

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import type { OGSMData, Team, TeamMember } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
+import { useTour } from "../contexts/TourContext";
+import { Tooltip } from "./ui/tooltip";
 
 interface Props {
   data: OGSMData;
@@ -17,6 +19,7 @@ export default function DeptSettingsPage({
   onUpdateTeams,
   onUpdateData,
 }: Props) {
+  const { startPageTour } = useTour();
   // ─── Teams section ─────────────────────────────────────────────────────
   const [teamDraft, setTeamDraft] = useState<Team[]>(() =>
     JSON.parse(JSON.stringify(teams)),
@@ -167,7 +170,7 @@ export default function DeptSettingsPage({
     <div className="dept-settings-page">
       <div className="dept-settings-inner">
         {/* ── Tab bar ── */}
-        <div className="dsettings-tabs">
+        <div className="dsettings-tabs" data-tour="settings-tabs">
           <button
             className={`dsettings-tab${activeTab === "team" ? " active" : ""}`}
             onClick={() => setActiveTab("team")}
@@ -180,17 +183,23 @@ export default function DeptSettingsPage({
           >
             📊 資源規劃
           </button>
+          <button
+            className="page-tour-btn"
+            onClick={() => startPageTour("settings")}
+          >
+            🔎 本頁導覽
+          </button>
         </div>
         {/* ── 團隊設定 ── */}
         {activeTab === "team" && (
-          <section className="dsec">
+          <section className="dsec" data-tour="settings-team-section">
             <div className="dsec-header">
               <h2 className="dsec-title">👥 團隊設定</h2>
               <p className="dsec-desc">
                 設定團隊與成員，用於策略負責單位與行動計畫主責者的選單。
               </p>
             </div>
-            <div className="team-list">
+            <div className="team-list" data-tour="settings-team-list">
               {teamDraft.length === 0 && (
                 <p style={{ color: "var(--text3)", fontSize: 13 }}>
                   尚未設定任何團隊。
@@ -220,17 +229,19 @@ export default function DeptSettingsPage({
                       <span className="team-member-count">
                         {team.members.length} 人
                       </span>
-                      <button
-                        className="plan-del-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteTeam(team.id);
-                        }}
-                        title="刪除團隊"
-                        style={{ color: "var(--text3)" }}
-                      >
-                        ✕
-                      </button>
+                      <Tooltip content="刪除團隊">
+                        <button
+                          className="plan-del-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTeam(team.id);
+                          }}
+                          title="刪除團隊"
+                          style={{ color: "var(--text3)" }}
+                        >
+                          ✕
+                        </button>
+                      </Tooltip>
                     </div>
                     {!isTeamCollapsed && (
                       <div className="team-members">
@@ -249,13 +260,15 @@ export default function DeptSettingsPage({
                               }
                               placeholder="成員名稱"
                             />
-                            <button
-                              className="plan-item-del"
-                              onClick={() => deleteMember(team.id, m.id)}
-                              style={{ color: "var(--text3)" }}
-                            >
-                              ✕
-                            </button>
+                            <Tooltip content="刪除成員">
+                              <button
+                                className="plan-item-del"
+                                onClick={() => deleteMember(team.id, m.id)}
+                                style={{ color: "var(--text3)" }}
+                              >
+                                ✕
+                              </button>
+                            </Tooltip>
                           </div>
                         ))}
                         <button
@@ -270,7 +283,7 @@ export default function DeptSettingsPage({
                 );
               })}
             </div>
-            <div className="dsec-footer">
+            <div className="dsec-footer" data-tour="settings-team-actions">
               <button className="detail-add-btn" onClick={addTeam}>
                 + 新增團隊
               </button>
@@ -283,7 +296,7 @@ export default function DeptSettingsPage({
 
         {/* ── 資源規劃 ── */}
         {activeTab === "resource" && (
-          <section className="dsec">
+          <section className="dsec" data-tour="settings-resource-section">
             <div className="dsec-header">
               <h2 className="dsec-title">📊 資源規劃</h2>
               <p className="dsec-desc">

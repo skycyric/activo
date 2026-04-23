@@ -23,6 +23,7 @@ import { countPlanWarnings, getPlanItemWarning } from "../utils/planWarnings";
 import KpiConfigModal from "./activity/KpiConfigModal";
 import AssistUnitPicker from "./activity/AssistUnitPicker";
 import OwnerPicker from "./activity/OwnerPicker";
+import { Tooltip } from "./ui/tooltip";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -299,7 +300,11 @@ export default function ActivityDetailPanel({
       )}
 
       {/* Panel */}
-      <div className="adp-panel" style={{ width: panelWidth }}>
+      <div
+        className="adp-panel"
+        style={{ width: panelWidth }}
+        data-tour="activity-detail-panel"
+      >
         {/* Drag handle (left edge) */}
         <div
           className="adp-resize-handle"
@@ -312,17 +317,19 @@ export default function ActivityDetailPanel({
           <div className="adp-header-title" title={draft.rawText}>
             {draft.rawText || "（未命名活動）"}
           </div>
-          <button
-            className="adp-close-btn"
-            onClick={handleRequestClose}
-            title="關閉"
-          >
-            ×
-          </button>
+          <Tooltip content="關閉">
+            <button
+              className="adp-close-btn"
+              onClick={handleRequestClose}
+              title="關閉"
+            >
+              ×
+            </button>
+          </Tooltip>
         </div>
 
         {/* Tabs */}
-        <div className="adp-tabs">
+        <div className="adp-tabs" data-tour="activity-detail-tabs">
           {(
             [
               { id: "basic", label: "基本資料" },
@@ -341,6 +348,15 @@ export default function ActivityDetailPanel({
               key={t.id}
               className={`adp-tab${tab === t.id ? " adp-tab-active" : ""}`}
               onClick={() => setTab(t.id)}
+              data-tour={
+                t.id === "basic"
+                  ? "activity-detail-tab-basic"
+                  : t.id === "kpi"
+                    ? "activity-detail-tab-kpi"
+                    : t.id === "plans"
+                      ? "activity-detail-tab-plans"
+                      : "activity-detail-tab-notes"
+              }
             >
               {t.label}
             </button>
@@ -350,53 +366,61 @@ export default function ActivityDetailPanel({
         {/* Content */}
         <div className="adp-body">
           {tab === "basic" && (
-            <BasicTab
-              key={`${draft.id}:${initialPeriodId ?? ""}:${initialGoalId ?? ""}:${initialStrategyId ?? ""}`}
-              draft={draft}
-              workspace={workspace}
-              isReadOnly={isReadOnly}
-              deptId={deptId}
-              patch={patch}
-              onStatusChange={(status) => {
-                setStatusManuallyChanged(true);
-                patch({ status });
-              }}
-              overduePlanDescriptions={overduePlanItems.map(
-                (item) => item.description || "（未命名行動計畫）",
-              )}
-              initialPeriodId={initialPeriodId}
-              initialGoalId={initialGoalId}
-              initialStrategyId={initialStrategyId}
-            />
+            <div data-tour="activity-detail-basic">
+              <BasicTab
+                key={`${draft.id}:${initialPeriodId ?? ""}:${initialGoalId ?? ""}:${initialStrategyId ?? ""}`}
+                draft={draft}
+                workspace={workspace}
+                isReadOnly={isReadOnly}
+                deptId={deptId}
+                patch={patch}
+                onStatusChange={(status) => {
+                  setStatusManuallyChanged(true);
+                  patch({ status });
+                }}
+                overduePlanDescriptions={overduePlanItems.map(
+                  (item) => item.description || "（未命名行動計畫）",
+                )}
+                initialPeriodId={initialPeriodId}
+                initialGoalId={initialGoalId}
+                initialStrategyId={initialStrategyId}
+              />
+            </div>
           )}
           {tab === "kpi" && (
-            <KpiTab
-              kpis={draft.kpis}
-              isReadOnly={isReadOnly}
-              onPatchKpi={patchKpi}
-              onAddKpi={addKpi}
-              onDeleteKpi={deleteKpi}
-              onOpenConfig={setConfigKpiId}
-            />
+            <div data-tour="activity-detail-kpi">
+              <KpiTab
+                kpis={draft.kpis}
+                isReadOnly={isReadOnly}
+                onPatchKpi={patchKpi}
+                onAddKpi={addKpi}
+                onDeleteKpi={deleteKpi}
+                onOpenConfig={setConfigKpiId}
+              />
+            </div>
           )}
           {tab === "plans" && (
-            <PlansTab
-              planItems={planItems}
-              quarters={allQuarters}
-              warnDaysBefore={effectiveWarnDays}
-              isReadOnly={isReadOnly}
-              onUpdateWarnDays={(n) => patch({ warnDaysBefore: n })}
-              onPatch={patchPlanItem}
-              onAdd={addPlanItem}
-              onDelete={deletePlanItem}
-            />
+            <div data-tour="activity-detail-plans">
+              <PlansTab
+                planItems={planItems}
+                quarters={allQuarters}
+                warnDaysBefore={effectiveWarnDays}
+                isReadOnly={isReadOnly}
+                onUpdateWarnDays={(n) => patch({ warnDaysBefore: n })}
+                onPatch={patchPlanItem}
+                onAdd={addPlanItem}
+                onDelete={deletePlanItem}
+              />
+            </div>
           )}
           {tab === "notes" && (
-            <NotesTab
-              notes={draft.notes ?? ""}
-              isReadOnly={isReadOnly}
-              onChange={(v) => patch({ notes: v })}
-            />
+            <div data-tour="activity-detail-notes">
+              <NotesTab
+                notes={draft.notes ?? ""}
+                isReadOnly={isReadOnly}
+                onChange={(v) => patch({ notes: v })}
+              />
+            </div>
           )}
         </div>
 
@@ -992,25 +1016,29 @@ function KpiRow({
         <span className="adp-kpi-name">{getKpiDisplayName(kpi)}</span>
         <div className="adp-kpi-actions">
           {!isReadOnly && (
-            <button
-              className="adp-kpi-btn"
-              onClick={onOpenConfig}
-              title="KPI 設定"
-            >
-              ⚙
-            </button>
+            <Tooltip content="KPI 設定">
+              <button
+                className="adp-kpi-btn"
+                onClick={onOpenConfig}
+                title="KPI 設定"
+              >
+                ⚙
+              </button>
+            </Tooltip>
           )}
           {!isReadOnly && (
-            <button
-              className="adp-kpi-btn adp-kpi-btn-del"
-              onClick={() => {
-                if (window.confirm(`刪除 KPI「${getKpiDisplayName(kpi)}」？`))
-                  onDelete();
-              }}
-              title="刪除"
-            >
-              ✕
-            </button>
+            <Tooltip content="刪除 KPI">
+              <button
+                className="adp-kpi-btn adp-kpi-btn-del"
+                onClick={() => {
+                  if (window.confirm(`刪除 KPI「${getKpiDisplayName(kpi)}」？`))
+                    onDelete();
+                }}
+                title="刪除"
+              >
+                ✕
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>
