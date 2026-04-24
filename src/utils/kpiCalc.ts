@@ -40,7 +40,7 @@ export function resolveBaseline(kpi: KPI, siblingKpis: KPI[]): number | null {
  * formulaType 優先：
  *   - "direct_rate"：actual / resolvedBaseline × 100
  *   - "growth"：((actual / baseline − 1) × 100) / targetGrowthRate × 100
- *   - "target_pct"：((actual / baseline) × 100) - targetRate
+ *   - "target_pct"：actualPercent（= actual / baseline × 100）
  *   - "completion"：actual（0-100 完成率）
  *
  * 無 formulaType 時 fallback 到舊 kpiType 行為（向下相容）。
@@ -85,7 +85,7 @@ export function computeKpiAchievement(
 
   if (fType === "target_pct") {
     if (kpi.actual === null || kpi.actual === undefined) return null;
-    // 新語義：target_pct 應以基底值來源計算實際百分比，再與目標百分比做差
+    // target_pct 回傳「實際百分比」本身，顯示層可再搭配 targetRate 做對照。
     let baseline: number | null = null;
     if (kpi.baseline) {
       baseline = resolveBaseline(kpi, siblingKpis);
@@ -94,11 +94,7 @@ export function computeKpiAchievement(
     if (baseline == null) return null;
     if (baseline === 0) return kpi.actual === 0 ? 100 : null;
     const actualPercent = (kpi.actual / baseline) * 100;
-    const targetRate = kpi.targetRate ?? null;
-    if (targetRate === null || targetRate === 0) {
-      return Math.round(actualPercent * 100) / 100;
-    }
-    return Math.round((actualPercent - targetRate) * 100) / 100;
+    return Math.round(actualPercent * 100) / 100;
   }
 
   if (fType === "completion") {

@@ -15,15 +15,15 @@ function makeKpi(partial: Partial<KPI>): KPI {
 }
 
 describe("kpiCalc formulaType v2", () => {
-  test("formulaType=target_pct: computes gap by actualPercent - targetRate", () => {
+  test("formulaType=target_pct: returns actualPercent from actual / baseline", () => {
     const kpi = makeKpi({
       formulaType: "target_pct",
       actual: 60,
       baseline: { type: "fixed", value: 80 },
       targetRate: 50,
     });
-    // actualPercent=60/80*100=75%; gap = 75 - 50 = 25
-    expect(computeKpiAchievement(kpi, [])).toBe(25);
+    // actualPercent=60/80*100=75%
+    expect(computeKpiAchievement(kpi, [])).toBe(75);
   });
 
   test("formulaType=completion: returns actual directly", () => {
@@ -70,8 +70,8 @@ describe("kpiCalc formulaType v2", () => {
       targetRate: 80,
       baseline: { type: "kpiRef", kpiId: "KPI-REF" },
     });
-    // actualPercent = (64/80)*100 = 80%; gap = 80 - 80 = 0
-    expect(computeKpiAchievement(kpi, [ref])).toBe(0);
+    // actualPercent = (64/80)*100 = 80%
+    expect(computeKpiAchievement(kpi, [ref])).toBe(80);
   });
 
   test("formulaType=target_pct with kpiRef baseline: unit mismatch should return null", () => {

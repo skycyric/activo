@@ -429,7 +429,10 @@ function GkComputeTree({
             {act?.rawText ?? actId}
           </div>
           {kpis.map(({ kpi }, ki) => {
-            const rate = kpi?.achievementRate;
+            const rate = kpi
+              ? (computeKpiAchievement(kpi, act?.kpis ?? []) ??
+                kpi.achievementRate)
+              : undefined;
             const color =
               rate != null
                 ? rate >= 100

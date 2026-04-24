@@ -1022,16 +1022,29 @@ function KpiRow({
         : kpi.kpiType === "progress"
           ? "completion"
           : "direct_rate");
+  const targetPctActualPercent =
+    formulaType === "target_pct" &&
+    kpi.actual !== null &&
+    kpi.actual !== undefined &&
+    baseline !== null &&
+    baseline !== undefined &&
+    baseline !== 0
+      ? (kpi.actual / baseline) * 100
+      : null;
+  const targetPctTargetPercent =
+    formulaType === "target_pct" ? (kpi.targetRate ?? null) : null;
   const achPct = achieved !== null ? `${achieved.toFixed(1)}%` : "—";
   const achColor =
     achieved === null
       ? "var(--text3)"
       : formulaType === "target_pct"
-        ? achieved >= 0
-          ? "var(--green)"
-          : achieved >= -10
-            ? "var(--yellow)"
-            : "var(--red)"
+        ? targetPctActualPercent !== null && targetPctTargetPercent !== null
+          ? targetPctActualPercent >= targetPctTargetPercent
+            ? "var(--green)"
+            : targetPctActualPercent >= targetPctTargetPercent - 10
+              ? "var(--yellow)"
+              : "var(--red)"
+          : "var(--text3)"
         : achieved >= 100
           ? "var(--green)"
           : achieved >= 70
@@ -1066,10 +1079,19 @@ function KpiRow({
           : formulaType === "direct_rate"
             ? (baseline ?? kpi.target)
             : kpi.target;
-  const achLabel = formulaType === "target_pct" ? "與目標差距" : "達成率";
+  const achLabel =
+    formulaType === "target_pct" ? "實際達成% / 目標%" : "達成率";
   const achText =
-    formulaType === "target_pct" && achieved !== null
-      ? `${achieved > 0 ? "+" : ""}${achieved.toFixed(1)}%`
+    formulaType === "target_pct"
+      ? `${
+          targetPctActualPercent !== null
+            ? `${targetPctActualPercent.toFixed(1)}%`
+            : "—"
+        } / ${
+          targetPctTargetPercent !== null
+            ? `${targetPctTargetPercent.toFixed(1)}%`
+            : "—"
+        }`
       : achPct;
 
   return (
