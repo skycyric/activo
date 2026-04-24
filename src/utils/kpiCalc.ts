@@ -21,6 +21,12 @@ export function resolveBaseline(kpi: KPI, siblingKpis: KPI[]): number | null {
     if (kpi.baseline.type === "kpiRef") {
       const baseline = kpi.baseline;
       const ref = siblingKpis.find((k) => k.id === baseline.kpiId);
+      // 防呆：kpiRef 需要相同單位，避免拿 % 去當件數/金額分母而造成異常結果
+      const currentUnit = (kpi.unit ?? "").trim();
+      const refUnit = (ref?.unit ?? "").trim();
+      if (currentUnit && refUnit && currentUnit !== refUnit) {
+        return null;
+      }
       return ref?.actual ?? null;
     }
   }
@@ -32,9 +38,9 @@ export function resolveBaseline(kpi: KPI, siblingKpis: KPI[]): number | null {
  * 計算單一 KPI 的達成率（0–200+，百分比）。
  *
  * formulaType 優先：
- *   - "direct_rate"：actual / target × 100
+ *   - "direct_rate"：actual / resolvedBaseline × 100
  *   - "growth"：((actual / baseline − 1) × 100) / targetGrowthRate × 100
- *   - "target_pct"：(actual / target × 100) / targetRate × 100
+ *   - "target_pct"：((actual / baseline) × 100) - targetRate
  *   - "completion"：actual（0-100 完成率）
  *
  * 無 formulaType 時 fallback 到舊 kpiType 行為（向下相容）。
@@ -79,19 +85,20 @@ export function computeKpiAchievement(
 
   if (fType === "target_pct") {
     if (kpi.actual === null || kpi.actual === undefined) return null;
-    // 優先使用 baseline（支援 kpiRef），否則使用 target
-    let denominator: number | null = null;
+    // 新語義：target_pct 應以基底值來源計算實際百分比，再與目標百分比做差
+    let baseline: number | null = null;
     if (kpi.baseline) {
-      denominator = resolveBaseline(kpi, siblingKpis);
+      baseline = resolveBaseline(kpi, siblingKpis);
     }
-    if (denominator === null) denominator = kpi.target;
-    if (denominator == null) return null;
-    if (denominator === 0) return kpi.actual === 0 ? 100 : null;
-    const rawRate = (kpi.actual / denominator) * 100;
+    if (baseline === null) baseline = kpi.target;
+    if (baseline == null) return null;
+    if (baseline === 0) return kpi.actual === 0 ? 100 : null;
+    const actualPercent = (kpi.actual / baseline) * 100;
     const targetRate = kpi.targetRate ?? null;
-    if (targetRate === null || targetRate === 0)
-      return Math.round(rawRate * 100) / 100;
-    return Math.round((rawRate / targetRate) * 10000) / 100;
+    if (targetRate === null || targetRate === 0) {
+      return Math.round(actualPercent * 100) / 100;
+    }
+    return Math.round((actualPercent - targetRate) * 100) / 100;
   }
 
   if (fType === "completion") {

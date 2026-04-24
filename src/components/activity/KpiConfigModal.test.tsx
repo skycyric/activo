@@ -195,13 +195,11 @@ describe("KpiConfigModal regression", () => {
 
     await userEvent.click(kpiRefRadios[0]);
 
-    const warningText = screen.getByText(
-      /此活動所有 KPI 都還沒設定值，無法使用引用基底值/,
-    );
+    const warningText = screen.getByText(/此活動沒有可引用的 KPI/);
     expect(warningText).toBeInTheDocument();
   });
 
-  it("target_pct should save target and targetRate", async () => {
+  it("target_pct should save targetRate and clear target", async () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
@@ -225,9 +223,9 @@ describe("KpiConfigModal regression", () => {
     const numberInputs = container.querySelectorAll('input[type="number"]');
     if (numberInputs.length < 2) throw new Error("number inputs not found");
     await userEvent.clear(numberInputs[0]);
-    await userEvent.type(numberInputs[0], "100");
+    await userEvent.type(numberInputs[0], "50");
     await userEvent.clear(numberInputs[1]);
-    await userEvent.type(numberInputs[1], "50");
+    await userEvent.type(numberInputs[1], "100");
     const saveBtn = container.querySelector(".kpi-modal-btn-save");
     if (!saveBtn) throw new Error("save button not found");
     await userEvent.click(saveBtn);
@@ -235,8 +233,9 @@ describe("KpiConfigModal regression", () => {
     expect(mockOnSave).toHaveBeenCalled();
     const saved = mockOnSave.mock.calls[0][0] as KPI;
     expect(saved.formulaType).toBe("target_pct");
-    expect(saved.target).toBe(100);
     expect(saved.targetRate).toBe(50);
+    expect(saved.target).toBeNull();
+    expect(saved.baseline).toEqual({ type: "fixed", value: 100 });
     expect(saved.kpiType).toBe("target_rate");
   });
 

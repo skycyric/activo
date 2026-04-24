@@ -1,7 +1,7 @@
 /**
  * KpiConfigModal — KPI 設定 Modal（Layer 2，期初設定用）
  *
- * 設定 KPI 的名稱、單位、公式類型、目標值、baseline。
+ * 設定 KPI 的名稱、單位、公式類型、目標值/目標百分比、baseline。
  * 由 ActivityDetailPanel 的 KPI tab 觸發。
  */
 import { useState, useEffect } from "react";
@@ -38,9 +38,6 @@ export default function KpiConfigModal({
   const [formulaType, setFormulaType] = useState<FormulaType>(
     getInitialFormulaType(kpi),
   );
-  const [target, setTarget] = useState<string>(
-    kpi.target !== null && kpi.target !== undefined ? String(kpi.target) : "",
-  );
   const [targetGrowthRate, setTargetGrowthRate] = useState<string>(
     kpi.targetGrowthRate !== null && kpi.targetGrowthRate !== undefined
       ? String(kpi.targetGrowthRate)
@@ -60,9 +57,9 @@ export default function KpiConfigModal({
   const [baselineKpiRef, setBaselineKpiRef] = useState<string>(
     kpi.baseline?.type === "kpiRef" ? kpi.baseline.kpiId : "",
   );
+  const currentUnit = (unit ?? "").trim();
 
   const handleSave = () => {
-    const parsedTarget = target !== "" ? parseFloat(target) : null;
     const parsedTargetGrowthRate =
       targetGrowthRate !== "" ? parseFloat(targetGrowthRate) : null;
     const parsedTargetRate = targetRate !== "" ? parseFloat(targetRate) : null;
@@ -94,9 +91,15 @@ export default function KpiConfigModal({
       formulaType,
       kpiType: nextKpiType,
       target:
-        formulaType === "completion"
+        formulaType === "completion" || formulaType === "target_pct"
           ? null
-          : (parsedTarget ?? kpi.target ?? null),
+          : formulaType === "growth"
+            ? null
+            : baseline?.type === "fixed"
+              ? baseline.value
+              : baseline?.type === "kpiRef"
+                ? null
+                : (kpi.target ?? null),
       targetGrowthRate:
         formulaType === "growth" ? parsedTargetGrowthRate : null,
       targetRate: formulaType === "target_pct" ? parsedTargetRate : null,
@@ -169,7 +172,7 @@ export default function KpiConfigModal({
                 <span>
                   <strong>直接達成率</strong>
                   <span className="kpi-formula-desc">
-                    &nbsp;= 實際值 / 目標值 × 100%
+                    &nbsp;= 實際值 / 基底值（目標值）× 100%
                   </span>
                 </span>
               </label>
@@ -197,7 +200,7 @@ export default function KpiConfigModal({
                 <span>
                   <strong>百分比達成率</strong>
                   <span className="kpi-formula-desc">
-                    &nbsp;= (實際值 / 目標值 × 100%) / 目標達成率 × 100%
+                    &nbsp;= (實際值 / 基底值 × 100%) - 目標百分比
                   </span>
                 </span>
               </label>
@@ -218,36 +221,30 @@ export default function KpiConfigModal({
             </div>
           </div>
 
-          {/* 目標值 */}
-          {formulaType !== "completion" && (
+          {/* 成長率：目標成長率 */}
+          {formulaType === "growth" && (
             <label className="kpi-modal-label">
-              {formulaType === "growth" ? "目標成長率（%）" : "目標值"}
+              目標成長率（%）
               <input
                 className="kpi-modal-input"
                 type="number"
-                value={formulaType === "growth" ? targetGrowthRate : target}
-                onChange={(e) =>
-                  formulaType === "growth"
-                    ? setTargetGrowthRate(e.target.value)
-                    : setTarget(e.target.value)
-                }
-                placeholder={
-                  formulaType === "growth" ? "例：20（代表 20%）" : "例：100"
-                }
+                value={targetGrowthRate}
+                onChange={(e) => setTargetGrowthRate(e.target.value)}
+                placeholder="例：20（代表 20%）"
               />
             </label>
           )}
 
-          {/* 百分比達成率：目標達成率 */}
+          {/* 百分比達成率：目標百分比 */}
           {formulaType === "target_pct" && (
             <label className="kpi-modal-label">
-              目標達成率（%）
+              目標百分比（%）
               <input
                 className="kpi-modal-input"
                 type="number"
                 value={targetRate}
                 onChange={(e) => setTargetRate(e.target.value)}
-                placeholder="例：85（代表 85%）"
+                placeholder="例：80（代表目標百分比 80%）"
               />
             </label>
           )}
@@ -258,8 +255,8 @@ export default function KpiConfigModal({
               {formulaType === "growth"
                 ? "基底值來源"
                 : formulaType === "direct_rate"
-                  ? "參考來源"
-                  : "引用基底值來源"}
+                  ? "目標值來源"
+                  : "基底值來源"}
               <div className="kpi-formula-radios">
                 <label className="kpi-formula-radio">
                   <input
@@ -268,7 +265,9 @@ export default function KpiConfigModal({
                     checked={baselineType === "fixed"}
                     onChange={() => setBaselineType("fixed")}
                   />
-                  <span>固定值</span>
+                  <span>
+                    {formulaType === "direct_rate" ? "固定目標值" : "固定值"}
+                  </span>
                 </label>
                 {siblingKpis.length > 0 && (
                   <label className="kpi-formula-radio">
@@ -288,7 +287,13 @@ export default function KpiConfigModal({
                   type="number"
                   value={baselineFixed}
                   onChange={(e) => setBaselineFixed(e.target.value)}
-                  placeholder="基期值，例：1000"
+                  placeholder={
+                    formulaType === "growth"
+                      ? "基期值，例：1000"
+                      : formulaType === "target_pct"
+                        ? "基底值，例：100"
+                        : "目標值，例：100"
+                  }
                   style={{ marginTop: 6 }}
                 />
               )}
@@ -304,16 +309,29 @@ export default function KpiConfigModal({
                     {siblingKpis.map((k) => {
                       const hasActual =
                         k.actual !== null && k.actual !== undefined;
+                      const refUnit = (k.unit ?? "").trim();
+                      const sameUnit =
+                        !currentUnit || !refUnit || currentUnit === refUnit;
+                      const selectable = hasActual && sameUnit;
                       return (
-                        <option key={k.id} value={k.id} disabled={!hasActual}>
+                        <option key={k.id} value={k.id} disabled={!selectable}>
                           {getKpiDisplayName(k)}
-                          {hasActual ? ` (${k.actual})` : " (尚未設定值)"}
+                          {hasActual
+                            ? sameUnit
+                              ? ` (${k.actual})`
+                              : ` (${k.actual}，單位不一致)`
+                            : " (尚未設定值)"}
                         </option>
                       );
                     })}
                   </select>
                   {siblingKpis.every(
-                    (k) => k.actual === null || k.actual === undefined,
+                    (k) =>
+                      k.actual === null ||
+                      k.actual === undefined ||
+                      ((k.unit ?? "").trim() &&
+                        currentUnit &&
+                        (k.unit ?? "").trim() !== currentUnit),
                   ) && (
                     <div
                       style={{
@@ -325,9 +343,9 @@ export default function KpiConfigModal({
                         borderRadius: "4px",
                       }}
                     >
-                      ⚠ 此活動所有 KPI
-                      都還沒設定值，無法使用引用基底值。請先設定其他 KPI
-                      的實際值。
+                      ⚠ 此活動沒有可引用的
+                      KPI（可能尚未設定實際值或單位不一致）。
+                      請先補齊實際值，並確認 KPI 單位一致。
                     </div>
                   )}
                 </>

@@ -9246,9 +9246,45 @@ body,
 }
 .adp-kpi-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 10px;
+}
+.adp-kpi-header-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  text-align: left;
+}
+.adp-kpi-header-main:not(.adp-kpi-header-main-readonly) {
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.adp-kpi-header-main:not(.adp-kpi-header-main-readonly):hover {
+  border-color: rgba(99, 102, 241, 0.45);
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.12);
+  transform: translateY(-1px);
+}
+.adp-kpi-header-main:not(.adp-kpi-header-main-readonly):focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.4);
+  outline-offset: 2px;
+}
+.adp-kpi-name-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .adp-kpi-name {
   font-size: 13px;
@@ -9258,6 +9294,20 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.adp-kpi-formula-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--brand);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.adp-kpi-config-hint {
+  font-size: 12px;
+  color: var(--text3);
 }
 .adp-kpi-actions {
   display: flex;
@@ -9334,6 +9384,21 @@ body,
   color: var(--text3);
   padding: 12px 0;
   text-align: center;
+}
+
+@media (max-width: 640px) {
+  .adp-kpi-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .adp-kpi-name-row {
+    flex-wrap: wrap;
+  }
+
+  .adp-kpi-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Plan items */

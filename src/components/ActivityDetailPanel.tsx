@@ -1013,15 +1013,6 @@ function KpiRow({
   onDelete: () => void;
   onOpenConfig: () => void;
 }) {
-  const achPct = achieved !== null ? `${achieved.toFixed(1)}%` : "—";
-  const achColor =
-    achieved === null
-      ? "var(--text3)"
-      : achieved >= 100
-        ? "var(--green)"
-        : achieved >= 70
-          ? "var(--yellow)"
-          : "var(--red)";
   const formulaType =
     kpi.formulaType ??
     (kpi.kpiType === "growth"
@@ -1031,37 +1022,83 @@ function KpiRow({
         : kpi.kpiType === "progress"
           ? "completion"
           : "direct_rate");
+  const achPct = achieved !== null ? `${achieved.toFixed(1)}%` : "—";
+  const achColor =
+    achieved === null
+      ? "var(--text3)"
+      : formulaType === "target_pct"
+        ? achieved >= 0
+          ? "var(--green)"
+          : achieved >= -10
+            ? "var(--yellow)"
+            : "var(--red)"
+        : achieved >= 100
+          ? "var(--green)"
+          : achieved >= 70
+            ? "var(--yellow)"
+            : "var(--red)";
+  const formulaLabel =
+    formulaType === "growth"
+      ? "成長率"
+      : formulaType === "target_pct"
+        ? "百分比達成率"
+        : formulaType === "completion"
+          ? "完成率"
+          : "直接達成率";
   const showTarget = formulaType !== "completion";
   const targetLabel =
     formulaType === "growth"
       ? "目標成長率"
       : formulaType === "target_pct"
-        ? "目標值"
+        ? "目標百分比"
         : "目標";
-  const targetUnit = formulaType === "growth" ? "%" : kpi.unit || "—";
+  const targetUnit =
+    formulaType === "growth" || formulaType === "target_pct"
+      ? "%"
+      : kpi.unit || "—";
   const targetValue =
     formulaType === "growth"
       ? kpi.targetGrowthRate
-      : formulaType === "completion"
-        ? null
-        : kpi.target;
+      : formulaType === "target_pct"
+        ? kpi.targetRate
+        : formulaType === "completion"
+          ? null
+          : formulaType === "direct_rate"
+            ? (baseline ?? kpi.target)
+            : kpi.target;
+  const achLabel = formulaType === "target_pct" ? "與目標差距" : "達成率";
+  const achText =
+    formulaType === "target_pct" && achieved !== null
+      ? `${achieved > 0 ? "+" : ""}${achieved.toFixed(1)}%`
+      : achPct;
 
   return (
     <div className="adp-kpi-row">
       <div className="adp-kpi-header">
-        <span className="adp-kpi-name">{getKpiDisplayName(kpi)}</span>
+        {!isReadOnly ? (
+          <button
+            type="button"
+            className="adp-kpi-header-main"
+            onClick={onOpenConfig}
+            title={`編輯 KPI 設定：${getKpiDisplayName(kpi)}`}
+          >
+            <span className="adp-kpi-name-row">
+              <span className="adp-kpi-name">{getKpiDisplayName(kpi)}</span>
+              <span className="adp-kpi-formula-pill">{formulaLabel}</span>
+            </span>
+            <span className="adp-kpi-config-hint">
+              點這裡編輯名稱、公式、基底來源
+            </span>
+          </button>
+        ) : (
+          <div className="adp-kpi-header-main adp-kpi-header-main-readonly">
+            <span className="adp-kpi-name-row">
+              <span className="adp-kpi-name">{getKpiDisplayName(kpi)}</span>
+              <span className="adp-kpi-formula-pill">{formulaLabel}</span>
+            </span>
+          </div>
+        )}
         <div className="adp-kpi-actions">
-          {!isReadOnly && (
-            <Tooltip content="KPI 設定">
-              <button
-                className="adp-kpi-btn"
-                onClick={onOpenConfig}
-                title="KPI 設定"
-              >
-                ⚙
-              </button>
-            </Tooltip>
-          )}
           {!isReadOnly && (
             <Tooltip content="刪除 KPI">
               <button
@@ -1107,49 +1144,21 @@ function KpiRow({
                       onPatch({ targetGrowthRate: value });
                       return;
                     }
+                    if (formulaType === "target_pct") {
+                      onPatch({ targetRate: value });
+                      return;
+                    }
                     onPatch({ target: value });
                   }}
                   placeholder={
-                    formulaType === "growth" ? "目標成長率" : "目標值"
+                    formulaType === "growth"
+                      ? "目標成長率"
+                      : formulaType === "target_pct"
+                        ? "目標百分比"
+                        : "目標值"
                   }
                 />
                 <span className="adp-kpi-unit">{targetUnit}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 百分比達成率：目標達成率 */}
-        {formulaType === "target_pct" && (
-          <div className="adp-kpi-field">
-            <span className="adp-kpi-field-label">目標達成率</span>
-            {isReadOnly ? (
-              <span className="adp-kpi-field-val">
-                {kpi.targetRate !== null && kpi.targetRate !== undefined
-                  ? `${kpi.targetRate} %`
-                  : "—"}
-              </span>
-            ) : (
-              <div className="adp-kpi-input-unit">
-                <input
-                  className="adp-input adp-input-sm"
-                  type="number"
-                  value={
-                    kpi.targetRate !== null && kpi.targetRate !== undefined
-                      ? kpi.targetRate
-                      : ""
-                  }
-                  onChange={(e) =>
-                    onPatch({
-                      targetRate:
-                        e.target.value !== ""
-                          ? parseFloat(e.target.value)
-                          : null,
-                    })
-                  }
-                  placeholder="目標達成率"
-                />
-                <span className="adp-kpi-unit">%</span>
               </div>
             )}
           </div>
@@ -1189,30 +1198,25 @@ function KpiRow({
           )}
         </div>
 
-        {/* 基底值（成長型、直接達成率、百分比達成率在配置 baseline 時顯示） */}
-        {["growth", "direct_rate", "target_pct"].includes(formulaType) &&
-          kpi.baseline && (
-            <div className="adp-kpi-field">
-              <span className="adp-kpi-field-label">
-                {formulaType === "growth"
-                  ? "基底"
-                  : formulaType === "direct_rate"
-                    ? "參考值"
-                    : "目標來源"}
-              </span>
-              <span className="adp-kpi-field-val">
-                {baseline !== null && baseline !== undefined
-                  ? `${baseline} ${kpi.unit}`
-                  : "—"}
-              </span>
-            </div>
-          )}
+        {/* 基底值（成長型、百分比達成率在配置 baseline 時顯示） */}
+        {["growth", "target_pct"].includes(formulaType) && kpi.baseline && (
+          <div className="adp-kpi-field">
+            <span className="adp-kpi-field-label">
+              {formulaType === "growth" ? "基底" : "基底"}
+            </span>
+            <span className="adp-kpi-field-val">
+              {baseline !== null && baseline !== undefined
+                ? `${baseline} ${kpi.unit}`
+                : "—"}
+            </span>
+          </div>
+        )}
 
         {/* 達成率 */}
         <div className="adp-kpi-field">
-          <span className="adp-kpi-field-label">達成率</span>
+          <span className="adp-kpi-field-label">{achLabel}</span>
           <span className="adp-kpi-ach" style={{ color: achColor }}>
-            {achPct}
+            {achText}
           </span>
         </div>
       </div>

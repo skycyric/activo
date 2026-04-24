@@ -15,15 +15,15 @@ function makeKpi(partial: Partial<KPI>): KPI {
 }
 
 describe("kpiCalc formulaType v2", () => {
-  test("formulaType=target_pct: uses targetRate as denominator", () => {
+  test("formulaType=target_pct: computes gap by actualPercent - targetRate", () => {
     const kpi = makeKpi({
       formulaType: "target_pct",
-      target: 100,
       actual: 60,
+      baseline: { type: "fixed", value: 80 },
       targetRate: 50,
     });
-    // rawRate=60%; 60/50*100 = 120%
-    expect(computeKpiAchievement(kpi, [])).toBe(120);
+    // actualPercent=60/80*100=75%; gap = 75 - 50 = 25
+    expect(computeKpiAchievement(kpi, [])).toBe(25);
   });
 
   test("formulaType=completion: returns actual directly", () => {
@@ -61,7 +61,7 @@ describe("kpiCalc formulaType v2", () => {
     expect(computeKpiAchievement(kpi, [ref])).toBe(120);
   });
 
-  test("formulaType=target_pct with kpiRef baseline: uses ref actual as target", () => {
+  test("formulaType=target_pct with kpiRef baseline: uses ref actual as baseline", () => {
     const ref = makeKpi({ id: "KPI-REF", actual: 80 });
     const kpi = makeKpi({
       id: "KPI-TP",
@@ -70,7 +70,20 @@ describe("kpiCalc formulaType v2", () => {
       targetRate: 80,
       baseline: { type: "kpiRef", kpiId: "KPI-REF" },
     });
-    // rawRate = (64/80)*100 = 80%; achievement = 80/80*100 = 100%
-    expect(computeKpiAchievement(kpi, [ref])).toBe(100);
+    // actualPercent = (64/80)*100 = 80%; gap = 80 - 80 = 0
+    expect(computeKpiAchievement(kpi, [ref])).toBe(0);
+  });
+
+  test("formulaType=target_pct with kpiRef baseline: unit mismatch should return null", () => {
+    const ref = makeKpi({ id: "KPI-REF", actual: 80, unit: "%" });
+    const kpi = makeKpi({
+      id: "KPI-TP",
+      formulaType: "target_pct",
+      actual: 64,
+      targetRate: 80,
+      unit: "件",
+      baseline: { type: "kpiRef", kpiId: "KPI-REF" },
+    });
+    expect(computeKpiAchievement(kpi, [ref])).toBeNull();
   });
 });

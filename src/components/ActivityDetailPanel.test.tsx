@@ -41,14 +41,18 @@ const ACTIVITY: DeptActivity = {
   endDate: "2026-01-31",
 };
 
-function renderPanel() {
+function renderPanel(options?: {
+  activity?: DeptActivity;
+  forcedTab?: "basic" | "kpi" | "plans" | "notes";
+}) {
   const onClose = vi.fn();
   render(
     <ActivityDetailPanel
-      activity={ACTIVITY}
+      activity={options?.activity ?? ACTIVITY}
       deptId="dept-1"
       workspace={WORKSPACE}
       warnDaysBefore={7}
+      forcedTab={options?.forcedTab}
       onUpdate={() => {}}
       onDelete={() => {}}
       onClose={onClose}
@@ -92,5 +96,32 @@ describe("ActivityDetailPanel close guard", () => {
 
     expect(confirmSpy).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  test("kpi header main button should open KPI config modal", async () => {
+    renderPanel({
+      forcedTab: "kpi",
+      activity: {
+        ...ACTIVITY,
+        kpis: [
+          {
+            id: "kpi-1",
+            label: "營收達成",
+            formulaType: "target_pct",
+            target: null,
+            targetRate: 85,
+            actual: 70,
+            unit: "%",
+            achievementRate: 82.35,
+            baseline: { type: "fixed", value: 100 },
+          },
+        ],
+      },
+    });
+
+    await userEvent.click(screen.getByTitle("編輯 KPI 設定：營收達成"));
+
+    expect(screen.getByText(/KPI 設定/)).toBeInTheDocument();
+    expect(screen.getByText("目標百分比（%）")).toBeInTheDocument();
   });
 });
