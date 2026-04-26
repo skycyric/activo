@@ -10,6 +10,7 @@
     "ci:check": "npm run lint && npm run test && npm run build",
     "preview": "vite preview",
     "check:data-links": "node scripts/validate-data-links.mjs",
+    "gen:fake-coupling": "node scripts/generate-fake-coupling-data.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
