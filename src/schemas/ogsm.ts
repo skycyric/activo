@@ -435,12 +435,21 @@ export const TeamSchema = z.object({
   clearedFields: z.array(z.string()).optional(),
 });
 
+export const TagDictionaryItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["active", "disabled"]).default("active"),
+  aliases: z.array(z.string()).optional(),
+  updatedAt: z.string().optional(),
+});
+
 export const WorkspaceDataSchema = z.object({
   departments: z.array(DepartmentSchema),
   version: z.number(),
   savedAt: z.string().optional(),
   deletedIds: z.array(z.string()).optional(),
   teams: z.array(TeamSchema).optional(),
+  tagDictionary: z.array(TagDictionaryItemSchema).optional(),
   _migratedPhase2: z.boolean().optional(),
   _migratedPhase3: z.boolean().optional(),
   /** true = 已執行 activity-first 遷移，dept.activities[] 為主要資料來源 */
@@ -483,4 +492,5 @@ export type PeriodData = z.infer<typeof PeriodDataSchema>;
 export type Department = z.infer<typeof DepartmentSchema>;
 export type TeamMember = z.infer<typeof TeamMemberSchema>;
 export type Team = z.infer<typeof TeamSchema>;
+export type TagDictionaryItem = z.infer<typeof TagDictionaryItemSchema>;
 export type WorkspaceData = z.infer<typeof WorkspaceDataSchema>;

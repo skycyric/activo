@@ -1,4 +1,4 @@
-import type { WorkspaceData } from "../../schemas/ogsm";
+import type { WorkspaceData, TagDictionaryItem } from "../../schemas/ogsm";
 import {
   type ActivityFilterState,
   EMPTY_ACTIVITY_FILTERS,
@@ -26,12 +26,14 @@ type Option = {
 interface Props {
   workspace: WorkspaceData;
   filters: ActivityFilterState;
+  tagDictionary?: TagDictionaryItem[];
   onChange: (f: ActivityFilterState) => void;
 }
 
 export default function ActivityFilters({
   workspace,
   filters,
+  tagDictionary,
   onChange,
 }: Props) {
   const toggleInList = (key: keyof ActivityFilterState, value: string) => {
@@ -146,6 +148,10 @@ export default function ActivityFilters({
     ),
   ).sort();
 
+  const activeTagOptions: Option[] = (tagDictionary ?? [])
+    .filter((t) => t.status === "active")
+    .map((t) => ({ value: t.name, label: t.name }));
+
   const hasFilter =
     filters.deptIds.length > 0 ||
     filters.teamIds.length > 0 ||
@@ -155,6 +161,7 @@ export default function ActivityFilters({
     filters.goalIds.length > 0 ||
     filters.strategyIds.length > 0 ||
     filters.statuses.length > 0 ||
+    filters.tags.length > 0 ||
     filters.startFrom !== "" ||
     filters.endTo !== "" ||
     filters.keyword !== "";
@@ -248,6 +255,15 @@ export default function ActivityFilters({
           options={statusOptions}
           onToggle={(value) => toggleInList("statuses", value)}
         />
+
+        {activeTagOptions.length > 0 && (
+          <MultiSelectDropdown
+            title="標籤"
+            values={filters.tags}
+            options={activeTagOptions}
+            onToggle={(value) => toggleInList("tags", value)}
+          />
+        )}
 
         {/* 開始日期 ≥ */}
         <div className="activity-filter-date-group">

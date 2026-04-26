@@ -12,6 +12,7 @@ import type {
   ActivityPlanItem,
   AssistUnit,
   MeasureStatus,
+  TagDictionaryItem,
 } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import {
@@ -32,6 +33,7 @@ const LS_WIDTH_KEY = "activo_activity_panel_width";
 const DEFAULT_PANEL_WIDTH = 480;
 const MIN_PANEL_WIDTH = 320;
 const MAX_PANEL_WIDTH = 900;
+const MAX_ACTIVITY_TAGS = 5;
 
 const STATUS_OPTIONS: { value: MeasureStatus; label: string }[] = [
   { value: "not-started", label: "未開始" },
@@ -872,6 +874,7 @@ function BasicTab({
       <div className="adp-field">
         <label className="adp-field-label">標籤</label>
         <TagEditor
+          dictionary={workspace.tagDictionary ?? []}
           tags={draft.tags ?? []}
           disabled={isReadOnly}
           onChange={(tags) => patch({ tags })}
@@ -884,22 +887,29 @@ function BasicTab({
 // ─── Tag Editor ────────────────────────────────────────────────────────────
 
 function TagEditor({
+  dictionary,
   tags,
   disabled,
   onChange,
 }: {
+  dictionary: TagDictionaryItem[];
   tags: string[];
   disabled: boolean;
   onChange: (t: string[]) => void;
 }) {
-  const [inputVal, setInputVal] = useState("");
+  const [searchVal, setSearchVal] = useState("");
+  const activeOptions = dictionary.filter((item) => item.status === "active");
+  const normalizedSearch = searchVal.trim().toLocaleLowerCase("zh-TW");
+  const filteredOptions = activeOptions.filter((item) => {
+    if (tags.includes(item.name)) return false;
+    if (!normalizedSearch) return true;
+    return item.name.toLocaleLowerCase("zh-TW").includes(normalizedSearch);
+  });
 
-  const addTag = () => {
-    const v = inputVal.trim();
-    if (v && !tags.includes(v)) {
-      onChange([...tags, v]);
-    }
-    setInputVal("");
+  const addTag = (name: string) => {
+    if (tags.includes(name) || tags.length >= MAX_ACTIVITY_TAGS) return;
+    onChange([...tags, name]);
+    setSearchVal("");
   };
 
   return (
@@ -910,6 +920,7 @@ function TagEditor({
             {t}
             {!disabled && (
               <button
+                type="button"
                 className="adp-tag-remove"
                 onClick={() => onChange(tags.filter((x) => x !== t))}
               >
@@ -924,21 +935,46 @@ function TagEditor({
         <div className="adp-tag-input-row">
           <input
             className="adp-input adp-input-sm"
-            value={inputVal}
-            onChange={(e) => setInputVal(e.target.value)}
+            value={searchVal}
+            disabled={
+              activeOptions.length === 0 || tags.length >= MAX_ACTIVITY_TAGS
+            }
+            onChange={(e) => setSearchVal(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && filteredOptions[0]) {
                 e.preventDefault();
-                addTag();
+                addTag(filteredOptions[0].name);
               }
             }}
-            placeholder="輸入標籤後按 Enter"
+            placeholder={
+              activeOptions.length === 0
+                ? "請先到標籤管理建立標籤"
+                : tags.length >= MAX_ACTIVITY_TAGS
+                  ? `已達上限 ${MAX_ACTIVITY_TAGS} 個`
+                  : "搜尋既有標籤"
+            }
           />
-          <button className="adp-btn-sm" onClick={addTag}>
-            +
-          </button>
+          <span className="adp-tag-meta">
+            已選 {tags.length}/{MAX_ACTIVITY_TAGS}
+          </span>
         </div>
       )}
+      {!disabled &&
+        filteredOptions.length > 0 &&
+        tags.length < MAX_ACTIVITY_TAGS && (
+          <div className="adp-tag-suggestions">
+            {filteredOptions.slice(0, 12).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="adp-tag-suggestion"
+                onClick={() => addTag(item.name)}
+              >
+                {item.name}
+              </button>
+            ))}
+          </div>
+        )}
     </div>
   );
 }

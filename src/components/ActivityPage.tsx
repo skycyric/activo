@@ -11,6 +11,7 @@ import ActivityCardGrid from "./activity/ActivityCardGrid";
 import ActivityGantt from "./activity/ActivityGantt";
 import ActivityPlanGantt from "./activity/ActivityPlanGantt";
 import ActivityCalendar from "./activity/ActivityCalendar";
+import ActivityGraphView from "./activity/ActivityGraphView";
 import ActivityAddModal from "./activity/ActivityAddModal";
 import ActivityDetailPanel from "./ActivityDetailPanel";
 import { hasCanonicalDeptActivities } from "../utils/activityCompat";
@@ -34,7 +35,13 @@ export interface ActivityWithContext extends DeptActivity {
   isReadOnly: boolean;
 }
 
-type ActivityView = "table" | "kanban" | "gantt" | "cards" | "calendar";
+type ActivityView =
+  | "table"
+  | "kanban"
+  | "gantt"
+  | "cards"
+  | "calendar"
+  | "graph";
 
 const EMPTY_FILTERS = EMPTY_ACTIVITY_FILTERS;
 
@@ -44,6 +51,7 @@ const VIEWS: { id: ActivityView; label: string; icon: string }[] = [
   { id: "gantt", label: "甘特", icon: "▬" },
   { id: "cards", label: "卡片牆", icon: "⊞" },
   { id: "calendar", label: "月曆", icon: "📅" },
+  { id: "graph", label: "關聯圖", icon: "○" },
 ];
 
 interface Props {
@@ -440,6 +448,10 @@ export default function ActivityPage({
       }
 
       if (statusSet.size > 0 && !statusSet.has(a.status ?? "")) return false;
+      if (filters.tags.length > 0) {
+        const actTags = new Set(a.tags ?? []);
+        if (!filters.tags.some((t) => actTags.has(t))) return false;
+      }
       if (filters.startFrom && a.startDate && a.startDate < filters.startFrom)
         return false;
       if (filters.endTo && a.endDate && a.endDate > filters.endTo) return false;
@@ -452,6 +464,7 @@ export default function ActivityPage({
           a.goalTitle,
           a.strategyTitle,
           a.deptName,
+          ...(a.tags ?? []),
           ...(a.assistUnits?.map((u) => u.name) ?? []),
         ]
           .join(" ")
@@ -471,6 +484,7 @@ export default function ActivityPage({
     filters.goalIds.length > 0 ||
     filters.strategyIds.length > 0 ||
     filters.statuses.length > 0 ||
+    filters.tags.length > 0 ||
     filters.startFrom !== "" ||
     filters.endTo !== "" ||
     filters.keyword !== "";
@@ -589,6 +603,7 @@ export default function ActivityPage({
         <ActivityFilters
           workspace={workspace}
           filters={filters}
+          tagDictionary={workspace.tagDictionary}
           onChange={setFilters}
         />
       </div>
@@ -662,6 +677,13 @@ export default function ActivityPage({
           {view === "calendar" && (
             <ActivityCalendar
               activities={filtered}
+              onJumpToActivity={handleOpenActivityDetail}
+            />
+          )}
+          {view === "graph" && (
+            <ActivityGraphView
+              activities={filtered}
+              allActivities={allActivities}
               onJumpToActivity={handleOpenActivityDetail}
             />
           )}

@@ -98,6 +98,17 @@ export default function ActivityCard({
           ))}
         </select>
       </div>
+
+      {/* Tags */}
+      {act.tags && act.tags.length > 0 && (
+        <div className="act-card-tags">
+          {act.tags.map((tag) => (
+            <span key={tag} className="act-card-tag">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -7867,6 +7867,128 @@ body,
   border-radius: 6px;
   width: 100%;
 }
+.act-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.act-card-tag {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  white-space: nowrap;
+}
+
+/*
+   GRAPH VIEW
+*/
+.act-graph-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  flex: 1;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.act-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.act-graph-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  max-width: 220px;
+}
+.act-graph-tooltip-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text1);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+.act-graph-tooltip-meta {
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.act-graph-tooltip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+.act-graph-tooltip-tags span {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.act-graph-tooltip-hint {
+  font-size: 10px;
+  color: var(--text3);
+  font-style: italic;
+}
+.act-graph-legend {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text2);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+.act-graph-legend-title {
+  font-weight: 600;
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+.act-graph-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.act-graph-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2.5px solid;
+  flex-shrink: 0;
+}
+.act-graph-legend-sep {
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
+.act-graph-legend-hint {
+  font-size: 10px;
+  color: var(--text3);
+}
 
 /* 
    KANBAN VIEW
@@ -9219,6 +9341,31 @@ body,
 .adp-tag-input-row {
   display: flex;
   gap: 5px;
+  align-items: center;
+}
+.adp-tag-meta {
+  font-size: 12px;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.adp-tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.adp-tag-suggestion {
+  border: 1px solid #d7e2ff;
+  background: #f8faff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.adp-tag-suggestion:hover {
+  border-color: #6366f1;
+  color: #4338ca;
+  background: #eef2ff;
 }
 .adp-btn-sm {
   padding: 4px 10px;

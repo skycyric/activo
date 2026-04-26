@@ -8,6 +8,7 @@ import type {
   PeriodData,
   Team,
   DeptActivity,
+  TagDictionaryItem,
 } from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
@@ -65,6 +66,9 @@ import StrategyList from "./components/StrategyList";
 import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
+import TagManagementPage, {
+  type TagRename,
+} from "./components/TagManagementPage";
 import ActivityPage from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
 import KpiDesigner from "./components/KpiDesigner";
@@ -77,8 +81,14 @@ type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
 type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
 type InlineToastTone = "success" | "warning" | "error";
 type RemoteRefreshOptions = { confirmIfDirty?: boolean; silent?: boolean };
-type AppRouteView = "home" | "activity" | "ogsm" | "settings" | "kpi";
-type ActivityPageView = "table" | "kanban" | "gantt" | "cards" | "calendar";
+type AppRouteView = "home" | "activity" | "ogsm" | "settings" | "tags" | "kpi";
+type ActivityPageView =
+  | "table"
+  | "kanban"
+  | "gantt"
+  | "cards"
+  | "calendar"
+  | "graph";
 type ActivityGanttSubView = "activity" | "plan";
 
 interface ActivityRouteHint {
@@ -132,6 +142,7 @@ function parseRouteHash(hash: string): Partial<AppRouteState> | null {
       viewPart === "activity" ||
       viewPart === "ogsm" ||
       viewPart === "settings" ||
+      viewPart === "tags" ||
       viewPart === "kpi"
         ? viewPart
         : "home";
@@ -143,7 +154,8 @@ function parseRouteHash(hash: string): Partial<AppRouteState> | null {
       avParam === "kanban" ||
       avParam === "gantt" ||
       avParam === "cards" ||
-      avParam === "calendar"
+      avParam === "calendar" ||
+      avParam === "graph"
         ? avParam
         : undefined;
     const parsedActivityGanttSubView: ActivityGanttSubView | undefined =
@@ -178,6 +190,7 @@ function parseRouteHash(hash: string): Partial<AppRouteState> | null {
     viewParam === "activity" ||
     viewParam === "ogsm" ||
     viewParam === "settings" ||
+    viewParam === "tags" ||
     viewParam === "kpi"
       ? viewParam
       : "home";
@@ -354,6 +367,7 @@ export default function App() {
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
+  const [showTagManagement, setShowTagManagement] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
   const [showHomePage, setShowHomePage] = useState(true);
   /** 從 DetailPanel 「編輯 →」跳入 ActivityPage 時要自動開啟的活動 ID */
@@ -402,26 +416,31 @@ export default function App() {
         setShowHomePage(true);
         setShowActivityPage(false);
         setShowDeptSettings(false);
+        setShowTagManagement(false);
         setShowKpiDesigner(false);
       } else if (page === "activity") {
         setShowActivityPage(true);
         setShowHomePage(false);
         setShowDeptSettings(false);
+        setShowTagManagement(false);
         setShowKpiDesigner(false);
       } else if (page === "ogsm") {
         setShowHomePage(false);
         setShowActivityPage(false);
         setShowDeptSettings(false);
+        setShowTagManagement(false);
         setShowKpiDesigner(false);
       } else if (page === "kpi") {
         setShowKpiDesigner(true);
         setShowHomePage(false);
         setShowActivityPage(false);
         setShowDeptSettings(false);
+        setShowTagManagement(false);
       } else if (page === "settings") {
         setShowDeptSettings(true);
         setShowHomePage(false);
         setShowActivityPage(false);
+        setShowTagManagement(false);
         setShowKpiDesigner(false);
       }
     });
@@ -434,26 +453,31 @@ export default function App() {
       setShowHomePage(true);
       setShowActivityPage(false);
       setShowDeptSettings(false);
+      setShowTagManagement(false);
       setShowKpiDesigner(false);
     } else if (tourStep.page === "activity") {
       setShowActivityPage(true);
       setShowHomePage(false);
       setShowDeptSettings(false);
+      setShowTagManagement(false);
       setShowKpiDesigner(false);
     } else if (tourStep.page === "ogsm") {
       setShowHomePage(false);
       setShowActivityPage(false);
       setShowDeptSettings(false);
+      setShowTagManagement(false);
       setShowKpiDesigner(false);
     } else if (tourStep.page === "kpi") {
       setShowKpiDesigner(true);
       setShowHomePage(false);
       setShowActivityPage(false);
       setShowDeptSettings(false);
+      setShowTagManagement(false);
     } else if (tourStep.page === "settings") {
       setShowDeptSettings(true);
       setShowHomePage(false);
       setShowActivityPage(false);
+      setShowTagManagement(false);
       setShowKpiDesigner(false);
     }
   }, [isTourActive, tourStep?.page]);
@@ -619,6 +643,7 @@ export default function App() {
     setShowHomePage(route.view === "home");
     setShowActivityPage(route.view === "activity");
     setShowDeptSettings(route.view === "settings");
+    setShowTagManagement(route.view === "tags");
     setShowKpiDesigner(route.view === "kpi");
   }, []);
 
@@ -633,11 +658,13 @@ export default function App() {
       ? "kpi"
       : showHomePage
         ? "home"
-        : showDeptSettings
-          ? "settings"
-          : showActivityPage
-            ? "activity"
-            : "ogsm";
+        : showTagManagement
+          ? "tags"
+          : showDeptSettings
+            ? "settings"
+            : showActivityPage
+              ? "activity"
+              : "ogsm";
     return {
       __appRoute: true,
       view,
@@ -666,6 +693,7 @@ export default function App() {
     showActivityPage,
     showDeptSettings,
     showHomePage,
+    showTagManagement,
     showKpiDesigner,
   ]);
 
@@ -1489,12 +1517,20 @@ export default function App() {
     if (!isMultiFileMode) return workspace;
     const firstWorkspace = deptFiles[0]?.workspace;
     if (!firstWorkspace) return workspace;
+    const tagDictionary = Array.from(
+      new Map(
+        deptFiles
+          .flatMap((f) => f.workspace.tagDictionary ?? [])
+          .map((item) => [item.name.toLocaleLowerCase("zh-TW"), item]),
+      ).values(),
+    ).sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
     return {
       ...firstWorkspace,
       departments: deptFiles
         .map((f) => f.workspace.departments[0])
         .filter((d): d is NonNullable<typeof d> => Boolean(d)),
       teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
+      tagDictionary: tagDictionary.length > 0 ? tagDictionary : undefined,
     };
   }, [isMultiFileMode, deptFiles, workspace]);
 
@@ -1653,6 +1689,74 @@ export default function App() {
       updateWorkspace({ ...workspace, teams: stamped });
     },
     [workspace, updateWorkspace],
+  );
+
+  const handleUpdateTagDictionary = useCallback(
+    (nextTagDictionary: TagDictionaryItem[], renames: TagRename[] = []) => {
+      const stamped = nextTagDictionary.map((item) => ({
+        ...item,
+        updatedAt: item.updatedAt ?? new Date().toISOString(),
+      }));
+
+      // helper: apply renames to a tag name array
+      const applyRenames = (
+        tags: string[] | undefined,
+      ): string[] | undefined => {
+        if (!tags || renames.length === 0) return tags;
+        const mapped = tags.map((t) => {
+          const r = renames.find((x) => x.from === t);
+          return r ? r.to : t;
+        });
+        return mapped;
+      };
+
+      if (isMultiFileMode) {
+        setDeptFiles((prev) =>
+          prev.map((entry) =>
+            entry.isReadOnly
+              ? entry
+              : {
+                  ...entry,
+                  workspace: {
+                    ...entry.workspace,
+                    tagDictionary: stamped,
+                    departments: entry.workspace.departments.map((dept) => ({
+                      ...dept,
+                      activities: (dept.activities ?? []).map((act) => ({
+                        ...act,
+                        tags: applyRenames(act.tags),
+                      })),
+                    })),
+                  },
+                  isDirty: true,
+                  syncStatus: "pending" as const,
+                },
+          ),
+        );
+        showDeptSaveToast(
+          renames.length > 0
+            ? `已更新標籤字典，同步改名 ${renames.length} 筆。請儲存所有可寫部門以同步變更。`
+            : "已更新活動標籤字典，請儲存所有可寫部門以同步變更。",
+          "warning",
+        );
+        return;
+      }
+
+      const updatedDepts = workspace.departments.map((dept) => ({
+        ...dept,
+        activities: (dept.activities ?? []).map((act) => ({
+          ...act,
+          tags: applyRenames(act.tags),
+        })),
+      }));
+
+      updateWorkspace({
+        ...workspace,
+        tagDictionary: stamped.length > 0 ? stamped : undefined,
+        departments: updatedDepts,
+      });
+    },
+    [isMultiFileMode, showDeptSaveToast, updateWorkspace, workspace],
   );
 
   // Dept-scoped version: merges updated teams back with other-dept teams
@@ -2450,6 +2554,7 @@ export default function App() {
       );
       setShowActivityPage(true);
       setShowDeptSettings(false);
+      setShowTagManagement(false);
       setShowHomePage(false);
       setShowKpiDesigner(false);
       setActiveDeptId(deptId);
@@ -3038,6 +3143,7 @@ export default function App() {
             onNavigateToActivityPage={() => {
               setShowActivityPage(true);
               setShowDeptSettings(false);
+              setShowTagManagement(false);
               setShowHomePage(false);
             }}
             expandedActivityId={expandedDetailActivityId}
@@ -3046,6 +3152,7 @@ export default function App() {
               setPendingActivityDetailId(actId);
               setShowActivityPage(true);
               setShowDeptSettings(false);
+              setShowTagManagement(false);
               setShowHomePage(false);
             }}
           />
@@ -3076,6 +3183,7 @@ export default function App() {
                       setShowHomePage(true);
                       setShowActivityPage(false);
                       setShowDeptSettings(false);
+                      setShowTagManagement(false);
                     });
                     setMenuOpen(false);
                   }}
@@ -3089,6 +3197,7 @@ export default function App() {
                       setShowActivityPage(true);
                       setShowHomePage(false);
                       setShowDeptSettings(false);
+                      setShowTagManagement(false);
                     });
                     setMenuOpen(false);
                   }}
@@ -3102,6 +3211,7 @@ export default function App() {
                       setShowHomePage(false);
                       setShowActivityPage(false);
                       setShowDeptSettings(false);
+                      setShowTagManagement(false);
                     });
                     setMenuOpen(false);
                   }}
@@ -3115,6 +3225,7 @@ export default function App() {
                       setShowDeptSettings(true);
                       setShowHomePage(false);
                       setShowActivityPage(false);
+                      setShowTagManagement(false);
                       setSelectedGoalId(null);
                       setSelectedStrategyId(null);
                     });
@@ -3126,11 +3237,28 @@ export default function App() {
                 <button
                   className="header-menu-item"
                   onClick={() => {
+                    tryCloseKpiDesigner(() => {
+                      setShowTagManagement(true);
+                      setShowDeptSettings(false);
+                      setShowHomePage(false);
+                      setShowActivityPage(false);
+                      setSelectedGoalId(null);
+                      setSelectedStrategyId(null);
+                    });
+                    setMenuOpen(false);
+                  }}
+                >
+                  🏷️ 標籤管理
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
                     setShowKpiDesigner(true);
                     setKpiDesignerGoalId(null);
                     setShowHomePage(false);
                     setShowActivityPage(false);
                     setShowDeptSettings(false);
+                    setShowTagManagement(false);
                     setMenuOpen(false);
                   }}
                 >
@@ -3149,6 +3277,7 @@ export default function App() {
                   setShowHomePage(true);
                   setShowActivityPage(false);
                   setShowDeptSettings(false);
+                  setShowTagManagement(false);
                 })
               }
             >
@@ -3161,6 +3290,7 @@ export default function App() {
                   setShowActivityPage(true);
                   setShowHomePage(false);
                   setShowDeptSettings(false);
+                  setShowTagManagement(false);
                 })
               }
             >
@@ -3174,6 +3304,7 @@ export default function App() {
                 setShowHomePage(false);
                 setShowActivityPage(false);
                 setShowDeptSettings(false);
+                setShowTagManagement(false);
               }}
             >
               目標編輯器
@@ -3183,6 +3314,7 @@ export default function App() {
                 !showHomePage &&
                 !showActivityPage &&
                 !showDeptSettings &&
+                !showTagManagement &&
                 !showKpiDesigner
                   ? " active"
                   : ""
@@ -3192,6 +3324,7 @@ export default function App() {
                   setShowHomePage(false);
                   setShowActivityPage(false);
                   setShowDeptSettings(false);
+                  setShowTagManagement(false);
                 })
               }
             >
@@ -3204,12 +3337,28 @@ export default function App() {
                   setShowDeptSettings(true);
                   setShowHomePage(false);
                   setShowActivityPage(false);
+                  setShowTagManagement(false);
                   setSelectedGoalId(null);
                   setSelectedStrategyId(null);
                 })
               }
             >
               部門設定
+            </button>
+            <button
+              className={`header-nav-tab${showTagManagement ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowTagManagement(true);
+                  setShowDeptSettings(false);
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setSelectedGoalId(null);
+                  setSelectedStrategyId(null);
+                })
+              }
+            >
+              標籤管理
             </button>
           </nav>
         </div>
@@ -3428,6 +3577,7 @@ export default function App() {
         {!showHomePage &&
           !showActivityPage &&
           !showDeptSettings &&
+          !showTagManagement &&
           !showKpiDesigner && (
             <Sidebar
               workspace={effectiveWorkspace}
@@ -3443,6 +3593,7 @@ export default function App() {
                 setShowDeptSettings(false);
                 setShowActivityPage(false);
                 setShowHomePage(false);
+                setShowTagManagement(false);
               }}
               onSelectStrategy={setSelectedStrategyId}
               onSelectOverview={() => {
@@ -3451,6 +3602,7 @@ export default function App() {
                 setShowDeptSettings(false);
                 setShowActivityPage(false);
                 setShowHomePage(false);
+                setShowTagManagement(false);
               }}
             />
           )}
@@ -3488,6 +3640,7 @@ export default function App() {
               setShowActivityPage(true);
               setShowHomePage(false);
               setShowDeptSettings(false);
+              setShowTagManagement(false);
               setSelectedGoalId(null);
               setSelectedStrategyId(null);
             }}
@@ -3495,6 +3648,7 @@ export default function App() {
               setShowHomePage(false);
               setShowActivityPage(false);
               setShowDeptSettings(false);
+              setShowTagManagement(false);
               setSelectedGoalId(null);
               setSelectedStrategyId(null);
             }}
@@ -3504,14 +3658,31 @@ export default function App() {
               setShowHomePage(false);
               setShowActivityPage(false);
               setShowDeptSettings(false);
+              setShowTagManagement(false);
             }}
             onSwitchToDeptSettings={() => {
               setShowDeptSettings(true);
               setShowHomePage(false);
               setShowActivityPage(false);
+              setShowTagManagement(false);
               setSelectedGoalId(null);
               setSelectedStrategyId(null);
             }}
+            onSwitchToTagManagement={() => {
+              setShowTagManagement(true);
+              setShowDeptSettings(false);
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+          />
+        ) : showTagManagement ? (
+          <TagManagementPage
+            key={`${activeDeptId}:tag-management`}
+            tagDictionary={effectiveWorkspace.tagDictionary ?? []}
+            isReadOnly={isMultiFileMode ? !isAdmin : false}
+            onUpdateTagDictionary={handleUpdateTagDictionary}
           />
         ) : showDeptSettings ? (
           <DeptSettingsPage
@@ -3521,6 +3692,7 @@ export default function App() {
             deptId={activeDeptId}
             onUpdateTeams={handleUpdateTeamsForDept}
             onUpdateData={updateData}
+            initialTab="team"
           />
         ) : showActivityPage ? (
           <ActivityPage

@@ -1547,8 +1547,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A001-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -1681,8 +1680,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A002-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -1784,8 +1782,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A003-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -1896,8 +1893,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A004-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -1970,7 +1966,7 @@
           ],
           "quarter": "Q1",
           "owner": "雅琪",
-          "updatedAt": "2026-04-16T06:21:00.118Z",
+          "updatedAt": "2026-04-26T11:06:08.435Z",
           "status": "in-progress",
           "dashboardLinks": [
             {
@@ -1979,8 +1975,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A005-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -1991,16 +1986,20 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "deptId": "dept_mn48prth_qdgi",
+          "deptId": "DEP-2026-DEPT",
           "deptName": "商務發展部",
           "isReadOnly": false,
-          "periodId": "period_mn48prth_j6lm",
+          "periodId": "PER-2026-H1-DEPT",
           "periodLabel": "2026 H1",
-          "goalId": "goal_mn48prtf_p6nm",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
           "goalTitle": "G1:提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
-          "strategyId": "str_mn48prtg_9s08",
+          "strategyId": "STR-2026-H1-DEPT-G1-S01",
           "strategyTitle": "透過音樂、運動、親子大型展演活動的聚客力，觸及潛在出國客群提升進店前觸及機會點。",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A005"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A005",
+          "tags": [
+            "測試"
+          ],
+          "warnDaysBefore": 3
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S01-A006",
@@ -2044,8 +2043,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A006-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2147,8 +2145,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A007-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2233,8 +2230,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A008-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2301,8 +2297,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A009-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2380,8 +2375,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A010-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2438,8 +2432,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A011-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2532,8 +2525,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A012-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2582,8 +2574,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A013-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2640,8 +2631,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S02",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A014-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2699,8 +2689,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A015-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2758,8 +2747,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A016-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2837,8 +2825,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A017-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2887,8 +2874,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A018-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -2954,8 +2940,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A019-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3039,8 +3024,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A020-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3107,8 +3091,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A021-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3194,8 +3177,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A022-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3256,8 +3238,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A023-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3290,18 +3271,21 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "deptId": "dept_mn48prth_qdgi",
+          "deptId": "DEP-2026-DEPT",
           "deptName": "商務發展部",
           "isReadOnly": false,
-          "periodId": "period_mn48prth_j6lm",
+          "periodId": "PER-2026-H1-DEPT",
           "periodLabel": "2026 H1",
-          "goalId": "goal_mn48prtf_p6nm",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
           "goalTitle": "G1:提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
-          "strategyId": "str_mn48prtg_81nn",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
           "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
           "warnDaysBefore": 3,
-          "updatedAt": "2026-04-20T01:32:09.463Z",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A023"
+          "updatedAt": "2026-04-26T11:06:04.549Z",
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A023",
+          "tags": [
+            "測試"
+          ]
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A024",
@@ -3317,8 +3301,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A024-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3357,8 +3340,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A025-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3503,8 +3485,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A026-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3562,8 +3543,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A027-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3600,8 +3580,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A028-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3638,8 +3617,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A029-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3666,8 +3644,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G1",
               "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A030-L01"
+              "exclude": false
             }
           ],
           "owners": [
@@ -3697,8 +3674,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G3",
               "strategyId": "STR-2026-H1-DEPT-G3-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A031-L01"
+              "exclude": false
             }
           ],
           "planItems": [
@@ -3737,8 +3713,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G3",
               "strategyId": "STR-2026-H1-DEPT-G3-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A032-L01"
+              "exclude": false
             }
           ],
           "planItems": [
@@ -3806,8 +3781,7 @@
               "periodId": "PER-2026-H1-DEPT",
               "goalId": "GOAL-2026-H1-DEPT-G3",
               "strategyId": "STR-2026-H1-DEPT-G3-S01",
-              "exclude": false,
-              "bizKey": "DLK-2026-H1-DEPT-A033-L01"
+              "exclude": false
             }
           ],
           "planItems": [
@@ -4208,7 +4182,7 @@
       "bizKey": "DEP-2026-DEPT-01"
     }
   ],
-  "version": 46,
+  "version": 48,
   "_migratedClearOwners": true,
   "teams": [
     {
@@ -4443,12 +4417,20 @@
     "goal_mn48prth_p16v_h2",
     "goal_mn48prtf_p6nm_h2"
   ],
-  "savedAt": "2026-04-20T01:32:14.104Z",
+  "savedAt": "2026-04-26T11:06:12.508Z",
   "_migratedPhase2": true,
   "_migratedPhase3": true,
   "_migratedRelationalV1": true,
   "_migratedActivityFirst": true,
   "_migratedV3": true,
   "_migratedFrameworksV1": true,
-  "_migratedTimelineV1": true
+  "_migratedTimelineV1": true,
+  "tagDictionary": [
+    {
+      "id": "tag_mofnq8q4_000_6b8b88d8",
+      "name": "測試",
+      "status": "active",
+      "updatedAt": "2026-04-26T11:00:37.858Z"
+    }
+  ]
 }

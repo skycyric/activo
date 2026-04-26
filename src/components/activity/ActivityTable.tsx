@@ -23,6 +23,7 @@ type ColumnId =
   | "startDate"
   | "endDate"
   | "status"
+  | "tags"
   | "actions";
 
 type ColumnConfig = {
@@ -103,6 +104,7 @@ const COLUMN_CONFIG: ColumnConfig[] = [
     sortable: true,
     sortField: "status",
   },
+  { id: "tags", label: "標籤", width: 180, minWidth: 80 },
   {
     id: "actions",
     label: "操作",
@@ -577,6 +579,21 @@ export default function ActivityTable({
                 {columnVisibility.endDate && (
                   <td className="act-td act-td-date">
                     {formatDate(act.endDate)}
+                  </td>
+                )}
+                {columnVisibility.tags && (
+                  <td className="act-td act-td-tags">
+                    {act.tags && act.tags.length > 0 ? (
+                      <div className="act-card-tags">
+                        {act.tags.map((tag) => (
+                          <span key={tag} className="act-card-tag">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      ""
+                    )}
                   </td>
                 )}
                 {columnVisibility.status && (

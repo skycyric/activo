@@ -10,6 +10,7 @@ interface Props {
   deptId: string;
   onUpdateTeams: (teams: Team[]) => void;
   onUpdateData: (data: OGSMData) => void;
+  initialTab?: "team" | "resource";
 }
 
 export default function DeptSettingsPage({
@@ -18,6 +19,7 @@ export default function DeptSettingsPage({
   deptId,
   onUpdateTeams,
   onUpdateData,
+  initialTab = "team",
 }: Props) {
   const { startPageTour } = useTour();
   // ─── Teams section ─────────────────────────────────────────────────────
@@ -131,7 +133,11 @@ export default function DeptSettingsPage({
   const hasAnyBudget = allMeasures.some((m) => m.budget != null);
   const hasAnyDays = allMeasures.some((m) => m.personDays != null);
 
-  const [activeTab, setActiveTab] = useState<"team" | "resource">("team");
+  const [activeTab, setActiveTab] = useState<"team" | "resource">(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
   const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(
     () => new Set(data.goals.map((g) => g.id)),
   );

@@ -9,6 +9,7 @@ import {
   type DeptActivity,
   type DashboardLink,
   type ActivityDashboardLink,
+  type TagDictionaryItem,
   WorkspaceDataSchema,
   OGSMDataSchema,
 } from "../schemas/ogsm";
@@ -788,6 +789,117 @@ function applyWorkspaceFlaggedMigration(
   return true;
 }
 
+function normalizeTagLabel(label: string | undefined): string {
+  return (label ?? "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeWorkspaceTagDictionary(ws: WorkspaceData): boolean {
+  const byName = new Map<string, TagDictionaryItem>();
+  let changed = false;
+
+  for (const rawItem of ws.tagDictionary ?? []) {
+    const name = normalizeTagLabel(rawItem.name);
+    if (!name) {
+      changed = true;
+      continue;
+    }
+
+    const aliases = Array.from(
+      new Set(
+        (rawItem.aliases ?? [])
+          .map((alias) => normalizeTagLabel(alias))
+          .filter(Boolean),
+      ),
+    );
+    const normalized: TagDictionaryItem = {
+      ...rawItem,
+      name,
+      aliases: aliases.length > 0 ? aliases : undefined,
+      status: rawItem.status === "disabled" ? "disabled" : "active",
+    };
+    const key = name.toLocaleLowerCase("zh-TW");
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, normalized);
+      if (
+        normalized.name !== rawItem.name ||
+        JSON.stringify(normalized.aliases ?? []) !==
+          JSON.stringify(rawItem.aliases ?? []) ||
+        normalized.status !== rawItem.status
+      ) {
+        changed = true;
+      }
+      continue;
+    }
+
+    const mergedAliases = Array.from(
+      new Set([...(existing.aliases ?? []), ...(normalized.aliases ?? [])]),
+    );
+    byName.set(key, {
+      ...existing,
+      aliases: mergedAliases.length > 0 ? mergedAliases : undefined,
+      status:
+        existing.status === "active" || normalized.status === "active"
+          ? "active"
+          : "disabled",
+      updatedAt: normalized.updatedAt ?? existing.updatedAt,
+    });
+    changed = true;
+  }
+
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      const normalizedTags = Array.from(
+        new Set(
+          (activity.tags ?? [])
+            .map((tag) => normalizeTagLabel(tag))
+            .filter(Boolean),
+        ),
+      );
+      if (
+        JSON.stringify(normalizedTags) !== JSON.stringify(activity.tags ?? [])
+      ) {
+        activity.tags = normalizedTags.length > 0 ? normalizedTags : undefined;
+        changed = true;
+      }
+
+      for (const tag of normalizedTags) {
+        const key = tag.toLocaleLowerCase("zh-TW");
+        if (!byName.has(key)) {
+          byName.set(key, {
+            id: genId("tag"),
+            name: tag,
+            status: "active",
+            updatedAt: new Date().toISOString(),
+          });
+          changed = true;
+        }
+      }
+    }
+  }
+
+  const nextDictionary = Array.from(byName.values()).sort((a, b) =>
+    a.name.localeCompare(b.name, "zh-TW"),
+  );
+
+  if (nextDictionary.length === 0) {
+    if (ws.tagDictionary !== undefined) {
+      ws.tagDictionary = undefined;
+      changed = true;
+    }
+    return changed;
+  }
+
+  if (
+    JSON.stringify(ws.tagDictionary ?? []) !== JSON.stringify(nextDictionary)
+  ) {
+    ws.tagDictionary = nextDictionary;
+    changed = true;
+  }
+
+  return changed;
+}
+
 export const WORKSPACE_FLAGGED_MIGRATIONS: readonly WorkspaceFlaggedMigration[] =
   [
     {
@@ -867,6 +979,11 @@ const WORKSPACE_ALWAYS_RUN_NORMALIZERS: readonly WorkspaceAlwaysRunNormalizer[] 
       description:
         "owners[] invariant repair for imported or externally edited files.",
       run: normalizeWorkspaceOwnerArraysInvariant,
+    },
+    {
+      description:
+        "Tag dictionary invariant repair for controlled activity tags.",
+      run: normalizeWorkspaceTagDictionary,
     },
   ] as const;
 

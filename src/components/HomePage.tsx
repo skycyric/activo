@@ -19,6 +19,12 @@ const APP_CARDS: AppCard[] = [
     title: "目標編輯器",
     desc: "GoalKPI 視覺化設計",
   },
+  {
+    id: "tag-management",
+    icon: "🏷️",
+    title: "標籤管理",
+    desc: "活動標籤治理與維護",
+  },
   { id: "settings", icon: "⚙️", title: "部門設定", desc: "成員與期間設定" },
 ];
 
@@ -29,6 +35,7 @@ interface Props {
   onSwitchToOgsm: () => void;
   onSwitchToKpiDesigner: () => void;
   onSwitchToDeptSettings: () => void;
+  onSwitchToTagManagement: () => void;
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -38,6 +45,7 @@ export default function HomePage({
   onSwitchToOgsm,
   onSwitchToKpiDesigner,
   onSwitchToDeptSettings,
+  onSwitchToTagManagement,
 }: Props) {
   const { startTour } = useTour();
 
@@ -45,6 +53,7 @@ export default function HomePage({
     if (id === "ogsm") onSwitchToOgsm();
     else if (id === "activities") onSwitchToActivities();
     else if (id === "kpidesigner") onSwitchToKpiDesigner();
+    else if (id === "tag-management") onSwitchToTagManagement();
     else if (id === "settings") onSwitchToDeptSettings();
   };
 
