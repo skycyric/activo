@@ -32,6 +32,7 @@ function TourHarness({ onNavigate }: { onNavigate: (page: TourPage) => void }) {
       <button onClick={() => startPageTour("ogsm")}>start-ogsm</button>
       <button onClick={() => startPageTour("kpi")}>start-kpi</button>
       <button onClick={() => startPageTour("settings")}>start-settings</button>
+      <button onClick={() => startPageTour("tags")}>start-tags</button>
       <button onClick={nextStep}>next</button>
       <button onClick={prevStep}>prev</button>
       <button onClick={endTour}>end</button>
@@ -92,19 +93,26 @@ describe("TourProvider page tours", () => {
       page: "activity",
       expectedIds: [
         "activity-intro",
-        "activity-view-switcher",
         "activity-count-badge",
         "activity-filter",
         "activity-add-btn",
         "activity-add-modal",
         "activity-add-ogsm-link",
-        "activity-gantt-subtabs",
         "activity-card-detail",
         "activity-detail-tabs",
         "activity-detail-basic",
         "activity-detail-kpi",
         "activity-detail-plans",
         "activity-detail-notes",
+        "activity-kanban-intro",
+        "activity-gantt-intro",
+        "activity-gantt-subtabs",
+        "activity-cards-intro",
+        "activity-calendar-intro",
+        "activity-graph-tab",
+        "activity-graph-canvas",
+        "activity-graph-legend",
+        "activity-graph-weak-toggle",
       ],
     },
     {
@@ -144,6 +152,20 @@ describe("TourProvider page tours", () => {
         "settings-resource-section",
       ],
     },
+    {
+      page: "tags",
+      expectedIds: [
+        "tags-intro",
+        "tags-main-section",
+        "tags-add-row",
+        "tags-list",
+        "tags-row-actions",
+        "tags-weight-setting",
+        "tags-delete-dialog",
+        "tags-delete-mode",
+        "tags-save-actions",
+      ],
+    },
   ])(
     "$page page tour should follow the defined step order",
     async ({ page, expectedIds }) => {
@@ -169,14 +191,14 @@ describe("TourProvider page tours", () => {
     await user.click(screen.getByRole("button", { name: "next" }));
 
     expect(screen.getByTestId("tour-step-id")).toHaveTextContent(
-      "activity-count-badge",
+      "activity-filter",
     );
     expect(screen.getByTestId("tour-step-index")).toHaveTextContent("2");
 
     await user.click(screen.getByRole("button", { name: "prev" }));
 
     expect(screen.getByTestId("tour-step-id")).toHaveTextContent(
-      "activity-view-switcher",
+      "activity-count-badge",
     );
     expect(screen.getByTestId("tour-step-index")).toHaveTextContent("1");
 

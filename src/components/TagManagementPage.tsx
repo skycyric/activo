@@ -29,7 +29,7 @@ export default function TagManagementPage({
   isReadOnly = false,
   onUpdateTagDictionary,
 }: Props) {
-  const { startPageTour } = useTour();
+  const { startPageTour, isActive, step } = useTour();
   const [tagDraft, setTagDraft] = useState<TagDictionaryItem[]>(() =>
     JSON.parse(JSON.stringify(tagDictionary)),
   );
@@ -213,6 +213,31 @@ export default function TagManagementPage({
     (deleteMode === "remove" ||
       deleteCandidates.some((x) => x === deleteMergeTarget));
 
+  useEffect(() => {
+    const isDeleteDialogTourStep =
+      isActive &&
+      step?.page === "tags" &&
+      (step.id === "tags-delete-dialog" || step.id === "tags-delete-mode");
+    if (!isDeleteDialogTourStep || isReadOnly) return;
+    if (deletingTagId) return;
+
+    const sortedTags = tagDraft
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
+    const first = sortedTags[0];
+    if (!first) return;
+
+    const mergeTarget = sortedTags.find((x) => x.id !== first.id);
+    setDeletingTagId(first.id);
+    if (mergeTarget) {
+      setDeleteMode("merge");
+      setDeleteMergeTarget(mergeTarget.name);
+    } else {
+      setDeleteMode("remove");
+      setDeleteMergeTarget("");
+    }
+  }, [deletingTagId, isActive, isReadOnly, step, tagDraft]);
+
   return (
     <div className="dept-settings-page">
       <div className="dept-settings-inner">
@@ -220,22 +245,22 @@ export default function TagManagementPage({
           <button className="dsettings-tab active">🏷️ 標籤管理</button>
           <button
             className="page-tour-btn"
-            onClick={() => startPageTour("settings")}
+            onClick={() => startPageTour("tags")}
           >
             🔎 本頁導覽
           </button>
         </div>
 
-        <section className="dsec" data-tour="settings-team-section">
+        <section className="dsec" data-tour="tags-main-section">
           <div className="dsec-header">
             <h2 className="dsec-title">🏷️ 活動標籤管理</h2>
             <p className="dsec-desc">
               維護活動可用的標籤字典。活動面板只能選這裡已建立且啟用中的標籤。
             </p>
           </div>
-          <div className="team-list">
+          <div className="team-list" data-tour="tags-list">
             <div className="team-card">
-              <div className="team-members">
+              <div className="team-members" data-tour="tags-add-row">
                 <div className="team-member-row">
                   <input
                     className="team-member-input"
@@ -269,7 +294,7 @@ export default function TagManagementPage({
               tagDraft
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name, "zh-TW"))
-                .map((tag) => {
+                .map((tag, index) => {
                   return (
                     <div key={tag.id} className="team-card">
                       <div className="team-card-header">
@@ -320,6 +345,7 @@ export default function TagManagementPage({
                           </span>
                           <span
                             className="team-member-count"
+                            data-tour="tags-weight-setting"
                             style={{
                               display: "flex",
                               alignItems: "center",
@@ -327,10 +353,10 @@ export default function TagManagementPage({
                             }}
                           >
                             <span
-                              title="偶合演算法的標籤基礎權重（0.1 ~ 5.0，預設 1.0）"
+                              title="關聯演算法的標籤基礎權重（0.1 ~ 5.0，預設 1.0）"
                               style={{ whiteSpace: "nowrap" }}
                             >
-                              ⚖️ 偶合權重
+                              ⚖️ 關聯權重
                             </span>
                             <input
                               type="number"
@@ -366,6 +392,9 @@ export default function TagManagementPage({
                             <button
                               className="btn-secondary"
                               title="重新命名標籤"
+                              data-tour={
+                                index === 0 ? "tags-row-actions" : undefined
+                              }
                               onClick={() => startEditTag(tag)}
                             >
                               ✏️ 改名
@@ -381,6 +410,9 @@ export default function TagManagementPage({
                           <button
                             className="btn-secondary"
                             disabled={isReadOnly}
+                            data-tour={
+                              index === 0 ? "tags-open-delete" : undefined
+                            }
                             onClick={() => startDeleteTag(tag)}
                             title="刪除標籤（可選合併或移除活動標籤）"
                           >
@@ -393,7 +425,7 @@ export default function TagManagementPage({
                 })
             )}
           </div>
-          <div className="dsec-footer">
+          <div className="dsec-footer" data-tour="tags-save-actions">
             <button
               className="btn-add"
               disabled={isReadOnly}
@@ -405,6 +437,7 @@ export default function TagManagementPage({
 
           {deletingTag && !isReadOnly && (
             <div
+              data-tour="tags-delete-dialog"
               style={{
                 position: "fixed",
                 inset: 0,
@@ -438,6 +471,7 @@ export default function TagManagementPage({
                   請選擇刪除後的處理方式。點擊背景不會關閉此對話框。
                 </div>
                 <label
+                  data-tour="tags-delete-mode"
                   style={{ display: "flex", alignItems: "center", gap: 8 }}
                 >
                   <input

@@ -2,7 +2,7 @@ import type { TourStep } from "../contexts/TourContext";
 
 /**
  * 使用導覽步驟定義。
- * - `page`：切換到哪個頁面（home / activity / ogsm / kpi / settings）
+ * - `page`：切換到哪個頁面（home / activity / ogsm / kpi / settings / tags）
  * - `target`：對應畫面上的 data-tour 屬性，例如 "[data-tour='nav-tabs']"
  * - `placement`：泡泡彈出方向
  *
@@ -90,16 +90,7 @@ export const TOUR_STEPS: TourStep[] = [
     page: "activity",
     title: "活動總覽",
     content:
-      "這裡集中管理所有跨部門活動（Measures）。每個活動都代表一個具體的執行項目，對應到 OGSM 的策略層。按下一步看檢視方式。",
-    placement: "bottom",
-  },
-  {
-    id: "activity-view-switcher",
-    page: "activity",
-    target: "[data-tour='activity-view-switcher']",
-    title: "檢視切換",
-    content:
-      "活動可用四種方式呈現：看板（Kanban）、卡片、甘特圖（Gantt）與行事曆。點擊切換檢視，依工作習慣選擇最適合的呈現方式。",
+      "這裡集中管理所有跨部門活動（Measures）。每個活動都代表一個具體的執行項目，對應到 OGSM 的策略層。按下一步查看活動統計。",
     placement: "bottom",
   },
   {
@@ -146,15 +137,6 @@ export const TOUR_STEPS: TourStep[] = [
     content:
       "展開這裡可把活動綁定到特定期別／目標／策略。連結後，活動 KPI 會回寫到 OGSM 成效計算。",
     placement: "left",
-  },
-  {
-    id: "activity-gantt-subtabs",
-    page: "activity",
-    target: "[data-tour='activity-gantt-subtabs']",
-    title: "甘特圖子模式",
-    content:
-      "切到甘特圖後，這裡還能再切換『活動甘特』與『計畫甘特』。前者看活動時間軸，後者看活動下的計畫項目與依賴關係。",
-    placement: "bottom",
   },
   {
     id: "activity-card-detail",
@@ -210,6 +192,87 @@ export const TOUR_STEPS: TourStep[] = [
       "[data-tour='activity-detail-tab-notes'], [data-tour='activity-detail-notes']",
     title: "活動詳情：備註",
     content: "記錄補充說明、會議結論或後續追蹤事項，保留活動脈絡。",
+    placement: "left",
+  },
+  {
+    id: "activity-kanban-intro",
+    page: "activity",
+    target: "[data-tour='activity-view-switcher']",
+    title: "看板檢視",
+    content:
+      "切換到看板（Kanban）檢視，可用卡片牆方式組織活動，按狀態（如：待辦、進行中、完成）分欄管理。",
+    placement: "bottom",
+  },
+  {
+    id: "activity-gantt-intro",
+    page: "activity",
+    target: "[data-tour='activity-view-switcher']",
+    title: "甘特圖檢視",
+    content:
+      "切換到甘特圖（Gantt）檢視，以時間軸方式呈現活動進度、依賴關係與里程碑。按下一步了解甘特圖的子模式。",
+    placement: "bottom",
+  },
+  {
+    id: "activity-gantt-subtabs",
+    page: "activity",
+    target: "[data-tour='activity-gantt-subtabs']",
+    title: "甘特圖子模式",
+    content:
+      "切到甘特圖後，這裡還能再切換『活動甘特』與『計畫甘特』。前者看活動時間軸，後者看活動下的計畫項目與依賴關係。",
+    placement: "bottom",
+  },
+  {
+    id: "activity-cards-intro",
+    page: "activity",
+    target: "[data-tour='activity-view-switcher']",
+    title: "卡片牆檢視",
+    content:
+      "切換到卡片牆檢視，大尺寸卡片呈現活動重點資訊，便於一次掃過多個活動的狀態與 KPI。",
+    placement: "bottom",
+  },
+  {
+    id: "activity-calendar-intro",
+    page: "activity",
+    target: "[data-tour='activity-view-switcher']",
+    title: "月曆檢視",
+    content:
+      "切換到月曆檢視，以日期為主軸查看活動分佈，快速識別時間軸上的重要活動與截止日期。",
+    placement: "bottom",
+  },
+  {
+    id: "activity-graph-tab",
+    page: "activity",
+    target: "[data-tour='activity-graph-tab']",
+    title: "關聯圖檢視",
+    content:
+      "切換到關聯圖後，可以看到活動之間由共同標籤形成的關聯強度，適合用來找出高關聯活動群。",
+    placement: "bottom",
+  },
+  {
+    id: "activity-graph-canvas",
+    page: "activity",
+    target: "[data-tour='activity-graph-canvas']",
+    title: "關聯圖畫布",
+    content:
+      "節點代表活動、線代表標籤關聯。你可以拖曳節點重排、拖曳背景平移、滾輪縮放，快速檢視整體關聯結構。",
+    placement: "left",
+  },
+  {
+    id: "activity-graph-legend",
+    page: "activity",
+    target: "[data-tour='activity-graph-legend']",
+    title: "關聯圖說明卡",
+    content:
+      "右下角說明卡可對照節點狀態顏色與關聯強度分級，幫助你快速解讀這張關聯圖。",
+    placement: "left",
+  },
+  {
+    id: "activity-graph-weak-toggle",
+    page: "activity",
+    target: "[data-tour='activity-graph-weak-toggle']",
+    title: "弱關聯線顯示",
+    content:
+      "可用這個勾選框切換是否顯示弱關聯線。關閉後畫面會更聚焦在中高關聯，便於會議討論。",
     placement: "left",
   },
 
@@ -412,6 +475,87 @@ export const TOUR_STEPS: TourStep[] = [
     title: "資源規劃明細",
     content:
       "切到資源規劃後，可在 Goal / Strategy / Measure 層級維護預算與人天，作為策略可行性與投入追蹤依據。",
+    placement: "top",
+  },
+
+  // ── 標籤管理 ──────────────────────────────────────────────────────────
+  {
+    id: "tags-intro",
+    page: "tags",
+    title: "標籤管理",
+    content:
+      "這裡是活動標籤的字典管理中心。建立並維護好標籤，可提升關聯圖品質與跨部門檢索效率。",
+    placement: "bottom",
+  },
+  {
+    id: "tags-main-section",
+    page: "tags",
+    target: "[data-tour='tags-main-section']",
+    title: "標籤管理主區",
+    content:
+      "主區會列出目前所有標籤與狀態。停用標籤仍保留歷史資料，但不會再出現在新增/編輯活動的可選清單。",
+    placement: "top",
+  },
+  {
+    id: "tags-add-row",
+    page: "tags",
+    target: "[data-tour='tags-add-row']",
+    title: "新增標籤",
+    content:
+      "在這裡輸入新標籤名稱並新增。建議使用簡短一致的命名，避免同義詞造成分類分散。",
+    placement: "top",
+  },
+  {
+    id: "tags-list",
+    page: "tags",
+    target: "[data-tour='tags-list']",
+    title: "標籤清單",
+    content:
+      "這裡會列出目前全部標籤。建議定期檢查重複或過時標籤，保持整體分類乾淨一致。",
+    placement: "top",
+  },
+  {
+    id: "tags-row-actions",
+    page: "tags",
+    target: "[data-tour='tags-row-actions']",
+    title: "標籤列操作",
+    content:
+      "每個標籤都能改名、停用或刪除。建議先停用再觀察一段時間，確認沒有影響後再刪除。",
+    placement: "top",
+  },
+  {
+    id: "tags-weight-setting",
+    page: "tags",
+    target: "[data-tour='tags-weight-setting']",
+    title: "關聯權重",
+    content:
+      "每個標籤可設定關聯權重（0.1 ~ 5.0）。權重越高，該標籤在關聯圖中的影響力越大。",
+    placement: "top",
+  },
+  {
+    id: "tags-delete-dialog",
+    page: "tags",
+    target: "[data-tour='tags-delete-dialog']",
+    title: "刪除標籤對話框",
+    content:
+      "刪除前會跳出確認視窗，避免誤操作。導覽會自動示範打開這個視窗，方便你看完整流程。",
+    placement: "top",
+  },
+  {
+    id: "tags-delete-mode",
+    page: "tags",
+    target: "[data-tour='tags-delete-mode']",
+    title: "刪除後處理模式",
+    content:
+      "你可以選擇把舊標籤合併到其他標籤，或從所有活動直接移除。合併通常較能保留歷史脈絡。",
+    placement: "top",
+  },
+  {
+    id: "tags-save-actions",
+    page: "tags",
+    target: "[data-tour='tags-save-actions']",
+    title: "儲存標籤字典",
+    content: "調整完成後請按儲存，變更才會正式套用到活動頁與關聯圖分析。",
     placement: "top",
   },
 ];

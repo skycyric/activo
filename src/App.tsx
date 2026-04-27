@@ -443,6 +443,12 @@ export default function App() {
         setShowActivityPage(false);
         setShowTagManagement(false);
         setShowKpiDesigner(false);
+      } else if (page === "tags") {
+        setShowTagManagement(true);
+        setShowDeptSettings(false);
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowKpiDesigner(false);
       }
     });
   }, [registerNavigate]);
@@ -479,6 +485,12 @@ export default function App() {
       setShowHomePage(false);
       setShowActivityPage(false);
       setShowTagManagement(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "tags") {
+      setShowTagManagement(true);
+      setShowDeptSettings(false);
+      setShowHomePage(false);
+      setShowActivityPage(false);
       setShowKpiDesigner(false);
     }
   }, [isTourActive, tourStep?.page]);
@@ -1462,8 +1474,13 @@ export default function App() {
     isUndoRedoRef.current = true;
     setWorkspace(ws);
     const result = saveWorkspace(ws);
-    if (!result.ok && result.error === "quota_exceeded") {
-      showDeptSaveToast("儲存空間已滿，建議切換至多檔模式或匯出備份。", "error");
+    if (!result.ok) {
+      showDeptSaveToast(
+        result.error === "quota_exceeded"
+          ? "儲存空間已滿，建議切換至多檔模式或匯出備份。"
+          : "儲存失敗，請稍後再試或先匯出備份。",
+        "error",
+      );
     }
   }, [showDeptSaveToast]);
 
@@ -1476,8 +1493,13 @@ export default function App() {
     isUndoRedoRef.current = true;
     setWorkspace(ws);
     const result = saveWorkspace(ws);
-    if (!result.ok && result.error === "quota_exceeded") {
-      showDeptSaveToast("儲存空間已滿，建議切換至多檔模式或匯出備份。", "error");
+    if (!result.ok) {
+      showDeptSaveToast(
+        result.error === "quota_exceeded"
+          ? "儲存空間已滿，建議切換至多檔模式或匯出備份。"
+          : "儲存失敗，請稍後再試或先匯出備份。",
+        "error",
+      );
     }
   }, [showDeptSaveToast]);
 
@@ -1674,8 +1696,13 @@ export default function App() {
       }
       setWorkspace(next);
       const result = saveWorkspace(next);
-      if (!result.ok && result.error === "quota_exceeded") {
-        showDeptSaveToast("儲存空間已滿，建議切換至多檔模式或匯出備份。", "error");
+      if (!result.ok) {
+        showDeptSaveToast(
+          result.error === "quota_exceeded"
+            ? "儲存空間已滿，建議切換至多檔模式或匯出備份。"
+            : "儲存失敗，請稍後再試或先匯出備份。",
+          "error",
+        );
       }
     },
     [pushHistory, showDeptSaveToast],

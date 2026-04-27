@@ -511,14 +511,42 @@ export default function ActivityPage({
 
     setShowAddModal(shouldShowAddModal);
 
-    if (step.id === "activity-gantt-subtabs") {
+    if (step.id === "activity-kanban-intro") {
+      setView("kanban");
+      return;
+    }
+
+    if (
+      step.id === "activity-gantt-intro" ||
+      step.id === "activity-gantt-subtabs"
+    ) {
       setView("gantt");
       setGanttSubView("activity");
       return;
     }
 
-    if (step.id === "activity-card-detail") {
+    if (step.id === "activity-cards-intro") {
       setView("cards");
+      return;
+    }
+
+    if (step.id === "activity-calendar-intro") {
+      setView("calendar");
+      return;
+    }
+
+    if (
+      step.id === "activity-graph-tab" ||
+      step.id === "activity-graph-canvas" ||
+      step.id === "activity-graph-legend" ||
+      step.id === "activity-graph-weak-toggle"
+    ) {
+      setView("graph");
+      return;
+    }
+
+    if (step.id === "activity-card-detail") {
+      setView("table");
       return;
     }
 
@@ -580,6 +608,7 @@ export default function ActivityPage({
                 className={`activity-view-tab${view === v.id ? " active" : ""}`}
                 onClick={() => setView(v.id)}
                 title={v.label}
+                data-tour={v.id === "graph" ? "activity-graph-tab" : undefined}
               >
                 <span className="activity-view-tab-icon">{v.icon}</span>
                 <span className="activity-view-tab-label">{v.label}</span>

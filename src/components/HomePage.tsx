@@ -1,5 +1,4 @@
 import { LATEST_VERSION } from "../data/changelog";
-import { useTour } from "../contexts/TourContext";
 
 // ── App cards definition ──────────────────────────────────────────────────────
 
@@ -47,8 +46,6 @@ export default function HomePage({
   onSwitchToDeptSettings,
   onSwitchToTagManagement,
 }: Props) {
-  const { startTour } = useTour();
-
   const handleCardClick = (id: string) => {
     if (id === "ogsm") onSwitchToOgsm();
     else if (id === "activities") onSwitchToActivities();
@@ -65,11 +62,6 @@ export default function HomePage({
           <span className="home-announcement-date">{LATEST_VERSION.date}</span>
           <p className="home-announcement-text">{LATEST_VERSION.summary}</p>
         </div>
-      </div>
-      <div className="home-actions">
-        <button className="home-tour-btn" onClick={startTour}>
-          🚀 開始導覽
-        </button>
       </div>
       <div className="home-app-grid" data-tour="home-cards">
         {APP_CARDS.map((card) => (

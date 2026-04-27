@@ -640,7 +640,11 @@ export default function ActivityGraphView({
   };
 
   return (
-    <div ref={containerRef} className="act-graph-container">
+    <div
+      ref={containerRef}
+      className="act-graph-container"
+      data-tour="activity-graph-canvas"
+    >
       {activities.length === 0 && (
         <div className="act-empty">
           <div className="act-empty-icon">◎</div>
@@ -671,7 +675,7 @@ export default function ActivityGraphView({
           </div>
           {tooltip.bestEdge && (
             <div className="act-graph-tooltip-meta">
-              最強偶合：{Math.round(tooltip.bestEdge.score * 100)}% ·
+              最強關聯：{Math.round(tooltip.bestEdge.score * 100)}% ·
               {tooltip.bestEdge.level === "strong"
                 ? " 強"
                 : tooltip.bestEdge.level === "medium"
@@ -697,7 +701,7 @@ export default function ActivityGraphView({
           <div className="act-graph-tooltip-hint">點擊開啟詳情</div>
         </div>
       )}
-      <div className="act-graph-legend">
+      <div className="act-graph-legend" data-tour="activity-graph-legend">
         <div className="act-graph-legend-title">節點狀態（邊框色）</div>
         {(
           [
@@ -722,29 +726,33 @@ export default function ActivityGraphView({
             className="act-graph-legend-dot"
             style={{ borderColor: "#ef4444" }}
           />
-          <span>Tag 偶合強</span>
+          <span>Tag 關聯強</span>
         </div>
         <div className="act-graph-legend-item">
           <span
             className="act-graph-legend-dot"
             style={{ borderColor: "#f59e0b" }}
           />
-          <span>Tag 偶合中</span>
+          <span>Tag 關聯中</span>
         </div>
         <div className="act-graph-legend-item">
           <span
             className="act-graph-legend-dot"
             style={{ borderColor: "#10b981" }}
           />
-          <span>Tag 偶合弱</span>
+          <span>Tag 關聯弱</span>
         </div>
-        <label className="act-graph-legend-item" style={{ gap: 8 }}>
+        <label
+          className="act-graph-legend-item"
+          style={{ gap: 8 }}
+          data-tour="activity-graph-weak-toggle"
+        >
           <input
             type="checkbox"
             checked={showWeakEdges}
             onChange={(e) => setShowWeakEdges(e.target.checked)}
           />
-          <span>顯示弱耦合連線</span>
+          <span>顯示弱關聯連線</span>
         </label>
         <div className="act-graph-legend-sep" />
         <div className="act-graph-legend-hint">滾輪縮放 · 拖拽節點或背景</div>
@@ -752,7 +760,7 @@ export default function ActivityGraphView({
           顯示規則：score ≥ 35% 或共同標籤 ≥ 3
         </div>
         <div className="act-graph-legend-hint">
-          邊粗細代表強度（僅 Tag 偶合邊）
+          邊粗細代表強度（僅 Tag 關聯邊）
         </div>
       </div>
     </div>

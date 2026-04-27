@@ -9,7 +9,13 @@ import type { ReactNode } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type TourPage = "home" | "activity" | "ogsm" | "kpi" | "settings";
+export type TourPage =
+  | "home"
+  | "activity"
+  | "ogsm"
+  | "kpi"
+  | "settings"
+  | "tags";
 
 export interface TourStep {
   id: string;
