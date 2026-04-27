@@ -158,6 +158,7 @@ export const MeasureSchema = z.object({
   warnDaysBefore: z.number().optional(),
   quarter: z.string().optional(),
   owner: z.string().optional(),
+  /** 必須為 UTC ISO 8601，格式 YYYY-MM-DDTHH:mm:ss.sssZ。LWW 合併以字串順序比較，非 UTC 格式會導致預期外結果。 */
   updatedAt: z.string().optional(),
   status: MeasureStatusSchema.optional(),
   budget: z.number().optional(),
@@ -285,8 +286,7 @@ export const StrategySchema = z.object({
   owners: z.array(z.string()).default([]), // multi-owner (canonical)
   notes: z.string(),
   completionRate: z.number(), // 0-200, computed from KPIs
-  manualRate: z.number().nullable(),
-  updatedAt: z.string().optional(),
+  manualRate: z.number().nullable(),  /** 必須為 UTC ISO 8601，格式 YYYY-MM-DDTHH:mm:ss.sssZ。LWW 合併以字串順序比較，非 UTC 格式會導致預期外結果。 */  updatedAt: z.string().optional(),
   /** Tombstone: 使用者刻意清空的欄位名稱清單（用於 merge 時區分「未填」與「主動清空」） */
   clearedFields: z.array(z.string()).optional(),
 });
@@ -361,6 +361,7 @@ export const GoalSchema = z.object({
   strategies: z.array(StrategySchema),
   completionRate: z.number(),
   goalKpis: z.array(GoalKPISchema).optional(),
+  /** 必須為 UTC ISO 8601，格式 YYYY-MM-DDTHH:mm:ss.sssZ。LWW 合併以字串順序比較，非 UTC 格式會導致預期外結果。 */
   updatedAt: z.string().optional(),
   /** Tombstone: 使用者刻意清空的欄位名稱清單 */
   clearedFields: z.array(z.string()).optional(),
@@ -430,6 +431,7 @@ export const TeamSchema = z.object({
   name: z.string(),
   deptId: z.string().optional(), // 所屬部門
   members: z.array(TeamMemberSchema),
+  /** 必須為 UTC ISO 8601，格式 YYYY-MM-DDTHH:mm:ss.sssZ。LWW 合併以字串順序比較，非 UTC 格式會導致預期外結果。 */
   updatedAt: z.string().optional(),
   /** Tombstone: 使用者刻意清空的欄位名稱清單 */
   clearedFields: z.array(z.string()).optional(),

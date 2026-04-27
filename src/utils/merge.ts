@@ -754,6 +754,9 @@ export function detectConflicts(
 // helpers
 
 function newerOf<T extends { updatedAt?: string }>(a: T, b: T): T {
+  // Assumption: updatedAt must be UTC ISO 8601 (new Date().toISOString()).
+  // String comparison is only correct for UTC Z-suffix timestamps.
+  // Mixed timezone formats (e.g. +08:00) will produce incorrect LWW results.
   if (!a.updatedAt) return b;
   if (!b.updatedAt) return a;
   return a.updatedAt >= b.updatedAt ? a : b;

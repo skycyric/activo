@@ -41,12 +41,22 @@ export function validateOrWarn<T>(
   }
 }
 
-export function saveWorkspace(ws: WorkspaceData): void {
+export type SaveWorkspaceResult =
+  | { ok: true }
+  | { ok: false; error: "quota_exceeded" | "unknown" };
+
+export function saveWorkspace(ws: WorkspaceData): SaveWorkspaceResult {
   try {
-    normalizeWorkspaceData(ws);
-    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(ws));
+    const copy = structuredClone(ws);
+    normalizeWorkspaceData(copy);
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(copy));
+    return { ok: true };
   } catch (e) {
     console.error("Failed to save workspace", e);
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      return { ok: false, error: "quota_exceeded" };
+    }
+    return { ok: false, error: "unknown" };
   }
 }
 
@@ -603,6 +613,41 @@ function sortById<T extends { id: string }>(arr: T[]): T[] {
 }
 
 /**
+ * C1: 屬性順序固定的序列化，避免 JSON.stringify 因物件 spread 順序不同
+ * 而在每次 load 都觸發無謂的 dirty → save，進而干擾 OneDrive conflict copy 偵測。
+ */
+function stableStringifyLinks(links: ActivityDashboardLink[]): string {
+  return links
+    .map((l) =>
+      JSON.stringify({
+        id: l.id,
+        activityId: l.activityId,
+        type: l.type,
+        periodId: l.periodId ?? null,
+        goalId: l.goalId ?? null,
+        strategyId: l.strategyId ?? null,
+        exclude: l.exclude ?? false,
+      }),
+    )
+    .join(",");
+}
+
+function stableStringifyDashboardLinks(links: DashboardLink[]): string {
+  return links
+    .map((l) =>
+      JSON.stringify({
+        id: l.id,
+        type: l.type,
+        periodId: l.periodId ?? null,
+        goalId: l.goalId ?? null,
+        strategyId: l.strategyId ?? null,
+        exclude: l.exclude ?? false,
+      }),
+    )
+    .join(",");
+}
+
+/**
  * RelationalV1：
  * - 建立並維護 departments[].activityLinks（關聯表）
  * - 與既有 activities[].dashboardLinks 雙向同步（相容期）
@@ -648,7 +693,7 @@ export function syncRelationalLinksV1(ws: WorkspaceData): boolean {
 
     const mergedLinks = sortById(Array.from(merged.values()));
     const prevLinks = sortById([...(dept.activityLinks ?? [])]);
-    if (JSON.stringify(prevLinks) !== JSON.stringify(mergedLinks)) {
+    if (stableStringifyLinks(prevLinks) !== stableStringifyLinks(mergedLinks)) {
       dept.activityLinks = mergedLinks.length > 0 ? mergedLinks : undefined;
       changed = true;
     }
@@ -673,8 +718,8 @@ export function syncRelationalLinksV1(ws: WorkspaceData): boolean {
         ? sortById(activity.dashboardLinks)
         : undefined;
       if (
-        JSON.stringify(prevDashboardLinks ?? []) !==
-        JSON.stringify(nextDashboardLinks ?? [])
+        stableStringifyDashboardLinks(prevDashboardLinks ?? []) !==
+        stableStringifyDashboardLinks(nextDashboardLinks ?? [])
       ) {
         activity.dashboardLinks = nextDashboardLinks;
         changed = true;
@@ -756,6 +801,25 @@ function normalizeWorkspaceGoalKpiLinksInvariant(ws: WorkspaceData): boolean {
   return changed;
 }
 
+/**
+ * A2: 清除 KPI.achievementRate 計算快照，避免持久化過期值。
+ * achievementRate 應在執行期由 computeKpiAchievement() 重新計算，不應存磁碟。
+ */
+function stripAchievementRates(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      for (const kpi of activity.kpis ?? []) {
+        if (kpi.achievementRate !== null) {
+          kpi.achievementRate = null;
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
 function stripCompatWriteForbiddenDeprecatedFields(ws: WorkspaceData): boolean {
   let changed = false;
   for (const dept of ws.departments) {
@@ -771,6 +835,20 @@ function stripCompatWriteForbiddenDeprecatedFields(ws: WorkspaceData): boolean {
       if (activity.actionPlans !== undefined) {
         activity.actionPlans = undefined;
         changed = true;
+      }
+    }
+    // A3: 若 dept.activities 已有資料，strategy.measures[] 是殭屍欄位，應清空
+    // 避免 migrateToActivityFirst 在下次 load 時重複觸發產生重複活動
+    if ((dept.activities?.length ?? 0) > 0) {
+      for (const period of dept.periods) {
+        for (const goal of period.ogsm.goals) {
+          for (const strategy of goal.strategies) {
+            if (strategy.measures.length > 0) {
+              strategy.measures = [];
+              changed = true;
+            }
+          }
+        }
       }
     }
   }
@@ -960,6 +1038,11 @@ export const WORKSPACE_FLAGGED_MIGRATIONS: readonly WorkspaceFlaggedMigration[] 
 
 const WORKSPACE_ALWAYS_RUN_NORMALIZERS: readonly WorkspaceAlwaysRunNormalizer[] =
   [
+    {
+      description:
+        "Strip computed achievementRate snapshots before persisting (stale values must be recomputed at runtime).",
+      run: stripAchievementRates,
+    },
     {
       description:
         "Enforce compat-write forbidden policy for deprecated legacy fields.",

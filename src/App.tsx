@@ -1461,8 +1461,11 @@ export default function App() {
     );
     isUndoRedoRef.current = true;
     setWorkspace(ws);
-    saveWorkspace(ws);
-  }, []);
+    const result = saveWorkspace(ws);
+    if (!result.ok && result.error === "quota_exceeded") {
+      showDeptSaveToast("儲存空間已滿，建議切換至多檔模式或匯出備份。", "error");
+    }
+  }, [showDeptSaveToast]);
 
   const redo = useCallback(() => {
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
@@ -1472,8 +1475,11 @@ export default function App() {
     );
     isUndoRedoRef.current = true;
     setWorkspace(ws);
-    saveWorkspace(ws);
-  }, []);
+    const result = saveWorkspace(ws);
+    if (!result.ok && result.error === "quota_exceeded") {
+      showDeptSaveToast("儲存空間已滿，建議切換至多檔模式或匯出備份。", "error");
+    }
+  }, [showDeptSaveToast]);
 
   // Keyboard shortcut: Ctrl+Z / Ctrl+Y
   useEffect(() => {
@@ -1667,9 +1673,12 @@ export default function App() {
         pushHistory(next);
       }
       setWorkspace(next);
-      saveWorkspace(next);
+      const result = saveWorkspace(next);
+      if (!result.ok && result.error === "quota_exceeded") {
+        showDeptSaveToast("儲存空間已滿，建議切換至多檔模式或匯出備份。", "error");
+      }
     },
-    [pushHistory],
+    [pushHistory, showDeptSaveToast],
   );
 
   const handleUpdateTeams = useCallback(
