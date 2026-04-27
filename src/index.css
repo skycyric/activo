@@ -6776,6 +6776,21 @@ body,
 .activity-filter-multi-option:hover {
   background: #f8fafc;
 }
+.activity-filter-multi-search {
+  width: 100%;
+  height: 30px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+.activity-filter-multi-search:focus {
+  border-color: var(--brand);
+}
 .activity-filter-multi-empty {
   color: var(--text3);
   font-size: 12px;

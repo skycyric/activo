@@ -59,6 +59,11 @@ import {
   type ConflictEntry,
   type ConflictResolutions,
 } from "./utils/merge";
+import {
+  getDeptScopedTeams,
+  normalizeTeamsForDept,
+  mergeTeamsForDeptInSingleWorkspace,
+} from "./utils/teamScope";
 import { evaluateSaveConflictProbe } from "./utils/saveConflict";
 import ConflictModal from "./components/ConflictModal";
 import Sidebar from "./components/Sidebar";
@@ -1438,14 +1443,17 @@ export default function App() {
   );
   // ─────────────────────────────────────────────────────────────────────
 
-  const teams: Team[] = isMultiFileMode
-    ? deptFiles.flatMap((f) => f.workspace.teams ?? [])
-    : (workspace.teams ?? []);
-  // Stable reference: only changes when workspace.teams or activeDeptId changes
+  // Teams are department-scoped source data.
+  // In multi-file mode, read from the active dept file only (not global aggregation).
   const deptScopedTeams = useMemo(
-    () => teams.filter((t) => !t.deptId || t.deptId === activeDeptId),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isMultiFileMode ? deptFiles : workspace.teams, activeDeptId],
+    () =>
+      getDeptScopedTeams({
+        isMultiFileMode,
+        activeDeptId,
+        deptEntries: deptFiles,
+        workspaceTeams: workspace.teams ?? [],
+      }),
+    [isMultiFileMode, deptFiles, workspace.teams, activeDeptId],
   );
 
   // ─── Undo / Redo history ──────────────────────────────────────────────
@@ -1558,10 +1566,10 @@ export default function App() {
       departments: deptFiles
         .map((f) => f.workspace.departments[0])
         .filter((d): d is NonNullable<typeof d> => Boolean(d)),
-      teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
+      teams: deptScopedTeams,
       tagDictionary: tagDictionary.length > 0 ? tagDictionary : undefined,
     };
-  }, [isMultiFileMode, deptFiles, workspace]);
+  }, [isMultiFileMode, deptFiles, workspace, deptScopedTeams]);
 
   const handleBackup = useCallback(async () => {
     // Fallback: no multi-file root linked -> keep existing download behavior.
@@ -1708,26 +1716,6 @@ export default function App() {
     [pushHistory, showDeptSaveToast],
   );
 
-  const handleUpdateTeams = useCallback(
-    (nextTeams: Team[]) => {
-      const now = new Date().toISOString();
-      const prevById = new Map((workspace.teams ?? []).map((t) => [t.id, t]));
-      const stamped = nextTeams.map((t) => {
-        const prev = prevById.get(t.id);
-        // Stamp updatedAt only if content actually changed
-        if (!prev || JSON.stringify(prev) !== JSON.stringify(t)) {
-          const tracked = prev
-            ? trackClearedFields(prev, t, ["name", "members"])
-            : t;
-          return { ...tracked, updatedAt: now };
-        }
-        return t;
-      });
-      updateWorkspace({ ...workspace, teams: stamped });
-    },
-    [workspace, updateWorkspace],
-  );
-
   const handleUpdateTagDictionary = useCallback(
     (
       nextTagDictionary: TagDictionaryItem[],
@@ -1816,24 +1804,43 @@ export default function App() {
     [isMultiFileMode, showDeptSaveToast, updateWorkspace, workspace],
   );
 
-  // Dept-scoped version: merges updated teams back with other-dept teams
+  // Dept-scoped teams writer: normalize to active dept and keep other depts intact.
   const handleUpdateTeamsForDept = useCallback(
     (nextTeams: Team[]) => {
+      const now = new Date().toISOString();
+
       if (isMultiFileMode) {
         // In multi-file mode, update only the active dept's workspace teams
         const activeDeptFile = deptFiles.find(
           (f) => f.workspace.departments[0]?.id === activeDeptId,
         );
         if (!activeDeptFile || activeDeptFile.isReadOnly) return;
+        const prevTeams = (activeDeptFile.workspace.teams ?? []).filter(
+          (t) => !t.deptId || t.deptId === activeDeptId,
+        );
+        const stamped = normalizeTeamsForDept({
+          inputTeams: nextTeams,
+          deptId: activeDeptId,
+          prevTeams,
+          nowIso: now,
+          trackClearedFields,
+        });
         updateDeptWorkspace(activeDeptId, {
           ...activeDeptFile.workspace,
-          teams: nextTeams,
+          teams: stamped,
         });
       } else {
-        const otherDeptTeams = (workspace.teams ?? []).filter(
-          (t) => t.deptId && t.deptId !== activeDeptId,
-        );
-        handleUpdateTeams([...otherDeptTeams, ...nextTeams]);
+        const mergedTeams = mergeTeamsForDeptInSingleWorkspace({
+          existingTeams: workspace.teams ?? [],
+          deptId: activeDeptId,
+          nextTeams,
+          nowIso: now,
+          trackClearedFields,
+        });
+        updateWorkspace({
+          ...workspace,
+          teams: mergedTeams,
+        });
       }
     },
     [
@@ -1841,7 +1848,8 @@ export default function App() {
       deptFiles,
       activeDeptId,
       workspace.teams,
-      handleUpdateTeams,
+      updateWorkspace,
+      workspace,
       updateDeptWorkspace,
     ],
   );
@@ -3167,7 +3175,7 @@ export default function App() {
           onDeleteGoal={handleDeleteGoal}
           filterOwner={filterOwner}
           onFilterOwner={setFilterOwner}
-          teams={teams}
+          teams={deptScopedTeams}
           warnDaysBefore={workspace.warnDaysBefore ?? 7}
           isReadOnly={true}
           deptActivities={effectiveDeptActivities}
@@ -3186,7 +3194,7 @@ export default function App() {
             }}
             onUpdate={handleUpdateStrategy}
             onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
-            teams={teams}
+            teams={deptScopedTeams}
             warnDaysBefore={workspace.warnDaysBefore ?? 7}
             onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
             initialTab={pendingDetailNav?.tab}
@@ -3739,7 +3747,7 @@ export default function App() {
           <TagManagementPage
             key={`${activeDeptId}:tag-management`}
             tagDictionary={effectiveWorkspace.tagDictionary ?? []}
-            isReadOnly={isMultiFileMode ? !isAdmin : false}
+            isReadOnly={false}
             onUpdateTagDictionary={handleUpdateTagDictionary}
           />
         ) : showDeptSettings ? (

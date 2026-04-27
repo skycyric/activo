@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { WorkspaceData, TagDictionaryItem } from "../../schemas/ogsm";
 import {
   type ActivityFilterState,
@@ -205,14 +206,12 @@ export default function ActivityFilters({
           onToggle={(value) => toggleInList("deptIds", value)}
         />
 
-        {teamOptions.length > 0 && (
-          <MultiSelectDropdown
-            title="團隊"
-            values={filters.teamIds}
-            options={teamOptions}
-            onToggle={(value) => toggleInList("teamIds", value)}
-          />
-        )}
+        <MultiSelectDropdown
+          title="團隊"
+          values={filters.teamIds}
+          options={teamOptions}
+          onToggle={(value) => toggleInList("teamIds", value)}
+        />
 
         <MultiSelectDropdown
           title="主責"
@@ -321,7 +320,23 @@ function MultiSelectDropdown({
   options: Option[];
   onToggle: (value: string) => void;
 }) {
+  const [search, setSearch] = useState("");
   const selectedText = values.length === 0 ? "全部" : `已選 ${values.length}`;
+  const normalizedSearch = search.trim().toLocaleLowerCase("zh-TW");
+
+  const sortedOptions = useMemo(() => {
+    const filtered = normalizedSearch
+      ? options.filter((option) =>
+          option.label.toLocaleLowerCase("zh-TW").includes(normalizedSearch),
+        )
+      : options;
+
+    const isSelected = (option: Option) => values.includes(option.value);
+    return [
+      ...filtered.filter(isSelected),
+      ...filtered.filter((option) => !isSelected(option)),
+    ];
+  }, [normalizedSearch, options, values]);
 
   return (
     <details className="activity-filter-multi">
@@ -333,10 +348,17 @@ function MultiSelectDropdown({
         </span>
       </summary>
       <div className="activity-filter-multi-menu">
-        {options.length === 0 ? (
+        <input
+          className="activity-filter-multi-search"
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`搜尋${title}...`}
+        />
+        {sortedOptions.length === 0 ? (
           <div className="activity-filter-multi-empty">沒有可選項目</div>
         ) : (
-          options.map((option) => (
+          sortedOptions.map((option) => (
             <label key={option.value} className="activity-filter-multi-option">
               <input
                 type="checkbox"
