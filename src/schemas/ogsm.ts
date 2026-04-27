@@ -441,6 +441,8 @@ export const TagDictionaryItemSchema = z.object({
   status: z.enum(["active", "disabled"]).default("active"),
   aliases: z.array(z.string()).optional(),
   updatedAt: z.string().optional(),
+  /** 偶合演算法的基礎權重，預設 1.0；可在標籤管理頁面調整（0.1 ~ 5.0）。 */
+  weight: z.number().min(0.1).max(5).optional(),
 });
 
 export const WorkspaceDataSchema = z.object({

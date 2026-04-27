@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActivityWithContext } from "../ActivityPage";
+import type { TagDictionaryItem } from "../../schemas/ogsm";
 
 interface Props {
   activities: ActivityWithContext[];
   allActivities: ActivityWithContext[];
+  tagDictionary?: TagDictionaryItem[];
   onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
@@ -36,6 +38,11 @@ interface GraphNode {
 interface GraphEdge {
   source: string;
   target: string;
+  kind: "tag";
+  score: number;
+  level: "weak" | "medium" | "strong";
+  sharedTags?: string[];
+  sharedCount?: number;
 }
 
 interface ViewState {
@@ -44,19 +51,50 @@ interface ViewState {
   scale: number;
 }
 
+// Tag weights are now stored in tagDictionary (configurable in TagManagementPage).
+// Edge visibility/levels use absolute thresholds for stable, predictable semantics.
+const EDGE_SHOW_SCORE_THRESHOLD = 0.35;
+const EDGE_SHOW_SHARED_TAGS_FLOOR = 3;
+const EDGE_LEVEL_STRONG_THRESHOLD = 0.75;
+const EDGE_LEVEL_MEDIUM_THRESHOLD = 0.55;
+
+function edgeStyle(edge: GraphEdge): { color: string; width: number } {
+  if (edge.level === "strong") {
+    return {
+      color: "rgba(220,38,38,0.78)",
+      width: 1.2 + Math.min(3.8, edge.score * 6),
+    };
+  }
+  if (edge.level === "medium") {
+    return {
+      color: "rgba(245,158,11,0.72)",
+      width: 1.1 + Math.min(3.0, edge.score * 5),
+    };
+  }
+  return {
+    color: "rgba(16,185,129,0.62)",
+    width: 1 + Math.min(2.2, edge.score * 4),
+  };
+}
+
 export default function ActivityGraphView({
   activities,
-  allActivities: _allActivities,
+  allActivities,
+  tagDictionary,
   onJumpToActivity,
 }: Props) {
+  const FOCUS_SCALE = 1.35;
+  const FOCUS_ANIM_MS = 340;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodesRef = useRef<GraphNode[]>([]);
   const edgesRef = useRef<GraphEdge[]>([]);
   const frameRef = useRef<number>(0);
+  const focusFrameRef = useRef<number | null>(null);
   const iterRef = useRef<number>(0);
   const viewRef = useRef<ViewState>({ tx: 0, ty: 0, scale: 1 });
   const sizeRef = useRef({ w: 800, h: 600 });
+  const focusedNodeIdRef = useRef<string | null>(null);
 
   // drag state: null | {type:"node",id,ox,oy,startX,startY} | {type:"pan",sx,sy,stx,sty}
   const dragRef = useRef<
@@ -72,17 +110,64 @@ export default function ActivityGraphView({
     | null
   >(null);
   const hoveredRef = useRef<string | null>(null);
+  const nodeTopCouplingRef = useRef<Map<string, GraphEdge>>(new Map());
+  const [showWeakEdges, setShowWeakEdges] = useState(true);
   const [tooltip, setTooltip] = useState<{
     x: number;
     y: number;
     act: ActivityWithContext;
+    bestEdge?: GraphEdge;
   } | null>(null);
+
+  const stopFocusAnimation = useCallback(() => {
+    if (focusFrameRef.current !== null) {
+      cancelAnimationFrame(focusFrameRef.current);
+      focusFrameRef.current = null;
+    }
+  }, []);
+
+  const centerNodeInView = useCallback((node: GraphNode, scale: number) => {
+    const W = sizeRef.current.w;
+    const H = sizeRef.current.h;
+    viewRef.current.scale = scale;
+    viewRef.current.tx = W / 2 - node.x * scale;
+    viewRef.current.ty = H / 2 - node.y * scale;
+  }, []);
+
+  const animateFocusToNode = useCallback(
+    (node: GraphNode, targetScale = FOCUS_SCALE) => {
+      stopFocusAnimation();
+      const from = { ...viewRef.current };
+      const W = sizeRef.current.w;
+      const H = sizeRef.current.h;
+      const toScale = Math.max(from.scale, targetScale);
+      const toTx = W / 2 - node.x * toScale;
+      const toTy = H / 2 - node.y * toScale;
+      const startAt = performance.now();
+
+      const step = (now: number) => {
+        const t = Math.min(1, (now - startAt) / FOCUS_ANIM_MS);
+        // Use ease-in-out cubic to reduce abrupt acceleration/deceleration.
+        const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        viewRef.current.scale = from.scale + (toScale - from.scale) * eased;
+        viewRef.current.tx = from.tx + (toTx - from.tx) * eased;
+        viewRef.current.ty = from.ty + (toTy - from.ty) * eased;
+        if (t < 1) {
+          focusFrameRef.current = requestAnimationFrame(step);
+        } else {
+          focusFrameRef.current = null;
+        }
+      };
+
+      focusFrameRef.current = requestAnimationFrame(step);
+    },
+    [centerNodeInView, stopFocusAnimation],
+  );
 
   // Build graph nodes/edges when activities change
   useEffect(() => {
     const W = sizeRef.current.w;
     const H = sizeRef.current.h;
-    const idSet = new Set(activities.map((a) => a.id));
 
     const deptHues: Record<string, number> = {};
     activities.forEach((a) => {
@@ -105,18 +190,110 @@ export default function ActivityGraphView({
       };
     });
 
-    edgesRef.current = [];
-    activities.forEach((act) => {
-      (act.prerequisites ?? []).forEach((preId) => {
-        if (idSet.has(preId)) {
-          edgesRef.current.push({ source: preId, target: act.id });
+    // Tag-coupling edges: weighted Jaccard with IDF.
+
+    // Weight map from tag dictionary (user-configurable, default 1.0).
+    const tagWeightMap = new Map<string, number>();
+    for (const item of tagDictionary ?? []) {
+      tagWeightMap.set(item.name, item.weight ?? 1.0);
+    }
+
+    // IDF must be computed from ALL dept activities (not just filtered subset)
+    // so that coupling scores remain stable when filters change.
+    const allTagSetsById = new Map(
+      allActivities.map((a) => [
+        a.id,
+        new Set((a.tags ?? []).map((t) => t.trim()).filter(Boolean)),
+      ]),
+    );
+    const df = new Map<string, number>();
+    for (const tags of allTagSetsById.values()) {
+      for (const t of tags) df.set(t, (df.get(t) ?? 0) + 1);
+    }
+    const nTotal = allActivities.length;
+    const idf = new Map<string, number>();
+    for (const [tag, count] of df.entries()) {
+      idf.set(tag, Math.log((nTotal + 1) / (count + 1)) + 1);
+    }
+
+    // Tag sets for the currently displayed (filtered) activities.
+    const tagSetsById = new Map(
+      activities.map((a) => [
+        a.id,
+        new Set((a.tags ?? []).map((t) => t.trim()).filter(Boolean)),
+      ]),
+    );
+
+    const tagEdgesRaw: GraphEdge[] = [];
+    for (let i = 0; i < activities.length; i++) {
+      for (let j = i + 1; j < activities.length; j++) {
+        const a = activities[i];
+        const b = activities[j];
+        const ta = tagSetsById.get(a.id) ?? new Set<string>();
+        const tb = tagSetsById.get(b.id) ?? new Set<string>();
+        if (ta.size === 0 || tb.size === 0) continue;
+
+        const union = new Set<string>([...ta, ...tb]);
+        const shared = [...ta].filter((t) => tb.has(t));
+        if (shared.length === 0) continue;
+
+        let num = 0;
+        let den = 0;
+        for (const t of union) {
+          const w = (tagWeightMap.get(t) ?? 1) * (idf.get(t) ?? 1);
+          den += w;
+          if (ta.has(t) && tb.has(t)) num += w;
         }
-      });
-    });
+        if (den <= 0) continue;
+        const score = num / den;
+        if (score <= 0) continue;
+
+        tagEdgesRaw.push({
+          source: a.id,
+          target: b.id,
+          kind: "tag",
+          score,
+          level: "weak",
+          sharedTags: shared.slice(0, 4),
+          sharedCount: shared.length,
+        });
+      }
+    }
+
+    const qualifiedTagEdges = tagEdgesRaw
+      .map((e) => {
+        const hasSharedTagFloor =
+          (e.sharedCount ?? 0) >= EDGE_SHOW_SHARED_TAGS_FLOOR;
+        const passScore = e.score >= EDGE_SHOW_SCORE_THRESHOLD;
+        if (!hasSharedTagFloor && !passScore) return null;
+
+        let level: GraphEdge["level"];
+        if (e.score >= EDGE_LEVEL_STRONG_THRESHOLD) level = "strong";
+        else if (e.score >= EDGE_LEVEL_MEDIUM_THRESHOLD) level = "medium";
+        else level = "weak";
+        return { ...e, level };
+      })
+      .filter((e): e is GraphEdge => e !== null)
+      .sort((a, b) => b.score - a.score);
+
+    const visibleTagEdges = showWeakEdges
+      ? qualifiedTagEdges
+      : qualifiedTagEdges.filter((e) => e.level !== "weak");
+
+    edgesRef.current = visibleTagEdges;
+
+    const bestByNode = new Map<string, GraphEdge>();
+    for (const e of visibleTagEdges) {
+      const prevS = bestByNode.get(e.source);
+      if (!prevS || prevS.score < e.score) bestByNode.set(e.source, e);
+      const prevT = bestByNode.get(e.target);
+      if (!prevT || prevT.score < e.score) bestByNode.set(e.target, e);
+    }
+    nodeTopCouplingRef.current = bestByNode;
 
     iterRef.current = 0;
     viewRef.current = { tx: 0, ty: 0, scale: 1 };
-  }, [activities]);
+  }, [activities, allActivities, tagDictionary, showWeakEdges]);
 
   // Canvas render + physics loop
   useEffect(() => {
@@ -136,6 +313,14 @@ export default function ActivityGraphView({
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
+
+      const focusedId = focusedNodeIdRef.current;
+      if (focusedId) {
+        const focused = nodesRef.current.find((n) => n.id === focusedId);
+        if (focused) {
+          centerNodeInView(focused, viewRef.current.scale);
+        }
+      }
     };
     resize();
 
@@ -150,6 +335,7 @@ export default function ActivityGraphView({
 
       // Physics
       if (iterRef.current < 400 && nodes.length > 0) {
+        const focusedId = focusedNodeIdRef.current;
         const K_REPULSE = nodes.length < 20 ? 8000 : 5000;
         const K_SPRING = 0.035;
         const IDEAL_LEN = 140;
@@ -160,6 +346,7 @@ export default function ActivityGraphView({
 
         // Gravity toward center
         for (const n of nodes) {
+          if (focusedId && n.id === focusedId) continue;
           n.vx += (cx - n.x) * GRAVITY;
           n.vy += (cy - n.y) * GRAVITY;
         }
@@ -175,10 +362,16 @@ export default function ActivityGraphView({
             const f = K_REPULSE / (dist * dist);
             const fx = (dx / dist) * f;
             const fy = (dy / dist) * f;
-            a.vx -= fx;
-            a.vy -= fy;
-            b.vx += fx;
-            b.vy += fy;
+            const aFocused = focusedId && a.id === focusedId;
+            const bFocused = focusedId && b.id === focusedId;
+            if (!aFocused) {
+              a.vx -= fx;
+              a.vy -= fy;
+            }
+            if (!bFocused) {
+              b.vx += fx;
+              b.vy += fy;
+            }
           }
         }
 
@@ -194,20 +387,40 @@ export default function ActivityGraphView({
           const f = K_SPRING * (dist - IDEAL_LEN);
           const fx = (dx / dist) * f;
           const fy = (dy / dist) * f;
-          src.vx += fx;
-          src.vy += fy;
-          tgt.vx -= fx;
-          tgt.vy -= fy;
+          const srcFocused = focusedId && src.id === focusedId;
+          const tgtFocused = focusedId && tgt.id === focusedId;
+          if (!srcFocused) {
+            src.vx += fx;
+            src.vy += fy;
+          }
+          if (!tgtFocused) {
+            tgt.vx -= fx;
+            tgt.vy -= fy;
+          }
         }
 
         for (const n of nodes) {
+          const isFocused = focusedId && n.id === focusedId;
           const isDragged =
             dragRef.current?.type === "node" && dragRef.current.id === n.id;
-          if (isDragged) continue;
+          if (isDragged || isFocused) {
+            if (isFocused) {
+              n.vx = 0;
+              n.vy = 0;
+            }
+            continue;
+          }
           n.vx *= DAMP;
           n.vy *= DAMP;
           n.x += n.vx;
           n.y += n.vy;
+        }
+
+        if (focusedId && dragRef.current?.type !== "pan") {
+          const focused = nodes.find((n) => n.id === focusedId);
+          if (focused) {
+            centerNodeInView(focused, viewRef.current.scale);
+          }
         }
         iterRef.current++;
       }
@@ -223,7 +436,7 @@ export default function ActivityGraphView({
 
       const nodeMap2 = new Map(nodes.map((n) => [n.id, n]));
 
-      // Draw edges with arrows
+      // Draw tag-coupling edges (undirected, no arrowhead).
       for (const e of edges) {
         const src = nodeMap2.get(e.source);
         const tgt = nodeMap2.get(e.target);
@@ -236,32 +449,16 @@ export default function ActivityGraphView({
         const uy = dy / dist;
         const x1 = src.x + ux * src.r;
         const y1 = src.y + uy * src.r;
-        const arrowGap = tgt.r + 9;
-        const x2 = tgt.x - ux * arrowGap;
-        const y2 = tgt.y - uy * arrowGap;
+        const x2 = tgt.x - ux * tgt.r;
+        const y2 = tgt.y - uy * tgt.r;
 
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
-        ctx.strokeStyle = "rgba(100,116,139,0.45)";
-        ctx.lineWidth = 1.5;
+        const style = edgeStyle(e);
+        ctx.strokeStyle = style.color;
+        ctx.lineWidth = style.width;
         ctx.stroke();
-
-        // Arrowhead
-        const angle = Math.atan2(uy, ux);
-        ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(
-          x2 - 9 * Math.cos(angle - 0.42),
-          y2 - 9 * Math.sin(angle - 0.42),
-        );
-        ctx.lineTo(
-          x2 - 9 * Math.cos(angle + 0.42),
-          y2 - 9 * Math.sin(angle + 0.42),
-        );
-        ctx.closePath();
-        ctx.fillStyle = "rgba(100,116,139,0.6)";
-        ctx.fill();
       }
 
       // Draw nodes
@@ -305,10 +502,11 @@ export default function ActivityGraphView({
 
     frameRef.current = requestAnimationFrame(drawFrame);
     return () => {
+      stopFocusAnimation();
       cancelAnimationFrame(frameRef.current);
       ro.disconnect();
     };
-  }, []);
+  }, [centerNodeInView, stopFocusAnimation]);
 
   const toWorld = useCallback((cx: number, cy: number): [number, number] => {
     const { tx, ty, scale } = viewRef.current;
@@ -331,6 +529,7 @@ export default function ActivityGraphView({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
+    stopFocusAnimation();
     const { cx, cy } = getCanvasXY(e);
     const [wx, wy] = toWorld(cx, cy);
     const hit = hitTest(wx, wy);
@@ -345,6 +544,8 @@ export default function ActivityGraphView({
       };
       canvasRef.current!.style.cursor = "grabbing";
     } else {
+      // User took manual control — stop physics from re-centering focused node.
+      focusedNodeIdRef.current = null;
       const { tx, ty } = viewRef.current;
       dragRef.current = { type: "pan", sx: cx, sy: cy, stx: tx, sty: ty };
       canvasRef.current!.style.cursor = "grabbing";
@@ -377,7 +578,12 @@ export default function ActivityGraphView({
 
     if (hit?.id !== prevHov) {
       if (hit) {
-        setTooltip({ x: cx, y: cy, act: hit.act });
+        setTooltip({
+          x: cx,
+          y: cy,
+          act: hit.act,
+          bestEdge: nodeTopCouplingRef.current.get(hit.id),
+        });
         if (!drag) canvasRef.current!.style.cursor = "pointer";
       } else {
         setTooltip(null);
@@ -398,7 +604,11 @@ export default function ActivityGraphView({
       // Click if barely moved
       if (dx * dx + dy * dy < 25) {
         const node = nodesRef.current.find((n) => n.id === drag.id);
-        if (node) onJumpToActivity(node.act.deptId, node.id);
+        if (node) {
+          focusedNodeIdRef.current = node.id;
+          animateFocusToNode(node);
+          onJumpToActivity(node.act.deptId, node.id);
+        }
       }
     }
     dragRef.current = null;
@@ -411,6 +621,8 @@ export default function ActivityGraphView({
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    stopFocusAnimation();
+    focusedNodeIdRef.current = null; // User zoomed manually — stop auto-centering.
     const { cx, cy } = getCanvasXY(e);
     const factor = e.deltaY > 0 ? 0.88 : 1.14;
     const v = viewRef.current;
@@ -457,6 +669,24 @@ export default function ActivityGraphView({
             {tooltip.act.deptName}
             {tooltip.act.owner ? ` · ${tooltip.act.owner}` : ""}
           </div>
+          {tooltip.bestEdge && (
+            <div className="act-graph-tooltip-meta">
+              最強偶合：{Math.round(tooltip.bestEdge.score * 100)}% ·
+              {tooltip.bestEdge.level === "strong"
+                ? " 強"
+                : tooltip.bestEdge.level === "medium"
+                  ? " 中"
+                  : " 弱"}
+            </div>
+          )}
+          {tooltip.bestEdge?.sharedTags &&
+            tooltip.bestEdge.sharedTags.length > 0 && (
+              <div className="act-graph-tooltip-tags">
+                {tooltip.bestEdge.sharedTags.map((t) => (
+                  <span key={t}>#{t}</span>
+                ))}
+              </div>
+            )}
           {tooltip.act.tags && tooltip.act.tags.length > 0 && (
             <div className="act-graph-tooltip-tags">
               {tooltip.act.tags.map((t) => (
@@ -468,7 +698,7 @@ export default function ActivityGraphView({
         </div>
       )}
       <div className="act-graph-legend">
-        <div className="act-graph-legend-title">狀態（邊框色）</div>
+        <div className="act-graph-legend-title">節點狀態（邊框色）</div>
         {(
           [
             ["not-started", "未開始", "#94a3b8"],
@@ -486,8 +716,44 @@ export default function ActivityGraphView({
           </div>
         ))}
         <div className="act-graph-legend-sep" />
+        <div className="act-graph-legend-title">邊語義</div>
+        <div className="act-graph-legend-item">
+          <span
+            className="act-graph-legend-dot"
+            style={{ borderColor: "#ef4444" }}
+          />
+          <span>Tag 偶合強</span>
+        </div>
+        <div className="act-graph-legend-item">
+          <span
+            className="act-graph-legend-dot"
+            style={{ borderColor: "#f59e0b" }}
+          />
+          <span>Tag 偶合中</span>
+        </div>
+        <div className="act-graph-legend-item">
+          <span
+            className="act-graph-legend-dot"
+            style={{ borderColor: "#10b981" }}
+          />
+          <span>Tag 偶合弱</span>
+        </div>
+        <label className="act-graph-legend-item" style={{ gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={showWeakEdges}
+            onChange={(e) => setShowWeakEdges(e.target.checked)}
+          />
+          <span>顯示弱耦合連線</span>
+        </label>
+        <div className="act-graph-legend-sep" />
         <div className="act-graph-legend-hint">滾輪縮放 · 拖拽節點或背景</div>
-        <div className="act-graph-legend-hint">→ 箭頭 = 前置關係</div>
+        <div className="act-graph-legend-hint">
+          顯示規則：score ≥ 35% 或共同標籤 ≥ 3
+        </div>
+        <div className="act-graph-legend-hint">
+          邊粗細代表強度（僅 Tag 偶合邊）
+        </div>
       </div>
     </div>
   );

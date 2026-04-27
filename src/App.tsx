@@ -67,6 +67,7 @@ import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
 import TagManagementPage, {
+  type TagDeleteOp,
   type TagRename,
 } from "./components/TagManagementPage";
 import ActivityPage from "./components/ActivityPage";
@@ -1692,22 +1693,37 @@ export default function App() {
   );
 
   const handleUpdateTagDictionary = useCallback(
-    (nextTagDictionary: TagDictionaryItem[], renames: TagRename[] = []) => {
+    (
+      nextTagDictionary: TagDictionaryItem[],
+      renames: TagRename[] = [],
+      deletes: TagDeleteOp[] = [],
+    ) => {
       const stamped = nextTagDictionary.map((item) => ({
         ...item,
         updatedAt: item.updatedAt ?? new Date().toISOString(),
       }));
 
-      // helper: apply renames to a tag name array
-      const applyRenames = (
+      // helper: apply renames and delete/merge strategies to a tag name array
+      const applyTagMutations = (
         tags: string[] | undefined,
       ): string[] | undefined => {
-        if (!tags || renames.length === 0) return tags;
-        const mapped = tags.map((t) => {
+        if (!tags) return tags;
+
+        let next = tags.map((t) => {
           const r = renames.find((x) => x.from === t);
           return r ? r.to : t;
         });
-        return mapped;
+
+        for (const op of deletes) {
+          if (op.mode === "remove") {
+            next = next.filter((t) => t !== op.tag);
+          } else if (op.mode === "merge" && op.to) {
+            const targetTag = op.to;
+            next = next.map((t) => (t === op.tag ? targetTag : t));
+          }
+        }
+
+        return Array.from(new Set(next.filter(Boolean)));
       };
 
       if (isMultiFileMode) {
@@ -1724,7 +1740,7 @@ export default function App() {
                       ...dept,
                       activities: (dept.activities ?? []).map((act) => ({
                         ...act,
-                        tags: applyRenames(act.tags),
+                        tags: applyTagMutations(act.tags),
                       })),
                     })),
                   },
@@ -1733,9 +1749,14 @@ export default function App() {
                 },
           ),
         );
+        const changedLabelParts: string[] = [];
+        if (renames.length > 0)
+          changedLabelParts.push(`改名 ${renames.length} 筆`);
+        if (deletes.length > 0)
+          changedLabelParts.push(`刪除 ${deletes.length} 筆`);
         showDeptSaveToast(
-          renames.length > 0
-            ? `已更新標籤字典，同步改名 ${renames.length} 筆。請儲存所有可寫部門以同步變更。`
+          changedLabelParts.length > 0
+            ? `已更新標籤字典（${changedLabelParts.join("、")}）。請儲存所有可寫部門以同步變更。`
             : "已更新活動標籤字典，請儲存所有可寫部門以同步變更。",
           "warning",
         );
@@ -1746,7 +1767,7 @@ export default function App() {
         ...dept,
         activities: (dept.activities ?? []).map((act) => ({
           ...act,
-          tags: applyRenames(act.tags),
+          tags: applyTagMutations(act.tags),
         })),
       }));
 
@@ -3415,7 +3436,8 @@ export default function App() {
                     : "目前沒有可儲存的部門"
                 }
               >
-                儲存全部髒部門{dirtyDeptCount > 0 ? ` (${dirtyDeptCount})` : ""}
+                儲存全部髒部門
+                {dirtyDeptCount > 0 ? ` (${dirtyDeptCount})` : ""}
               </button>
             </div>
           )}

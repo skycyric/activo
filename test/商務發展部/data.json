@@ -1636,7 +1636,8 @@
           "strategyId": "str_mn48prtg_9s08",
           "strategyTitle": "透過音樂、運動、親子大型展演活動的聚客力，觸及潛在出國客群提升進店前觸及機會點。",
           "warnDaysBefore": 3,
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A001"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A001",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S01-A002",
@@ -1738,7 +1739,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A002"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A002",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S01-A003",
@@ -1849,7 +1851,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A003"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A003",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S01-A004",
@@ -1933,7 +1936,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A004"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A004",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S01-A005",
@@ -1996,9 +2000,7 @@
           "strategyId": "STR-2026-H1-DEPT-G1-S01",
           "strategyTitle": "透過音樂、運動、親子大型展演活動的聚客力，觸及潛在出國客群提升進店前觸及機會點。",
           "bizKey": "ACT-2026-H1-DEPT-G1-S01-A005",
-          "tags": [
-            "測試"
-          ],
+          "tags": [],
           "warnDaysBefore": 3
         },
         {
@@ -2101,7 +2103,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A006"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A006",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S01-A007",
@@ -2213,7 +2216,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A007"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S01-A007",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A008",
@@ -2269,7 +2273,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A008"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A008",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A009",
@@ -2358,7 +2363,8 @@
           "strategyTitle": "透過銀行、壽險、旅遊等異業夥伴，拓展潛在出國客群與高價值族群，藉由資源互換會員互導提升品牌曝光。",
           "warnDaysBefore": 3,
           "assistUnits": [],
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A009"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A009",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A010",
@@ -2415,7 +2421,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A010"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A010",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A011",
@@ -2481,7 +2488,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A011"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A011",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A012",
@@ -2546,7 +2554,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A012"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A012",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A013",
@@ -2613,7 +2622,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A013"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A013",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A014",
@@ -2671,7 +2681,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A014"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A014",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A015",
@@ -2729,7 +2740,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A015"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A015",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A016",
@@ -2807,7 +2819,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A016"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A016",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A017",
@@ -2856,7 +2869,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A017"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A017",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A018",
@@ -2905,7 +2919,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A018"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A018",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A019",
@@ -2989,7 +3004,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A019"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A019",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A020",
@@ -3064,7 +3080,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A020"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A020",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A021",
@@ -3131,7 +3148,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A021"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A021",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A022",
@@ -3222,7 +3240,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A022"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A022",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A023",
@@ -3283,9 +3302,7 @@
           "warnDaysBefore": 3,
           "updatedAt": "2026-04-26T11:06:04.549Z",
           "bizKey": "ACT-2026-H1-DEPT-G1-S03-A023",
-          "tags": [
-            "測試"
-          ]
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A024",
@@ -3312,7 +3329,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A024"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A024",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A025",
@@ -3430,7 +3448,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A025"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A025",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A026",
@@ -3508,7 +3527,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A026"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A026",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A027",
@@ -3554,7 +3574,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A027"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A027",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A028",
@@ -3591,7 +3612,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A028"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A028",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A029",
@@ -3628,7 +3650,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A029"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A029",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A030",
@@ -3655,7 +3678,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A030"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A030",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G3-S01-A031",
@@ -3694,7 +3718,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G3-S01-A031"
+          "bizKey": "ACT-2026-H1-DEPT-G3-S01-A031",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G3-S01-A032",
@@ -3762,7 +3787,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G3-S01-A032"
+          "bizKey": "ACT-2026-H1-DEPT-G3-S01-A032",
+          "tags": []
         },
         {
           "id": "ACT-2026-H1-DEPT-G3-S01-A033",
@@ -3820,7 +3846,8 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G3-S01-A033"
+          "bizKey": "ACT-2026-H1-DEPT-G3-S01-A033",
+          "tags": []
         }
       ],
       "activityLinks": [
@@ -4182,7 +4209,7 @@
       "bizKey": "DEP-2026-DEPT-01"
     }
   ],
-  "version": 48,
+  "version": 51,
   "_migratedClearOwners": true,
   "teams": [
     {
@@ -4417,7 +4444,7 @@
     "goal_mn48prth_p16v_h2",
     "goal_mn48prtf_p6nm_h2"
   ],
-  "savedAt": "2026-04-26T11:06:12.508Z",
+  "savedAt": "2026-04-27T06:38:58.135Z",
   "_migratedPhase2": true,
   "_migratedPhase3": true,
   "_migratedRelationalV1": true,
@@ -4425,12 +4452,5 @@
   "_migratedV3": true,
   "_migratedFrameworksV1": true,
   "_migratedTimelineV1": true,
-  "tagDictionary": [
-    {
-      "id": "tag_mofnq8q4_000_6b8b88d8",
-      "name": "測試",
-      "status": "active",
-      "updatedAt": "2026-04-26T11:00:37.858Z"
-    }
-  ]
+  "tagDictionary": []
 }

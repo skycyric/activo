@@ -19,13 +19,13 @@ const APP_CARDS: AppCard[] = [
     title: "目標編輯器",
     desc: "GoalKPI 視覺化設計",
   },
+  { id: "settings", icon: "⚙️", title: "部門設定", desc: "成員與期間設定" },
   {
     id: "tag-management",
     icon: "🏷️",
     title: "標籤管理",
     desc: "活動標籤治理與維護",
   },
-  { id: "settings", icon: "⚙️", title: "部門設定", desc: "成員與期間設定" },
 ];
 
 // ── Props ─────────────────────────────────────────────────────────────────────

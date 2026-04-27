@@ -684,6 +684,7 @@ export default function ActivityPage({
             <ActivityGraphView
               activities={filtered}
               allActivities={allActivities}
+              tagDictionary={workspace.tagDictionary}
               onJumpToActivity={handleOpenActivityDetail}
             />
           )}
