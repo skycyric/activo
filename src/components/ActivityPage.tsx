@@ -90,7 +90,6 @@ export default function ActivityPage({
   onUpdateActivity,
   onDeleteActivity,
   onAddActivity,
-  onJumpToActivity,
   initialSelectedActivityId,
   onSelectedActivityIdChange,
 }: Props) {
@@ -176,15 +175,21 @@ export default function ActivityPage({
   );
 
   const handleOpenActivityDetail = useCallback(
-    (deptId: string, activityId: string) => {
-      onViewChange?.(view);
-      onGanttSubViewChange?.(ganttSubView);
-      onJumpToActivity(deptId, activityId, {
-        activityPageView: view,
-        activityGanttSubView: ganttSubView,
-      });
+    (_deptId: string, activityId: string) => {
+      // onJumpToActivity is for cross-page routing (OGSM → ActivityPage).
+      // Calling it here triggers setActiveDeptId in App and force-switches
+      // the nav dept away from the user’s selection.
+      // ActivityPage is already visible — opening a panel row is purely
+      // internal, so mirror handleSelectActivity instead.
+      if (!confirmSwitchAway(activityId)) return;
+      panelDirtyRef.current = false;
+      if (!isDetailControlled) {
+        setLocalSelectedActivityId(activityId);
+        setLocalExpandedId(activityId);
+      }
+      onSelectedActivityIdChange?.(activityId);
     },
-    [ganttSubView, onGanttSubViewChange, onJumpToActivity, onViewChange, view],
+    [confirmSwitchAway, isDetailControlled, onSelectedActivityIdChange],
   );
 
   // Persist owner filters to localStorage

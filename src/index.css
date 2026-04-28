@@ -11344,6 +11344,7 @@ body,
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .kpid-kpi-goal-header {
   display: flex;

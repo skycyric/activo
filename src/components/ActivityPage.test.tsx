@@ -27,7 +27,25 @@ vi.mock("./activity/ActivityFilters", () => ({
   default: () => <div data-testid="activity-filters" />,
 }));
 vi.mock("./activity/ActivityTable", () => ({
-  default: () => <div data-testid="activity-table" />,
+  default: ({
+    onJumpToActivity,
+    activities,
+  }: {
+    onJumpToActivity: (deptId: string, activityId: string) => void;
+    activities: Array<{ id: string; deptId: string }>;
+  }) => (
+    <div data-testid="activity-table">
+      {activities.map((a) => (
+        <button
+          key={a.id}
+          data-testid={`activity-row-${a.id}`}
+          onClick={() => onJumpToActivity(a.deptId, a.id)}
+        >
+          開啟 {a.id}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("./activity/ActivityKanban", () => ({
   default: () => <div data-testid="activity-kanban" />,
@@ -164,5 +182,42 @@ describe("ActivityPage detail panel close", () => {
     expect(screen.getByTestId("activity-detail-forced-tab")).toHaveTextContent(
       "kpi",
     );
+  });
+});
+
+describe("ActivityPage 選择活動不可觸發路由切換", () => {
+  beforeEach(() => {
+    tourState.isActive = false;
+    tourState.step = null;
+  });
+
+  test("在 ActivityPage 內點擊活動行，不應呼叫外部路由 onJumpToActivity", async () => {
+    // Regression: handleOpenActivityDetail 曾錯誤地呪叫 onJumpToActivity（跨頁路由 prop），
+    // 導致 App 層的 setActiveDeptId 被觸發，強制切換 nav 部門。
+    // 正確行為：內部直接管理 selectedActivityId，不出放外部路由。
+    const onJumpToActivity = vi.fn();
+    const onSelectedActivityIdChange = vi.fn();
+
+    render(
+      <ActivityPage
+        workspace={WORKSPACE}
+        activeDeptId="dept-1"
+        onUpdateActivity={() => {}}
+        onDeleteActivity={() => {}}
+        onAddActivity={() => {}}
+        onJumpToActivity={onJumpToActivity}
+        initialSelectedActivityId={null}
+        onSelectedActivityIdChange={onSelectedActivityIdChange}
+      />,
+    );
+
+    // Simulate clicking an activity row in the table
+    await userEvent.click(screen.getByTestId("activity-row-act-1"));
+
+    // The cross-page routing prop must NOT be called
+    expect(onJumpToActivity).not.toHaveBeenCalled();
+
+    // The internal selection change IS propagated
+    expect(onSelectedActivityIdChange).toHaveBeenCalledWith("act-1");
   });
 });
