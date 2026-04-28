@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { evaluateSaveConflictProbe } from "./saveConflict";
+import {
+  evaluateSaveConflictProbe,
+  evaluateRemoteRefreshDecision,
+} from "./saveConflict";
 
 describe("evaluateSaveConflictProbe", () => {
   test("no signal change -> no conflict probe", () => {
@@ -73,5 +76,25 @@ describe("evaluateSaveConflictProbe", () => {
 
     expect(result.changedSinceKnown).toBe(false);
     expect(result.shouldDetectConflict).toBe(false);
+  });
+});
+
+// ─── evaluateRemoteRefreshDecision ───────────────────────────────────────────
+
+describe("evaluateRemoteRefreshDecision", () => {
+  test("clean state (isDirty=false) → proceed regardless of confirmIfDirty", () => {
+    expect(evaluateRemoteRefreshDecision(false, false)).toBe("proceed");
+    expect(evaluateRemoteRefreshDecision(false, true)).toBe("proceed");
+  });
+
+  test("dirty + auto-sync path (confirmIfDirty=false) → abort to protect unsaved edits", () => {
+    // This is the race-condition guard: even if the poller checked !isDirty
+    // from a stale snapshot, re-checking inside the handler with confirmIfDirty=false
+    // must abort silently rather than overwrite local changes.
+    expect(evaluateRemoteRefreshDecision(true, false)).toBe("abort");
+  });
+
+  test("dirty + manual refresh (confirmIfDirty=true) → confirm-needed", () => {
+    expect(evaluateRemoteRefreshDecision(true, true)).toBe("confirm-needed");
   });
 });

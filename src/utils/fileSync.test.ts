@@ -4,6 +4,7 @@ import {
   makeWorkspaceBackupFileName,
   makeDeptBackupFileName,
   isFileSystemAccessSupported,
+  scanForConflictCopies,
 } from "./fileSync";
 
 const originalWindow = (globalThis as { window?: unknown }).window;
@@ -83,5 +84,101 @@ describe("isFileSystemAccessSupported", () => {
       showDirectoryPicker: () => Promise.resolve(null),
     };
     expect(isFileSystemAccessSupported()).toBe(true);
+  });
+});
+
+// ─── scanForConflictCopies ────────────────────────────────────────────────────
+
+/**
+ * Build a minimal mock FileSystemDirectoryHandle whose entries() async
+ * iterator yields the supplied map of { name → kind }.
+ */
+function makeMockDirHandle(
+  entries: Array<{ name: string; kind: "file" | "directory" }>,
+): FileSystemDirectoryHandle {
+  return {
+    entries: async function* () {
+      for (const e of entries) {
+        yield [
+          e.name,
+          { kind: e.kind } as FileSystemFileHandle | FileSystemDirectoryHandle,
+        ] as [string, FileSystemFileHandle | FileSystemDirectoryHandle];
+      }
+    },
+  } as unknown as FileSystemDirectoryHandle;
+}
+
+describe("scanForConflictCopies", () => {
+  test("目錄為空 → 回傳空陣列", async () => {
+    const dir = makeMockDirHandle([]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(0);
+  });
+
+  test("只有原始檔案本身 → 不算副本", async () => {
+    const dir = makeMockDirHandle([{ name: "data.json", kind: "file" }]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(0);
+  });
+
+  test("OneDrive 衝突副本格式（data - PC名稱.json）→ 偵測到", async () => {
+    const dir = makeMockDirHandle([
+      { name: "data.json", kind: "file" },
+      { name: "data - DESKTOP-ABC123.json", kind: "file" },
+    ]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("data - DESKTOP-ABC123.json");
+  });
+
+  test("多個衝突副本 → 全部回傳", async () => {
+    const dir = makeMockDirHandle([
+      { name: "data.json", kind: "file" },
+      { name: "data - PC1.json", kind: "file" },
+      { name: "data - PC2 (John).json", kind: "file" },
+    ]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.name)).toContain("data - PC1.json");
+    expect(result.map((r) => r.name)).toContain("data - PC2 (John).json");
+  });
+
+  test("副目錄（kind=directory）→ 忽略", async () => {
+    const dir = makeMockDirHandle([
+      { name: "data.json", kind: "file" },
+      { name: "data - subdir", kind: "directory" },
+    ]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(0);
+  });
+
+  test("非 .json 副檔名 → 忽略", async () => {
+    const dir = makeMockDirHandle([
+      { name: "data.json", kind: "file" },
+      { name: "data - PC1.txt", kind: "file" },
+      { name: "data - PC1.bak", kind: "file" },
+    ]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(0);
+  });
+
+  test("不符合前綴格式的其他 json 檔 → 忽略", async () => {
+    const dir = makeMockDirHandle([
+      { name: "data.json", kind: "file" },
+      { name: "backup.json", kind: "file" },
+      { name: "data_backup.json", kind: "file" },
+    ]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(0);
+  });
+
+  test("大小寫不影響副檔名偵測（DATA - PC1.JSON）", async () => {
+    const dir = makeMockDirHandle([
+      { name: "data.json", kind: "file" },
+      { name: "data - PC1.JSON", kind: "file" },
+    ]);
+    const result = await scanForConflictCopies(dir, "data.json");
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("data - PC1.JSON");
   });
 });

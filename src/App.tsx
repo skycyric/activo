@@ -64,7 +64,10 @@ import {
   normalizeTeamsForDept,
   mergeTeamsForDeptInSingleWorkspace,
 } from "./utils/teamScope";
-import { evaluateSaveConflictProbe } from "./utils/saveConflict";
+import {
+  evaluateSaveConflictProbe,
+  evaluateRemoteRefreshDecision,
+} from "./utils/saveConflict";
 import ConflictModal from "./components/ConflictModal";
 import Sidebar from "./components/Sidebar";
 import StrategyList from "./components/StrategyList";
@@ -126,7 +129,6 @@ export interface DeptFileState {
   syncStatus: SyncStatus;
   version: number | null;
   lastModified: number | null;
-  hasRemoteUpdate: boolean;
   conflictCopies: { handle: FileSystemFileHandle; name: string }[];
 }
 
@@ -350,7 +352,7 @@ export default function App() {
   const fsSupported = isFileSystemAccessSupported();
 
   // ─── Multi-file mode state ────────────────────────────────────────────
-  const [deptFiles, setDeptFiles] = useState<DeptFileState[]>([]);
+  const [deptFiles, setDeptFilesState] = useState<DeptFileState[]>([]);
   const rootDirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   /** True when the app is in multi-file (per-dept) mode */
   const isMultiFileMode = deptFiles.length > 0;
@@ -375,12 +377,34 @@ export default function App() {
     handle: FileSystemFileHandle;
     name: string;
   } | null>(null);
-  /** Stable ref kept in sync with deptFiles — used by polling interval to avoid stale closure */
+  /**
+   * Stable ref kept in sync with deptFiles.
+   * IMPORTANT: Always mutate via setDeptFiles (wrapper below), never call
+   * setDeptFilesState directly.  The wrapper updates the ref synchronously
+   * so the polling loop never reads a stale isDirty value.
+   */
   const deptFilesRef = useRef<DeptFileState[]>([]);
+  /**
+   * Wrapper around the raw state setter that also keeps deptFilesRef in sync
+   * immediately (before React commits the update).  This prevents the polling
+   * loop from reading a stale ref and treating a dirty dept as clean, which
+   * would let auto-sync silently overwrite unsaved local edits.
+   */
+  const setDeptFiles = useCallback(
+    (
+      updater: DeptFileState[] | ((prev: DeptFileState[]) => DeptFileState[]),
+    ) => {
+      const next =
+        typeof updater === "function" ? updater(deptFilesRef.current) : updater;
+      deptFilesRef.current = next;
+      setDeptFilesState(next);
+    },
+    [],
+  );
   const handleDeptRemoteRefreshRef = useRef<
     ((deptId: string, options?: RemoteRefreshOptions) => Promise<void>) | null
   >(null);
-  const autoSyncToastAtRef = useRef<Record<string, number>>({});
+
   const deptSaveToastTimerRef = useRef<number | null>(null);
 
   const showDeptSaveToast = useCallback(
@@ -441,7 +465,6 @@ export default function App() {
           syncStatus: "saved",
           version: ws.version ?? null,
           lastModified,
-          hasRemoteUpdate: false,
           conflictCopies: [],
         });
       }
@@ -663,15 +686,11 @@ export default function App() {
     };
   }, [applyBrowserRoute, currentRouteState]);
 
-  // ─── 同步 refs 供 polling interval 讀取（避免 stale closure）────────
-  useEffect(() => {
-    deptFilesRef.current = deptFiles;
-  }, [deptFiles]);
-
   const POLL_INTERVAL_MS = 8_000;
-  const AUTO_SYNC_TOAST_THROTTLE_MS = 20_000;
 
-  // ─── 多檔模式背景輪詢：每 8 秒偵測遠端更新與衝突副本 ──────────────
+  // ─── 多檔模式背景輪詢：每 8 秒偵測 OneDrive 衝突副本 ────────────────
+  // 遠端更新偵測已移除：儲存時的雙重 meta probe + ConflictModal 機制即可
+  // 保護多人協作一致性，不需在瀏覽期間主動拉取遠端。
   useEffect(() => {
     if (!fsSupported || !isMultiFileMode) return;
 
@@ -685,39 +704,6 @@ export default function App() {
           if (f.isReadOnly || f.syncStatus === "saving") continue;
           const deptId = f.workspace.departments[0]?.id;
           if (!deptId) continue;
-
-          // 偵測遠端更新
-          try {
-            const lm = await readDataFileMeta(f.handle);
-            if (f.lastModified !== null && lm > f.lastModified) {
-              if (!f.isDirty) {
-                // 無本地未存變更時，直接套用遠端，減少手動刷新需求
-                await handleDeptRemoteRefreshRef.current?.(deptId, {
-                  confirmIfDirty: false,
-                  silent: true,
-                });
-                const now = Date.now();
-                const lastToast = autoSyncToastAtRef.current[deptId] ?? 0;
-                if (now - lastToast >= AUTO_SYNC_TOAST_THROTTLE_MS) {
-                  showDeptSaveToast(
-                    `⚡ 「${f.subfolderName}」已自動同步遠端更新`,
-                    "warning",
-                  );
-                  autoSyncToastAtRef.current[deptId] = now;
-                }
-              } else if (!f.hasRemoteUpdate) {
-                setDeptFiles((prev) =>
-                  prev.map((d) =>
-                    d.workspace.departments[0]?.id === deptId
-                      ? { ...d, hasRemoteUpdate: true }
-                      : d,
-                  ),
-                );
-              }
-            }
-          } catch {
-            // best-effort
-          }
 
           // 偵測 OneDrive 衝突副本
           try {
@@ -794,7 +780,6 @@ export default function App() {
     }
     setDeptFiles([]);
     setIsAdmin(false);
-    autoSyncToastAtRef.current = {};
     rootDirHandleRef.current = null;
     await clearRootHandle();
   }, []);
@@ -931,7 +916,6 @@ export default function App() {
                 syncStatus: "saved" as SyncStatus,
                 version: payload.version ?? null,
                 lastModified: lm,
-                hasRemoteUpdate: false,
               }
             : f,
         ),
@@ -1031,7 +1015,6 @@ export default function App() {
                 syncStatus: "saved" as SyncStatus,
                 version: payload.version ?? null,
                 lastModified: lm,
-                hasRemoteUpdate: false,
               }
             : f,
         ),
@@ -1082,9 +1065,13 @@ export default function App() {
       if (!entry) return;
       const confirmIfDirty = options?.confirmIfDirty ?? true;
       const silent = options?.silent ?? false;
+      const refreshDecision = evaluateRemoteRefreshDecision(
+        entry.isDirty,
+        confirmIfDirty,
+      );
+      if (refreshDecision === "abort") return;
       if (
-        confirmIfDirty &&
-        entry.isDirty &&
+        refreshDecision === "confirm-needed" &&
         !window.confirm(
           `「${entry.subfolderName}」有未儲存的變更，重新整理後會遺失。確定嗎？`,
         )
@@ -1108,7 +1095,6 @@ export default function App() {
                   syncStatus: "saved",
                   version: remote.version ?? null,
                   lastModified: lm,
-                  hasRemoteUpdate: false,
                 }
               : f,
           ),
@@ -1178,7 +1164,6 @@ export default function App() {
                     syncStatus: "saved" as SyncStatus,
                     version: payload.version ?? null,
                     lastModified: lm,
-                    hasRemoteUpdate: false,
                     conflictCopies: f.conflictCopies.filter(
                       (c) => c.name !== copy.name,
                     ),
@@ -3382,51 +3367,6 @@ export default function App() {
       {isMultiFileMode && deptSaveToast && (
         <div className={`inline-toast inline-toast-${deptSaveToast.tone}`}>
           {deptSaveToast.message}
-        </div>
-      )}
-
-      {/* Multi-file mode: remote update banners */}
-      {isMultiFileMode && deptFiles.some((f) => f.hasRemoteUpdate) && (
-        <div className="remote-update-banner">
-          {deptFiles
-            .filter((f) => f.hasRemoteUpdate)
-            .map((f) => {
-              const deptId = f.workspace.departments[0]?.id;
-              return (
-                <div
-                  key={f.subfolderName}
-                  className="remote-update-actions"
-                  style={{ marginBottom: 4 }}
-                >
-                  <span>⚡ 「{f.subfolderName}」有遠端更新</span>
-                  <button
-                    className="btn-secondary remote-update-btn"
-                    onClick={() => deptId && handleDeptRemoteRefresh(deptId)}
-                  >
-                    {f.isDirty ? "捨棄變更並重新整理" : "重新整理"}
-                  </button>
-                  {f.isDirty && (
-                    <span className="remote-update-hint">
-                      先用上方存檔按鈕寫回，再決定是否重新整理。
-                    </span>
-                  )}
-                  <button
-                    className="remote-update-dismiss"
-                    onClick={() =>
-                      setDeptFiles((prev) =>
-                        prev.map((d) =>
-                          d.subfolderName === f.subfolderName
-                            ? { ...d, hasRemoteUpdate: false }
-                            : d,
-                        ),
-                      )
-                    }
-                  >
-                    稍後處理
-                  </button>
-                </div>
-              );
-            })}
         </div>
       )}
 
