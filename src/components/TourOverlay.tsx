@@ -178,7 +178,6 @@ export function TourOverlay() {
 
   useEffect(() => {
     if (!isActive || !step?.target) {
-      setTargetRect(null);
       return;
     }
     let frameCount = 0;
@@ -201,6 +200,8 @@ export function TourOverlay() {
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", syncRect);
       window.removeEventListener("scroll", syncRect, true);
+      // Reset spotlight when step or active state changes.
+      setTargetRect(null);
     };
   }, [isActive, step]);
 

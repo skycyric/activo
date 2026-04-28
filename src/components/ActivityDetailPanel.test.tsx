@@ -125,3 +125,50 @@ describe("ActivityDetailPanel close guard", () => {
     expect(screen.getByText("目標百分比（%）")).toBeInTheDocument();
   });
 });
+
+describe("ActivityDetailPanel forcedTab", () => {
+  test("renders on the specified tab when forcedTab is set initially", () => {
+    renderPanel({ forcedTab: "plans" });
+    // The "plans" tab button should have the active class
+    const tabBtn = screen.getByRole("button", { name: /計畫/i });
+    expect(tabBtn).toHaveClass("adp-tab-active");
+  });
+
+  test("switches tab when forcedTab prop changes", () => {
+    const { rerender } = render(
+      <ActivityDetailPanel
+        activity={ACTIVITY}
+        deptId="dept-1"
+        workspace={WORKSPACE}
+        warnDaysBefore={7}
+        forcedTab="basic"
+        onUpdate={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    // Initially on "basic" tab
+    expect(screen.getByRole("button", { name: /基本/i })).toHaveClass(
+      "adp-tab-active",
+    );
+
+    // Rerender with forcedTab="plans"
+    rerender(
+      <ActivityDetailPanel
+        activity={ACTIVITY}
+        deptId="dept-1"
+        workspace={WORKSPACE}
+        warnDaysBefore={7}
+        forcedTab="plans"
+        onUpdate={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /計畫/i })).toHaveClass(
+      "adp-tab-active",
+    );
+  });
+});

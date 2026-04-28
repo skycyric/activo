@@ -4,7 +4,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { TourStep } from "../contexts/TourContext";
+import type { TourStep } from "../types/tour";
 import { TourOverlay } from "./TourOverlay";
 
 const endTour = vi.fn();

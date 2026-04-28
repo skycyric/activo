@@ -114,15 +114,19 @@ export default function ActivityDetailPanel({
     planItems: activity.planItems ?? [],
     warnDaysBefore: activity.warnDaysBefore ?? 3,
   }));
-  const [tab, setTab] = useState<Tab>("basic");
+  const [tab, setTab] = useState<Tab>(forcedTab ?? "basic");
   const [dirty, setDirty] = useState(false);
   const [statusManuallyChanged, setStatusManuallyChanged] = useState(false);
 
-  useEffect(() => {
-    if (forcedTab) {
-      setTab(forcedTab);
-    }
-  }, [forcedTab]);
+  // Sync forcedTab during render (React "setState during render" pattern)
+  // avoids triggering an extra re-render cycle compared to useEffect.
+  const [prevForcedTab, setPrevForcedTab] = useState<Tab | null | undefined>(
+    forcedTab,
+  );
+  if (forcedTab && forcedTab !== prevForcedTab) {
+    setPrevForcedTab(forcedTab);
+    setTab(forcedTab);
+  }
 
   // ── KPI Config Modal ───────────────────────────────────────────────────────
   const [configKpiId, setConfigKpiId] = useState<string | null>(null);

@@ -5,7 +5,7 @@ import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
-import type { TourStep } from "../contexts/TourContext";
+import type { TourStep } from "../types/tour";
 import type { Strategy, WorkspaceData } from "../schemas/ogsm";
 
 // Mock TourContext to control tour state

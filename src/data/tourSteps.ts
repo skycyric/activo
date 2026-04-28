@@ -1,4 +1,4 @@
-import type { TourStep } from "../contexts/TourContext";
+import type { TourStep } from "../types/tour";
 
 /**
  * 使用導覽步驟定義。

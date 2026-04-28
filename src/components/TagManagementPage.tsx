@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { TagDictionaryItem } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { useTour } from "../contexts/TourContext";
@@ -29,9 +29,10 @@ export default function TagManagementPage({
   isReadOnly = false,
   onUpdateTagDictionary,
 }: Props) {
-  const { startPageTour, isActive, step } = useTour();
+  const { isActive, step, startPageTour } = useTour();
+
   const [tagDraft, setTagDraft] = useState<TagDictionaryItem[]>(() =>
-    JSON.parse(JSON.stringify(tagDictionary)),
+    structuredClone(tagDictionary),
   );
   const [newTagName, setNewTagName] = useState("");
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
@@ -44,8 +45,13 @@ export default function TagManagementPage({
   const [deleteMode, setDeleteMode] = useState<"remove" | "merge">("merge");
   const [deleteMergeTarget, setDeleteMergeTarget] = useState("");
 
-  useEffect(() => {
-    setTagDraft(JSON.parse(JSON.stringify(tagDictionary)));
+  // Sync tagDictionary prop changes using render-time derived state pattern.
+  // This avoids an extra useEffect-driven render cycle.
+  const [prevTagDictionary, setPrevTagDictionary] =
+    useState<TagDictionaryItem[]>(tagDictionary);
+  if (tagDictionary !== prevTagDictionary) {
+    setPrevTagDictionary(tagDictionary);
+    setTagDraft(structuredClone(tagDictionary));
     setRenames([]);
     setDeletes([]);
     setEditingTagId(null);
@@ -53,7 +59,32 @@ export default function TagManagementPage({
     setDeletingTagId(null);
     setDeleteMode("merge");
     setDeleteMergeTarget("");
-  }, [tagDictionary]);
+  }
+
+  // Tour: auto-open delete dialog for the relevant tour steps.
+  // All setters are called inside this conditional block, satisfying
+  // react-hooks/set-state-in-effect.
+  const isDeleteDialogTourStep =
+    isActive &&
+    step?.page === "tags" &&
+    (step.id === "tags-delete-dialog" || step.id === "tags-delete-mode");
+  if (isDeleteDialogTourStep && !isReadOnly && !deletingTagId) {
+    const sortedTags = tagDraft
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
+    const first = sortedTags[0];
+    if (first) {
+      const mergeTarget = sortedTags.find((x) => x.id !== first.id);
+      setDeletingTagId(first.id);
+      if (mergeTarget) {
+        setDeleteMode("merge");
+        setDeleteMergeTarget(mergeTarget.name);
+      } else {
+        setDeleteMode("remove");
+        setDeleteMergeTarget("");
+      }
+    }
+  }
 
   const cancelEditTag = () => {
     setEditingTagId(null);
@@ -212,31 +243,6 @@ export default function TagManagementPage({
     !!deletingTag &&
     (deleteMode === "remove" ||
       deleteCandidates.some((x) => x === deleteMergeTarget));
-
-  useEffect(() => {
-    const isDeleteDialogTourStep =
-      isActive &&
-      step?.page === "tags" &&
-      (step.id === "tags-delete-dialog" || step.id === "tags-delete-mode");
-    if (!isDeleteDialogTourStep || isReadOnly) return;
-    if (deletingTagId) return;
-
-    const sortedTags = tagDraft
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
-    const first = sortedTags[0];
-    if (!first) return;
-
-    const mergeTarget = sortedTags.find((x) => x.id !== first.id);
-    setDeletingTagId(first.id);
-    if (mergeTarget) {
-      setDeleteMode("merge");
-      setDeleteMergeTarget(mergeTarget.name);
-    } else {
-      setDeleteMode("remove");
-      setDeleteMergeTarget("");
-    }
-  }, [deletingTagId, isActive, isReadOnly, step, tagDraft]);
 
   return (
     <div className="dept-settings-page">

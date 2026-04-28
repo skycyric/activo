@@ -3248,9 +3248,11 @@ export default function KpiDesigner({
   useEffect(() => {
     if (!isActive || step?.page !== "kpi") return;
 
-    setModuleId("ogsm");
-
     if (step.id === "kpi-node-manager") {
+      // Tour synchronisation: this effect intentionally drives UI from external
+      // tour system; cascading re-renders are bounded and expected.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setModuleId("ogsm");
       setViewMode("item");
       setSelectedNodeId(
         firstGoalWithStrategy
@@ -3267,6 +3269,7 @@ export default function KpiDesigner({
       step.id === "kpi-node-config-panel" ||
       step.id === "kpi-types"
     ) {
+      setModuleId("ogsm");
       setViewMode("kpi");
       setSelectedNodeId(
         firstGoalKpi
@@ -3279,6 +3282,7 @@ export default function KpiDesigner({
     }
 
     if (step.id === "kpi-intro") {
+      setModuleId("ogsm");
       setViewMode("item");
       return;
     }

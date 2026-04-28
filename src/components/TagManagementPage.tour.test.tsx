@@ -5,7 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import TagManagementPage from "./TagManagementPage";
 import type { TagDictionaryItem } from "../schemas/ogsm";
-import type { TourStep } from "../contexts/TourContext";
+import type { TourStep } from "../types/tour";
 
 const mockedTour = {
   isActive: false,

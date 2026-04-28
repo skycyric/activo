@@ -506,10 +506,19 @@ export default function ActivityPage({
       "activity-detail-plans",
       "activity-detail-notes",
     ]);
-    const shouldShowAddModal =
-      step.id === "activity-add-modal" || step.id === "activity-add-ogsm-link";
 
-    setShowAddModal(shouldShowAddModal);
+    // Show add modal for the relevant tour steps.
+    const isAddModalStep =
+      step.id === "activity-add-modal" || step.id === "activity-add-ogsm-link";
+    if (isAddModalStep) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShowAddModal(true);
+      return;
+    }
+    // Tour synchronisation: this effect intentionally drives UI state from
+    // external tour system; cascading re-renders are bounded and expected.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowAddModal(false);
 
     if (step.id === "activity-kanban-intro") {
       setView("kanban");

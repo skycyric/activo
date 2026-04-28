@@ -6,28 +6,9 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import type { TourPage, TourStep } from "../types/tour";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export type TourPage =
-  | "home"
-  | "activity"
-  | "ogsm"
-  | "kpi"
-  | "settings"
-  | "tags";
-
-export interface TourStep {
-  id: string;
-  /** 這一步要切換到哪個頁面（undefined = 不切換） */
-  page?: TourPage;
-  /** CSS selector，對應 data-tour 屬性，例如 "[data-tour='home-cards']" */
-  target?: string;
-  title: string;
-  content: string;
-  /** 泡泡彈出方向，預設 bottom */
-  placement?: "top" | "bottom" | "left" | "right";
-}
+// TourPage and TourStep are defined in ../types/tour — import from there directly.
 
 interface TourContextValue {
   isActive: boolean;

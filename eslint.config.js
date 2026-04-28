@@ -17,6 +17,12 @@ export default defineConfig([
     ],
     rules: {
       "@typescript-eslint/no-non-null-assertion": "warn",
+      // Allow custom hooks (use*) exports in the same file as components.
+      // React Refresh only skips true non-component/hook exports.
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true },
+      ],
     },
     languageOptions: {
       ecmaVersion: 2020,

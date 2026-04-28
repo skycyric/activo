@@ -81,138 +81,23 @@ import KpiDesigner from "./components/KpiDesigner";
 import { TourOverlay } from "./components/TourOverlay";
 import { Tooltip } from "./components/ui/tooltip";
 import { useTour } from "./contexts/TourContext";
-import type { TourPage } from "./contexts/TourContext";
+import type { TourPage } from "./types/tour";
+import {
+  buildRouteHash,
+  parseRouteHash,
+  normalizeAppRouteState,
+  buildNavigationKey,
+  type AppRouteView,
+  type ActivityPageView,
+  type ActivityGanttSubView,
+  type ActivityRouteHint,
+  type AppRouteState,
+} from "./utils/appRoute";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
 type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
 type InlineToastTone = "success" | "warning" | "error";
 type RemoteRefreshOptions = { confirmIfDirty?: boolean; silent?: boolean };
-type AppRouteView = "home" | "activity" | "ogsm" | "settings" | "tags" | "kpi";
-type ActivityPageView =
-  | "table"
-  | "kanban"
-  | "gantt"
-  | "cards"
-  | "calendar"
-  | "graph";
-type ActivityGanttSubView = "activity" | "plan";
-
-interface ActivityRouteHint {
-  activityPageView?: ActivityPageView;
-  activityGanttSubView?: ActivityGanttSubView;
-}
-
-interface AppRouteState {
-  __appRoute: true;
-  view: AppRouteView;
-  activityPageView: ActivityPageView;
-  activityGanttSubView: ActivityGanttSubView;
-  activeDeptId: string;
-  activePeriodId: string;
-  selectedGoalId: string | null;
-  selectedStrategyId: string | null;
-  kpiDesignerGoalId: string | null;
-  pendingActivityDetailId: string | null;
-  expandedDetailActivityId: string | null;
-}
-
-function buildRouteHash(route: AppRouteState): string {
-  const params = new URLSearchParams();
-  if (route.activeDeptId) params.set("d", route.activeDeptId);
-  if (route.activePeriodId) params.set("p", route.activePeriodId);
-  params.set("av", route.activityPageView);
-  params.set("ag", route.activityGanttSubView);
-  if (route.selectedGoalId) params.set("g", route.selectedGoalId);
-  if (route.selectedStrategyId) params.set("s", route.selectedStrategyId);
-  if (route.kpiDesignerGoalId) params.set("kg", route.kpiDesignerGoalId);
-  if (route.view === "activity" && route.pendingActivityDetailId)
-    params.set("a", route.pendingActivityDetailId);
-  if (route.expandedDetailActivityId)
-    params.set("x", route.expandedDetailActivityId);
-
-  const query = params.toString();
-  return query ? `#app/${route.view}?${query}` : `#app/${route.view}`;
-}
-
-function parseRouteHash(hash: string): Partial<AppRouteState> | null {
-  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-  if (!raw) return null;
-  const normalizedRaw = raw.startsWith("/") ? raw.slice(1) : raw;
-
-  // New readable format: #app/<view>?d=...&p=...&g=...&s=...&kg=...&a=...&x=...
-  if (normalizedRaw.startsWith("app/")) {
-    const [pathPart, queryPart] = normalizedRaw.split("?");
-    const viewPart = pathPart.split("/")[1] ?? "";
-    const view: AppRouteView =
-      viewPart === "home" ||
-      viewPart === "activity" ||
-      viewPart === "ogsm" ||
-      viewPart === "settings" ||
-      viewPart === "tags" ||
-      viewPart === "kpi"
-        ? viewPart
-        : "home";
-    const params = new URLSearchParams(queryPart ?? "");
-    const avParam = params.get("av");
-    const agParam = params.get("ag");
-    const parsedActivityPageView: ActivityPageView | undefined =
-      avParam === "table" ||
-      avParam === "kanban" ||
-      avParam === "gantt" ||
-      avParam === "cards" ||
-      avParam === "calendar" ||
-      avParam === "graph"
-        ? avParam
-        : undefined;
-    const parsedActivityGanttSubView: ActivityGanttSubView | undefined =
-      agParam === "activity" || agParam === "plan" ? agParam : undefined;
-    const route: Partial<AppRouteState> = {
-      __appRoute: true,
-      view,
-      activeDeptId: params.get("d") ?? "",
-      activePeriodId: params.get("p") ?? "",
-      selectedGoalId: params.get("g"),
-      selectedStrategyId: params.get("s"),
-      kpiDesignerGoalId: params.get("kg"),
-      pendingActivityDetailId: params.get("a"),
-      expandedDetailActivityId: params.get("x"),
-    };
-    if (parsedActivityPageView) {
-      route.activityPageView = parsedActivityPageView;
-    }
-    if (parsedActivityGanttSubView) {
-      route.activityGanttSubView = parsedActivityGanttSubView;
-    }
-    return route;
-  }
-
-  // Legacy format backward compatibility: #app=1&view=...
-  const params = new URLSearchParams(raw);
-  if (params.get("app") !== "1") return null;
-
-  const viewParam = params.get("view");
-  const view: AppRouteView =
-    viewParam === "home" ||
-    viewParam === "activity" ||
-    viewParam === "ogsm" ||
-    viewParam === "settings" ||
-    viewParam === "tags" ||
-    viewParam === "kpi"
-      ? viewParam
-      : "home";
-
-  return {
-    __appRoute: true,
-    view,
-    activeDeptId: params.get("dept") ?? "",
-    activePeriodId: params.get("period") ?? "",
-    selectedGoalId: params.get("goal"),
-    selectedStrategyId: params.get("strategy"),
-    kpiDesignerGoalId: params.get("kpiGoal"),
-    pendingActivityDetailId: params.get("activity"),
-    expandedDetailActivityId: null,
-  };
-}
 
 function toDeptCode(name: string | undefined): string {
   const base = (name ?? "")
@@ -228,48 +113,6 @@ function parseGoalOrder(label: string | undefined, fallback: number): number {
   const matched = (label ?? "").match(/^G(\d+)/i);
   const parsed = matched ? Number.parseInt(matched[1], 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function normalizeAppRouteState(
-  route: Partial<AppRouteState>,
-  base: AppRouteState,
-): AppRouteState {
-  const merged = {
-    ...base,
-    ...route,
-    __appRoute: true as const,
-  };
-  const activityPageView: ActivityPageView =
-    merged.activityPageView === "table" ||
-    merged.activityPageView === "kanban" ||
-    merged.activityPageView === "gantt" ||
-    merged.activityPageView === "cards" ||
-    merged.activityPageView === "calendar"
-      ? merged.activityPageView
-      : base.activityPageView;
-  const activityGanttSubView: ActivityGanttSubView =
-    merged.activityGanttSubView === "activity" ||
-    merged.activityGanttSubView === "plan"
-      ? merged.activityGanttSubView
-      : base.activityGanttSubView;
-
-  return {
-    ...merged,
-    activityPageView,
-    activityGanttSubView,
-  };
-}
-
-function buildNavigationKey(route: AppRouteState): string {
-  // Keep browser back aligned with page-level navigation only.
-  // Do not include OGSM internal selection state (goal/strategy/detail panel).
-  return JSON.stringify({
-    view: route.view,
-    activityPageView: route.activityPageView,
-    activityGanttSubView: route.activityGanttSubView,
-    activeDeptId: route.activeDeptId,
-    activePeriodId: route.activePeriodId,
-  });
 }
 
 /** Per-department file state for multi-file mode */

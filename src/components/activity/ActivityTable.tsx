@@ -581,21 +581,6 @@ export default function ActivityTable({
                     {formatDate(act.endDate)}
                   </td>
                 )}
-                {columnVisibility.tags && (
-                  <td className="act-td act-td-tags">
-                    {act.tags && act.tags.length > 0 ? (
-                      <div className="act-card-tags">
-                        {act.tags.map((tag) => (
-                          <span key={tag} className="act-card-tag">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      ""
-                    )}
-                  </td>
-                )}
                 {columnVisibility.status && (
                   <td className="act-td act-td-status">
                     <select
@@ -613,6 +598,21 @@ export default function ActivityTable({
                         </option>
                       ))}
                     </select>
+                  </td>
+                )}
+                {columnVisibility.tags && (
+                  <td className="act-td act-td-tags">
+                    {act.tags && act.tags.length > 0 ? (
+                      <div className="act-card-tags">
+                        {act.tags.map((tag) => (
+                          <span key={tag} className="act-card-tag">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      ""
+                    )}
                   </td>
                 )}
                 {columnVisibility.actions && (

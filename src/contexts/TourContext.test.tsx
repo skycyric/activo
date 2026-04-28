@@ -6,7 +6,8 @@ import { describe, expect, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TOUR_STEPS } from "../data/tourSteps";
-import { TourProvider, useTour, type TourPage } from "./TourContext";
+import { TourProvider, useTour } from "./TourContext";
+import type { TourPage } from "../types/tour";
 
 function TourHarness({ onNavigate }: { onNavigate: (page: TourPage) => void }) {
   const {
