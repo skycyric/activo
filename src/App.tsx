@@ -3480,7 +3480,7 @@ export default function App() {
                     : "目前沒有可儲存的部門"
                 }
               >
-                儲存全部髒部門
+                儲存全部部門
                 {dirtyDeptCount > 0 ? ` (${dirtyDeptCount})` : ""}
               </button>
             </div>
