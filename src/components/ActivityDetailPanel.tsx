@@ -1467,9 +1467,14 @@ function PlanItemRow({
           type="date"
           value={item.plannedEndDate ?? ""}
           disabled={isReadOnly}
-          onChange={(e) =>
-            onPatch({ plannedEndDate: e.target.value || undefined })
-          }
+          onChange={(e) => {
+            const val = e.target.value || undefined;
+            onPatch({
+              plannedEndDate: val,
+              // 清除日期時同步取消月曆顯示
+              ...(val ? {} : { showInCalendar: false }),
+            });
+          }}
         />
         <span className="adp-plan-meta-label">實際完成：</span>
         <input
@@ -1491,6 +1496,25 @@ function PlanItemRow({
         {item.owner !== undefined && (
           <span className="adp-plan-owner">{item.owner}</span>
         )}
+        {/* 月曆勾選：需有預計完成日才可啟用 */}
+        <label
+          className={`adp-plan-calendar-toggle${!item.plannedEndDate ? " disabled" : ""}`}
+          title={
+            !item.plannedEndDate
+              ? "需先設定「預計完成日」才能加入月曆"
+              : item.showInCalendar
+                ? "點擊取消在月曆顯示"
+                : "點擊後將在月曆顯示此行動計畫"
+          }
+        >
+          <input
+            type="checkbox"
+            checked={item.showInCalendar ?? false}
+            disabled={isReadOnly || !item.plannedEndDate}
+            onChange={(e) => onPatch({ showInCalendar: e.target.checked })}
+          />
+          <span>📅 月曆</span>
+        </label>
       </div>
 
       <div className="adp-plan-item-meta adp-plan-item-deps">

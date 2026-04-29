@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityWithContext } from "../ActivityPage";
 import type { TagDictionaryItem } from "../../schemas/ogsm";
 
@@ -77,12 +77,30 @@ function edgeStyle(edge: GraphEdge): { color: string; width: number } {
   };
 }
 
+function buildDeptLegend(
+  activities: ActivityWithContext[],
+): { deptId: string; name: string; color: string }[] {
+  const seen = new Map<string, { name: string; color: string }>();
+  for (const a of activities) {
+    if (!seen.has(a.deptId)) {
+      const hue = strToHue(a.deptId);
+      seen.set(a.deptId, { name: a.deptName, color: `hsl(${hue}, 55%, 52%)` });
+    }
+  }
+  return Array.from(seen.entries()).map(([deptId, v]) => ({ deptId, ...v }));
+}
+
 export default function ActivityGraphView({
   activities,
   allActivities,
   tagDictionary,
   onJumpToActivity,
 }: Props) {
+  const deptLegendItems = useMemo(
+    () => buildDeptLegend(activities),
+    [activities],
+  );
+
   const FOCUS_SCALE = 1.35;
   const FOCUS_ANIM_MS = 340;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -112,6 +130,7 @@ export default function ActivityGraphView({
   const hoveredRef = useRef<string | null>(null);
   const nodeTopCouplingRef = useRef<Map<string, GraphEdge>>(new Map());
   const [showWeakEdges, setShowWeakEdges] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [tooltip, setTooltip] = useState<{
     x: number;
     y: number;
@@ -702,66 +721,98 @@ export default function ActivityGraphView({
         </div>
       )}
       <div className="act-graph-legend" data-tour="activity-graph-legend">
-        <div className="act-graph-legend-title">節點狀態（邊框色）</div>
-        {(
-          [
-            ["not-started", "未開始", "#94a3b8"],
-            ["in-progress", "進行中", "#3b82f6"],
-            ["attention", "注意", "#f59e0b"],
-            ["completed", "已完成", "#22c55e"],
-          ] as const
-        ).map(([, label, color]) => (
-          <div key={label} className="act-graph-legend-item">
-            <span
-              className="act-graph-legend-dot"
-              style={{ borderColor: color }}
-            />
-            <span>{label}</span>
-          </div>
-        ))}
-        <div className="act-graph-legend-sep" />
-        <div className="act-graph-legend-title">邊語義</div>
-        <div className="act-graph-legend-item">
-          <span
-            className="act-graph-legend-dot"
-            style={{ borderColor: "#ef4444" }}
-          />
-          <span>Tag 關聯強</span>
-        </div>
-        <div className="act-graph-legend-item">
-          <span
-            className="act-graph-legend-dot"
-            style={{ borderColor: "#f59e0b" }}
-          />
-          <span>Tag 關聯中</span>
-        </div>
-        <div className="act-graph-legend-item">
-          <span
-            className="act-graph-legend-dot"
-            style={{ borderColor: "#10b981" }}
-          />
-          <span>Tag 關聯弱</span>
-        </div>
-        <label
-          className="act-graph-legend-item"
-          style={{ gap: 8 }}
-          data-tour="activity-graph-weak-toggle"
+        <button
+          className="act-graph-legend-toggle"
+          onClick={() => setLegendOpen((v) => !v)}
+          title={legendOpen ? "收合說明" : "展開說明"}
         >
-          <input
-            type="checkbox"
-            checked={showWeakEdges}
-            onChange={(e) => setShowWeakEdges(e.target.checked)}
-          />
-          <span>顯示弱關聯連線</span>
-        </label>
-        <div className="act-graph-legend-sep" />
-        <div className="act-graph-legend-hint">滾輪縮放 · 拖拽節點或背景</div>
-        <div className="act-graph-legend-hint">
-          顯示規則：score ≥ 35% 或共同標籤 ≥ 3
-        </div>
-        <div className="act-graph-legend-hint">
-          邊粗細代表強度（僅 Tag 關聯邊）
-        </div>
+          <span>圖例說明</span>
+          <span
+            className={`act-graph-legend-caret${legendOpen ? " open" : ""}`}
+          >
+            ▲
+          </span>
+        </button>
+        {legendOpen && (
+          <>
+            {/* 節點 - 部門 */}
+            <div className="act-graph-legend-title">節點 — 部門</div>
+            {deptLegendItems.map((dept) => (
+              <div key={dept.deptId} className="act-graph-legend-item">
+                <span
+                  className="act-graph-legend-dot act-graph-legend-dot--fill"
+                  style={{ background: dept.color }}
+                />
+                <span>{dept.name}</span>
+              </div>
+            ))}
+            <div className="act-graph-legend-sep" />
+            {/* 邊框 - 狀態 */}
+            <div className="act-graph-legend-title">邊框 — 狀態</div>
+            {(
+              [
+                ["not-started", "未開始", "#94a3b8"],
+                ["in-progress", "進行中", "#3b82f6"],
+                ["attention", "注意", "#f59e0b"],
+                ["completed", "已完成", "#22c55e"],
+              ] as const
+            ).map(([, label, color]) => (
+              <div key={label} className="act-graph-legend-item">
+                <span
+                  className="act-graph-legend-dot"
+                  style={{ borderColor: color }}
+                />
+                <span>{label}</span>
+              </div>
+            ))}
+            <div className="act-graph-legend-sep" />
+            {/* 關聯 - Tag 關聯強度 */}
+            <div className="act-graph-legend-title">關聯 — Tag 關聯強度</div>
+            <div className="act-graph-legend-item">
+              <span
+                className="act-graph-legend-dot"
+                style={{ borderColor: "#ef4444" }}
+              />
+              <span>強</span>
+            </div>
+            <div className="act-graph-legend-item">
+              <span
+                className="act-graph-legend-dot"
+                style={{ borderColor: "#f59e0b" }}
+              />
+              <span>中</span>
+            </div>
+            <div className="act-graph-legend-item">
+              <span
+                className="act-graph-legend-dot"
+                style={{ borderColor: "#10b981" }}
+              />
+              <span>弱</span>
+            </div>
+            <label
+              className="act-graph-legend-item"
+              style={{ gap: 8 }}
+              data-tour="activity-graph-weak-toggle"
+            >
+              <input
+                type="checkbox"
+                checked={showWeakEdges}
+                onChange={(e) => setShowWeakEdges(e.target.checked)}
+              />
+              <span>顯示弱關聯連線</span>
+            </label>
+            <div className="act-graph-legend-sep" />
+            <div className="act-graph-legend-hint">
+              滾輪縮放 · 拖拽節點或背景
+            </div>
+            <div className="act-graph-legend-hint">
+              顯示規則：score ≥ 35% 或共同標籤 ≥ 3
+            </div>
+            <div className="act-graph-legend-hint">
+              邊粗細代表強度（僅 Tag 關聯邊）
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

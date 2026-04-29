@@ -180,6 +180,44 @@ export default function ActivityGantt({
           ⚠ 有 {undatedCount} 個活動未設定日期，不顯示於甘特圖中。
         </div>
       )}
+
+      {/* 顏色圖例 */}
+      <div className="gantt-legend">
+        <span className="gantt-legend-title">說明：</span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["not-started"] }}
+          />
+          未開始
+        </span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["attention"] }}
+          />
+          需注意
+        </span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["in-progress"] }}
+          />
+          進行中
+        </span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["completed"] }}
+          />
+          已完成
+        </span>
+        <span className="gantt-legend-item gantt-legend-overdue">
+          <span className="gantt-legend-dot gantt-legend-dot--overdue" />
+          已逾期（未完成且超過結束日）
+        </span>
+      </div>
+
       <div className="gantt-wrap" ref={containerRef}>
         {/* Left label column */}
         <div className="gantt-labels" style={{ width: LABEL_W }}>

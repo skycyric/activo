@@ -174,6 +174,33 @@ export default function ActivityPage({
     [isGanttSubViewControlled, onGanttSubViewChange],
   );
 
+  /** 切換主檢視頁籤：同步關閉右側詳細 panel（若有未儲存則先詢問） */
+  const handleViewChange = useCallback(
+    (next: ActivityView) => {
+      if (selectedActivityId) {
+        if (
+          panelDirtyRef.current &&
+          !window.confirm("有尚未儲存的修改，切換後將會放棄，確定繼續嗎？")
+        ) {
+          return;
+        }
+        panelDirtyRef.current = false;
+        if (!isDetailControlled) {
+          setLocalSelectedActivityId(null);
+          setLocalExpandedId(null);
+        }
+        onSelectedActivityIdChange?.(null);
+      }
+      setView(next);
+    },
+    [
+      selectedActivityId,
+      isDetailControlled,
+      onSelectedActivityIdChange,
+      setView,
+    ],
+  );
+
   const handleOpenActivityDetail = useCallback(
     (_deptId: string, activityId: string) => {
       // onJumpToActivity is for cross-page routing (OGSM → ActivityPage).
@@ -620,7 +647,7 @@ export default function ActivityPage({
               <button
                 key={v.id}
                 className={`activity-view-tab${view === v.id ? " active" : ""}`}
-                onClick={() => setView(v.id)}
+                onClick={() => handleViewChange(v.id)}
                 title={v.label}
                 data-tour={v.id === "graph" ? "activity-graph-tab" : undefined}
               >

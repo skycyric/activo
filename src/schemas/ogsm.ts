@@ -119,6 +119,8 @@ export const PlanItemSchema = z.object({
   linkedMeasureId: z.string().nullable().optional(),
   owner: z.string().optional(),
   notes: z.string().optional(),
+  /** 是否呈現在月曆視圖（需有 plannedEndDate 才可勾選） */
+  showInCalendar: z.boolean().optional(),
 });
 
 // ── ActionPlan ────────────────────────────────────────────────────────────────
