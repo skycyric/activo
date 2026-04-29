@@ -43,7 +43,7 @@
   ],
   "teams": [],
   "version": 4,
-  "savedAt": "2026-04-27T06:39:01.265Z",
+  "savedAt": "2026-04-28T07:37:37.794Z",
   "_migratedRelationalV1": true,
   "_migratedPhase2": true,
   "_migratedPhase3": true,
@@ -51,5 +51,25 @@
   "_migratedV3": true,
   "_migratedFrameworksV1": true,
   "_migratedTimelineV1": true,
-  "tagDictionary": []
+  "tagDictionary": [
+    {
+      "id": "tag_mohxzkjz_001_b5c7ae78",
+      "name": "旅遊",
+      "status": "active",
+      "updatedAt": "2026-04-28T01:23:20.399Z"
+    },
+    {
+      "id": "tag_moibcba8_003_0e11c9a7",
+      "name": "會員經營",
+      "status": "active",
+      "updatedAt": "2026-04-28T07:37:09.001Z"
+    },
+    {
+      "id": "tag_mohxzaif_000_b86c5b2f",
+      "name": "運動",
+      "status": "active",
+      "updatedAt": "2026-04-28T01:23:20.399Z"
+    }
+  ],
+  "deletedIds": []
 }

@@ -68,8 +68,8 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
 
     render(<ActivityCalendar activities={[act]} onJumpToActivity={() => {}} />);
 
-    // 本月有 1 個行動計畫
-    expect(screen.getByText(/本月 1 個行動計畫/)).toBeInTheDocument();
+    // 本月有 1 個日程
+    expect(screen.getByText(/本月 1 個日程/)).toBeInTheDocument();
     // 活動名稱出現在月格
     expect(screen.getByText("測試活動")).toBeInTheDocument();
   });
@@ -142,13 +142,26 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
     render(<ActivityCalendar activities={[act]} onJumpToActivity={() => {}} />);
 
     // 當前月（2026-04）應顯示無項目
-    expect(screen.getByText("本月無行動計畫")).toBeInTheDocument();
+    expect(screen.getByText("本月無日程")).toBeInTheDocument();
 
     // 切換到上個月
     await userEvent.click(screen.getByRole("button", { name: "◀" }));
 
     // 2026-03 應出現計畫
-    expect(screen.getByText(/本月 1 個行動計畫/)).toBeInTheDocument();
+    expect(screen.getByText(/本月 1 個日程/)).toBeInTheDocument();
     expect(screen.getByText("測試活動")).toBeInTheDocument();
+  });
+
+  test("showActivityInCalendar=true 且有活動起訖日時應顯示活動期間", () => {
+    const act = makeActivity({
+      startDate: "2026-04-10",
+      endDate: "2026-04-12",
+      showActivityInCalendar: true,
+    });
+
+    render(<ActivityCalendar activities={[act]} onJumpToActivity={() => {}} />);
+
+    expect(screen.getByText(/本月 3 個日程/)).toBeInTheDocument();
+    expect(screen.getAllByText("測試活動").length).toBeGreaterThanOrEqual(1);
   });
 });

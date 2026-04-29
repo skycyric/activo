@@ -170,6 +170,8 @@ export const MeasureSchema = z.object({
   personDays: z.number().optional(),
   startDate: IsoDate, // 活動起始日
   endDate: IsoDate, // 活動結束日
+  /** 是否將活動起訖日區間顯示在月曆 */
+  showActivityInCalendar: z.boolean().optional(),
   description: z.string().optional(), // 活動說明
   assistUnits: z.array(AssistUnitSchema).optional(), // 協助單位
   prerequisites: z.array(z.string()).optional(), // 前置依賴（Measure id[]）

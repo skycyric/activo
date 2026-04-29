@@ -14,6 +14,7 @@ interface CalEntry {
   description: string;
   completed: boolean;
   activityStatus: string;
+  source: "activity" | "plan";
   isEventStart: boolean;
   isEventEnd: boolean;
 }
@@ -39,10 +40,36 @@ export default function ActivityCalendar({
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth()); // 0-indexed
 
-  // Collect plan items with showInCalendar=true AND eventStartDate set (event range)
+  // Collect calendar entries from both plan items and activity date range.
   const entries = useMemo<CalEntry[]>(() => {
     const result: CalEntry[] = [];
     for (const act of activities) {
+      if (act.showActivityInCalendar && act.startDate) {
+        const startStr = act.startDate;
+        const endStr = act.endDate ?? act.startDate;
+        const start = new Date(startStr + "T00:00:00");
+        const end = new Date(endStr + "T00:00:00");
+        const cap = new Date(start.getTime() + 365 * 86400000);
+        const safeEnd = end > cap ? cap : end;
+        const cur = new Date(start);
+        while (cur <= safeEnd) {
+          const dateStr = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+          result.push({
+            activityId: act.id,
+            deptId: act.deptId,
+            activityName: act.rawText,
+            description: act.description ?? "",
+            completed: act.status === "completed",
+            activityStatus: act.status ?? "not-started",
+            source: "activity",
+            date: dateStr,
+            isEventStart: dateStr === startStr,
+            isEventEnd: dateStr === endStr,
+          });
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+
       for (const item of act.planItems ?? []) {
         const base = {
           activityId: act.id,
@@ -51,10 +78,10 @@ export default function ActivityCalendar({
           description: item.description,
           completed: item.completed,
           activityStatus: act.status ?? "not-started",
+          source: "plan" as const,
         };
 
         // event-range entries (one per day from eventStartDate to eventEndDate)
-        // showInCalendar now gates the event range, not the deadline dot
         if (item.showInCalendar && item.eventStartDate) {
           const startStr = item.eventStartDate;
           const endStr = item.eventEndDate ?? item.eventStartDate;
@@ -129,14 +156,12 @@ export default function ActivityCalendar({
           今天
         </button>
         <span className="act-cal-count">
-          {thisMonthCount > 0
-            ? `本月 ${thisMonthCount} 個行動計畫`
-            : "本月無行動計畫"}
+          {thisMonthCount > 0 ? `本月 ${thisMonthCount} 個日程` : "本月無日程"}
         </span>
         {entries.length === 0 && (
           <span className="act-cal-hint">
-            尚無項目。在行動計畫頁籤中設定「執行期間」並勾選「📅
-            月曆」即可加入。
+            尚無項目。可在活動基本資料勾選「📅
+            活動期間」，或在行動計畫設定執行期間後勾選「📅 月曆」。
           </span>
         )}
       </div>
@@ -196,6 +221,8 @@ export default function ActivityCalendar({
                       : entry.isEventEnd
                         ? "◼"
                         : "─";
+                    const sourceLabel =
+                      entry.source === "activity" ? "活動期間" : "執行期間";
                     return (
                       <button
                         key={`${entry.activityId}-${dateStr}-${idx}`}
@@ -211,7 +238,7 @@ export default function ActivityCalendar({
                         onClick={() =>
                           onJumpToActivity(entry.deptId, entry.activityId)
                         }
-                        title={`${entry.activityName}：${entry.description || "（無說明）"}（執行期間${entry.isEventStart ? "開始" : entry.isEventEnd ? "結束" : "中"}）`}
+                        title={`${entry.activityName}：${entry.description || "（無說明）"}（${sourceLabel}${entry.isEventStart ? "開始" : entry.isEventEnd ? "結束" : "中"}）`}
                       >
                         <span
                           className="act-cal-dot"

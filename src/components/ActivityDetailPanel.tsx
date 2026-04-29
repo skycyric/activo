@@ -54,6 +54,20 @@ function fmtDate(d: string | undefined) {
   return d ?? "";
 }
 
+function fmtDateTime(iso: string | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function loadWidth(): number {
   try {
     const v = localStorage.getItem(LS_WIDTH_KEY);
@@ -246,6 +260,18 @@ export default function ActivityDetailPanel({
     patch({ kpis: [...draft.kpis, newKpi] });
   };
 
+  const copyKpi = (kpiId: string) => {
+    const source = draft.kpis.find((k) => k.id === kpiId);
+    if (!source) return;
+    const copied: KPI = {
+      ...source,
+      id: genId(),
+      name: source.name ? `${source.name}（複製）` : source.name,
+      label: source.label ? `${source.label}（複製）` : "KPI（複製）",
+    };
+    patch({ kpis: [...draft.kpis, copied] });
+  };
+
   const deleteKpi = (kpiId: string) => {
     patch({ kpis: draft.kpis.filter((k) => k.id !== kpiId) });
   };
@@ -288,6 +314,22 @@ export default function ActivityDetailPanel({
 
   const deletePlanItem = (itemId: string) => {
     patch({ planItems: planItems.filter((p) => p.id !== itemId) });
+  };
+
+  const copyPlanItem = (itemId: string) => {
+    const source = planItems.find((p) => p.id === itemId);
+    if (!source) return;
+    const copied: ActivityPlanItem = {
+      ...source,
+      id: genId(),
+      description: source.description
+        ? `${source.description}（複製）`
+        : "（複製）",
+      completed: false,
+      actualEndDate: undefined,
+      showInCalendar: false,
+    };
+    patch({ planItems: [...planItems, copied] });
   };
 
   // Derive quarters from existing plan items; always include at least Q1-Q4
@@ -410,9 +452,11 @@ export default function ActivityDetailPanel({
             <div data-tour="activity-detail-kpi">
               <KpiTab
                 kpis={draft.kpis}
+                activityUpdatedAt={draft.updatedAt}
                 isReadOnly={isReadOnly}
                 onPatchKpi={patchKpi}
                 onAddKpi={addKpi}
+                onCopyKpi={copyKpi}
                 onDeleteKpi={deleteKpi}
                 onOpenConfig={setConfigKpiId}
               />
@@ -428,6 +472,7 @@ export default function ActivityDetailPanel({
                 onUpdateWarnDays={(n) => patch({ warnDaysBefore: n })}
                 onPatch={patchPlanItem}
                 onAdd={addPlanItem}
+                onCopy={copyPlanItem}
                 onDelete={deletePlanItem}
               />
             </div>
@@ -849,6 +894,36 @@ function BasicTab({
         </div>
       </div>
 
+      <div className="adp-field">
+        <label className="adp-field-label">活動日期加入月曆</label>
+        {isReadOnly ? (
+          <span className="adp-value">
+            {draft.showActivityInCalendar ? "已加入" : "未加入"}
+          </span>
+        ) : (
+          <label
+            className={`adp-plan-calendar-toggle${!draft.startDate ? " disabled" : ""}`}
+            title={
+              !draft.startDate
+                ? "需先設定開始日期才能加入月曆"
+                : draft.showActivityInCalendar
+                  ? "點擊取消在月曆顯示活動期間"
+                  : "點擊在月曆顯示活動期間"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={draft.showActivityInCalendar ?? false}
+              disabled={!draft.startDate}
+              onChange={(e) =>
+                patch({ showActivityInCalendar: e.target.checked })
+              }
+            />
+            <span>📅 活動期間</span>
+          </label>
+        )}
+      </div>
+
       {/* 說明 */}
       <div className="adp-field">
         <label className="adp-field-label">說明</label>
@@ -991,21 +1066,29 @@ function TagEditor({
 
 function KpiTab({
   kpis,
+  activityUpdatedAt,
   isReadOnly,
   onPatchKpi,
   onAddKpi,
+  onCopyKpi,
   onDeleteKpi,
   onOpenConfig,
 }: {
   kpis: KPI[];
+  activityUpdatedAt?: string;
   isReadOnly: boolean;
   onPatchKpi: (id: string, changes: Partial<KPI>) => void;
   onAddKpi: () => void;
+  onCopyKpi: (id: string) => void;
   onDeleteKpi: (id: string) => void;
   onOpenConfig: (id: string) => void;
 }) {
   return (
     <div className="adp-section-list">
+      <div className="adp-kpi-meta">
+        最後更新：{fmtDateTime(activityUpdatedAt)}
+      </div>
+
       {kpis.length === 0 && (
         <div className="adp-empty-hint">
           尚無 KPI —{" "}
@@ -1025,6 +1108,7 @@ function KpiTab({
             baseline={baseline}
             isReadOnly={isReadOnly}
             onPatch={(changes) => onPatchKpi(kpi.id, changes)}
+            onCopy={() => onCopyKpi(kpi.id)}
             onDelete={() => onDeleteKpi(kpi.id)}
             onOpenConfig={() => onOpenConfig(kpi.id)}
           />
@@ -1046,6 +1130,7 @@ function KpiRow({
   baseline,
   isReadOnly,
   onPatch,
+  onCopy,
   onDelete,
   onOpenConfig,
 }: {
@@ -1054,6 +1139,7 @@ function KpiRow({
   baseline: number | null;
   isReadOnly: boolean;
   onPatch: (c: Partial<KPI>) => void;
+  onCopy: () => void;
   onDelete: () => void;
   onOpenConfig: () => void;
 }) {
@@ -1165,6 +1251,13 @@ function KpiRow({
           </div>
         )}
         <div className="adp-kpi-actions">
+          {!isReadOnly && (
+            <Tooltip content="複製 KPI">
+              <button className="adp-kpi-btn" onClick={onCopy} title="複製">
+                ⧉
+              </button>
+            </Tooltip>
+          )}
           {!isReadOnly && (
             <Tooltip content="刪除 KPI">
               <button
@@ -1300,6 +1393,7 @@ function PlansTab({
   onUpdateWarnDays,
   onPatch,
   onAdd,
+  onCopy,
   onDelete,
 }: {
   planItems: ActivityPlanItem[];
@@ -1309,9 +1403,21 @@ function PlansTab({
   onUpdateWarnDays: (n: number) => void;
   onPatch: (id: string, changes: Partial<ActivityPlanItem>) => void;
   onAdd: (quarter: string) => void;
+  onCopy: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [crossQuarterMode, setCrossQuarterMode] = useState(false);
   const warnCounts = countPlanWarnings(planItems, warnDaysBefore);
+
+  const sortByPlannedEndDate = (a: ActivityPlanItem, b: ActivityPlanItem) => {
+    const ad = a.plannedEndDate ?? "9999-12-31";
+    const bd = b.plannedEndDate ?? "9999-12-31";
+    const byDate = ad.localeCompare(bd, "en");
+    if (byDate !== 0) return byDate;
+    return (a.description ?? "").localeCompare(b.description ?? "", "zh-TW");
+  };
+
+  const allSortedItems = [...planItems].sort(sortByPlannedEndDate);
 
   return (
     <div className="adp-section-list">
@@ -1339,48 +1445,94 @@ function PlansTab({
           <span className="adp-plan-badge warning">
             ⚠️ 即將到期 {warnCounts.warning}
           </span>
+          <button
+            type="button"
+            className={`adp-plan-view-toggle${crossQuarterMode ? " active" : ""}`}
+            onClick={() => setCrossQuarterMode((v) => !v)}
+          >
+            {crossQuarterMode ? "依季度檢視" : "跨季追蹤"}
+          </button>
         </div>
       </div>
 
-      {quarters.map((q) => {
-        const items = planItems.filter((p) => (p.quarter ?? "Q1") === q);
-        return (
-          <div key={q} className="adp-plan-quarter">
-            <div className="adp-plan-quarter-header">
-              <span className="adp-plan-q-label">{q}</span>
-              <span className="adp-plan-q-count">
-                {items.filter((i) => i.completed).length}/{items.length}
-              </span>
-            </div>
-
-            {items.length === 0 && (
-              <div className="adp-empty-hint adp-plan-empty">
-                {isReadOnly ? "此季度無計畫項目" : "點擊「＋」新增行動項目"}
-              </div>
-            )}
-
-            {items.map((item) => (
-              <PlanItemRow
-                key={item.id}
-                item={item}
-                allPlanItems={planItems}
-                warnDaysBefore={warnDaysBefore}
-                isReadOnly={isReadOnly}
-                onPatch={(c) => onPatch(item.id, c)}
-                onDelete={() => {
-                  if (window.confirm("刪除此行動計畫項目？")) onDelete(item.id);
-                }}
-              />
-            ))}
-
-            {!isReadOnly && (
-              <button className="adp-plan-add-btn" onClick={() => onAdd(q)}>
-                ＋ 新增項目
-              </button>
-            )}
+      {crossQuarterMode && (
+        <div className="adp-plan-quarter">
+          <div className="adp-plan-quarter-header">
+            <span className="adp-plan-q-label">跨季追蹤（依預計完成日）</span>
+            <span className="adp-plan-q-count">
+              {allSortedItems.filter((i) => i.completed).length}/
+              {allSortedItems.length}
+            </span>
           </div>
-        );
-      })}
+
+          {allSortedItems.length === 0 && (
+            <div className="adp-empty-hint adp-plan-empty">
+              {isReadOnly ? "目前無行動計畫項目" : "點擊「＋」新增行動項目"}
+            </div>
+          )}
+
+          {allSortedItems.map((item) => (
+            <PlanItemRow
+              key={item.id}
+              item={item}
+              allPlanItems={planItems}
+              warnDaysBefore={warnDaysBefore}
+              isReadOnly={isReadOnly}
+              showQuarterTag
+              onPatch={(c) => onPatch(item.id, c)}
+              onCopy={() => onCopy(item.id)}
+              onDelete={() => {
+                if (window.confirm("刪除此行動計畫項目？")) onDelete(item.id);
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {!crossQuarterMode &&
+        quarters.map((q) => {
+          const items = planItems
+            .filter((p) => (p.quarter ?? "Q1") === q)
+            .sort(sortByPlannedEndDate);
+          return (
+            <div key={q} className="adp-plan-quarter">
+              <div className="adp-plan-quarter-header">
+                <span className="adp-plan-q-label">{q}</span>
+                <span className="adp-plan-q-count">
+                  {items.filter((i) => i.completed).length}/{items.length}
+                </span>
+              </div>
+
+              {items.length === 0 && (
+                <div className="adp-empty-hint adp-plan-empty">
+                  {isReadOnly ? "此季度無計畫項目" : "點擊「＋」新增行動項目"}
+                </div>
+              )}
+
+              {items.map((item) => (
+                <PlanItemRow
+                  key={item.id}
+                  item={item}
+                  allPlanItems={planItems}
+                  warnDaysBefore={warnDaysBefore}
+                  isReadOnly={isReadOnly}
+                  onPatch={(c) => onPatch(item.id, c)}
+                  onCopy={() => onCopy(item.id)}
+                  onDelete={() => {
+                    if (window.confirm("刪除此行動計畫項目？"))
+                      onDelete(item.id);
+                  }}
+                />
+              ))}
+
+              {!isReadOnly && (
+                <button className="adp-plan-add-btn" onClick={() => onAdd(q)}>
+                  ＋ 新增項目
+                </button>
+              )}
+            </div>
+          );
+        })}
     </div>
   );
 }
@@ -1390,14 +1542,18 @@ function PlanItemRow({
   allPlanItems,
   warnDaysBefore,
   isReadOnly,
+  showQuarterTag = false,
   onPatch,
+  onCopy,
   onDelete,
 }: {
   item: ActivityPlanItem;
   allPlanItems: ActivityPlanItem[];
   warnDaysBefore: number;
   isReadOnly: boolean;
+  showQuarterTag?: boolean;
   onPatch: (c: Partial<ActivityPlanItem>) => void;
+  onCopy: () => void;
   onDelete: () => void;
 }) {
   const warnType = getPlanItemWarning(item, warnDaysBefore);
@@ -1458,6 +1614,11 @@ function PlanItemRow({
           />
         )}
         {!isReadOnly && (
+          <button className="adp-kpi-btn" onClick={onCopy} title="複製">
+            ⧉
+          </button>
+        )}
+        {!isReadOnly && (
           <button
             className="adp-kpi-btn adp-kpi-btn-del"
             onClick={onDelete}
@@ -1467,6 +1628,14 @@ function PlanItemRow({
           </button>
         )}
       </div>
+
+      {showQuarterTag && (
+        <div className="adp-plan-item-meta">
+          <span className="adp-plan-badge adp-plan-badge-quarter">
+            {(item.quarter ?? "Q1").toUpperCase()}
+          </span>
+        </div>
+      )}
 
       <div className="adp-plan-item-meta">
         <span className="adp-plan-meta-label">預計完成：</span>
