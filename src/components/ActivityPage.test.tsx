@@ -221,3 +221,84 @@ describe("ActivityPage 選择活動不可觸發路由切換", () => {
     expect(onSelectedActivityIdChange).toHaveBeenCalledWith("act-1");
   });
 });
+
+describe("ActivityPage 切換視圖自動關閉 detail panel", () => {
+  beforeEach(() => {
+    tourState.isActive = false;
+    tourState.step = null;
+  });
+
+  test("右側 panel 開啟時（受控），點擊看板 tab 應透過 callback 通知關閉", async () => {
+    const onSelectedActivityIdChange = vi.fn();
+
+    // Controlled mode: parent passes initialSelectedActivityId, visual state managed externally.
+    // We can only assert the callback fires; panel visually stays until parent responds.
+    render(
+      <ActivityPage
+        workspace={WORKSPACE}
+        activeDeptId="dept-1"
+        onUpdateActivity={() => {}}
+        onDeleteActivity={() => {}}
+        onAddActivity={() => {}}
+        onJumpToActivity={() => {}}
+        initialSelectedActivityId="act-1"
+        onSelectedActivityIdChange={onSelectedActivityIdChange}
+      />,
+    );
+
+    expect(screen.getByTestId("activity-detail-panel")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /看板/ }));
+
+    // In controlled mode the panel stays visible (parent has not updated the prop),
+    // but the close signal must be emitted.
+    expect(onSelectedActivityIdChange).toHaveBeenCalledWith(null);
+  });
+
+  test("右側 panel 開啟時（非受控），點擊甘特 tab 應直接關閉 panel", async () => {
+    // Uncontrolled mode: ActivityPage owns internal selectedActivityId.
+    render(
+      <ActivityPage
+        workspace={WORKSPACE}
+        activeDeptId="dept-1"
+        onUpdateActivity={() => {}}
+        onDeleteActivity={() => {}}
+        onAddActivity={() => {}}
+        onJumpToActivity={() => {}}
+      />,
+    );
+
+    // Open panel by clicking an activity row in the table
+    await userEvent.click(screen.getByTestId("activity-row-act-1"));
+    expect(screen.getByTestId("activity-detail-panel")).toBeInTheDocument();
+
+    // Switch to gantt — panel should close without confirmation (no dirty state)
+    await userEvent.click(screen.getByRole("button", { name: /甘特/ }));
+
+    expect(
+      screen.queryByTestId("activity-detail-panel"),
+    ).not.toBeInTheDocument();
+  });
+
+  test("右側 panel 未開啟時，切換視圖不應發出 onSelectedActivityIdChange", async () => {
+    const onSelectedActivityIdChange = vi.fn();
+
+    render(
+      <ActivityPage
+        workspace={WORKSPACE}
+        activeDeptId="dept-1"
+        onUpdateActivity={() => {}}
+        onDeleteActivity={() => {}}
+        onAddActivity={() => {}}
+        onJumpToActivity={() => {}}
+        initialSelectedActivityId={null}
+        onSelectedActivityIdChange={onSelectedActivityIdChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /甘特/ }));
+
+    // No panel was open, so should not emit null
+    expect(onSelectedActivityIdChange).not.toHaveBeenCalled();
+  });
+});

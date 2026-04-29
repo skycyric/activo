@@ -169,7 +169,7 @@ export default function ActivityCalendar({
                         STATUS_DOT["not-started"]);
                     return (
                       <button
-                        key={idx}
+                        key={`${entry.activityId}-${dateStr}-${idx}`}
                         className={`act-cal-item${entry.completed ? " done" : ""}`}
                         onClick={() =>
                           onJumpToActivity(entry.deptId, entry.activityId)

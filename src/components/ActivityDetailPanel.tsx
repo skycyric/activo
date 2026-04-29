@@ -1517,6 +1517,23 @@ function PlanItemRow({
         </label>
       </div>
 
+      {/* 備註：唯讀且空白時隱藏 */}
+      {(!isReadOnly || item.notes) && (
+        <div className="adp-plan-item-notes">
+          {isReadOnly ? (
+            <span className="adp-plan-notes-text">{item.notes}</span>
+          ) : (
+            <textarea
+              className="adp-plan-notes-input"
+              value={item.notes ?? ""}
+              rows={1}
+              placeholder="備註…"
+              onChange={(e) => onPatch({ notes: e.target.value || undefined })}
+            />
+          )}
+        </div>
+      )}
+
       <div className="adp-plan-item-meta adp-plan-item-deps">
         <span className="adp-plan-meta-label">前置依賴：</span>
         {depCandidates.length === 0 ? (
