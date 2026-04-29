@@ -4,7 +4,7 @@
  * 取代 ActivityTable 的行內展開編輯，以獨立右側面板呈現完整活動資訊。
  * 4 個分頁：基本資料 / KPI 指標 / 行動計畫 / 備註
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type {
   DeptActivity,
   WorkspaceData,
@@ -48,24 +48,103 @@ const STATUS_OPTIONS: { value: MeasureStatus; label: string }[] = [
 
 type Tab = "basic" | "kpi" | "plans" | "notes";
 
+type QuarterPlanViewItem = {
+  item: ActivityPlanItem;
+  isMirror: boolean;
+  sourceQuarter: string;
+};
+
+type ActivityTemplateSource = {
+  deptId: string;
+  deptName: string;
+  activity: DeptActivity;
+};
+
+type KpiTemplateCandidate = {
+  templateId: string;
+  sourceDeptId: string;
+  sourceDeptName: string;
+  sourceActivityId: string;
+  sourceActivityName: string;
+  title: string;
+  subtitle: string;
+  searchText: string;
+  kpi: KPI;
+};
+
+type PlanTemplateCandidate = {
+  templateId: string;
+  sourceDeptId: string;
+  sourceDeptName: string;
+  sourceActivityId: string;
+  sourceActivityName: string;
+  sourceQuarter: string;
+  title: string;
+  subtitle: string;
+  searchText: string;
+  item: ActivityPlanItem;
+};
+
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
 function fmtDate(d: string | undefined) {
   return d ?? "";
 }
 
-function fmtDateTime(iso: string | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("zh-TW", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+function toIsoDateInputValue(value: string | undefined) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function getQuarterFromIsoDate(iso: string | undefined) {
+  if (!iso) return null;
+  const parts = iso.split("-");
+  if (parts.length < 2) return null;
+  const month = Number(parts[1]);
+  if (!Number.isFinite(month) || month < 1 || month > 12) return null;
+  return `Q${Math.floor((month - 1) / 3) + 1}`;
+}
+
+function cloneKpiFromTemplate(source: KPI): KPI {
+  return {
+    ...source,
+    id: genId(),
+    bizKey: undefined,
+    actual: null,
+    achievementRate: null,
+    confirmedAt: undefined,
+  };
+}
+
+function clonePlanItemFromTemplate(
+  source: ActivityPlanItem,
+  quarter: string,
+): ActivityPlanItem {
+  const sourceQuarter = source.quarter ?? "Q1";
+  const keepSchedule = sourceQuarter === quarter;
+  return {
+    ...source,
+    id: genId(),
+    bizKey: undefined,
+    quarter,
+    completed: false,
+    actualEndDate: undefined,
+    dependsOnIds: [],
+    linkedMeasureId: null,
+    showInCalendar: false,
+    plannedEndDate: keepSchedule ? source.plannedEndDate : undefined,
+    eventStartDate: keepSchedule ? source.eventStartDate : undefined,
+    eventEndDate: keepSchedule ? source.eventEndDate : undefined,
+  };
+}
+
+function fmtDateOnly(value: string | undefined) {
+  const d = toIsoDateInputValue(value);
+  return d ? d.replace(/-/g, "/") : "—";
 }
 
 function loadWidth(): number {
@@ -148,6 +227,10 @@ export default function ActivityDetailPanel({
 
   // ── KPI Config Modal ───────────────────────────────────────────────────────
   const [configKpiId, setConfigKpiId] = useState<string | null>(null);
+  const [showKpiTemplateModal, setShowKpiTemplateModal] = useState(false);
+  const [planTemplateQuarter, setPlanTemplateQuarter] = useState<string | null>(
+    null,
+  );
   const effectiveWarnDays = Math.max(
     0,
     Math.round(draft.warnDaysBefore ?? warnDaysBefore ?? 3),
@@ -260,16 +343,8 @@ export default function ActivityDetailPanel({
     patch({ kpis: [...draft.kpis, newKpi] });
   };
 
-  const copyKpi = (kpiId: string) => {
-    const source = draft.kpis.find((k) => k.id === kpiId);
-    if (!source) return;
-    const copied: KPI = {
-      ...source,
-      id: genId(),
-      name: source.name ? `${source.name}（複製）` : source.name,
-      label: source.label ? `${source.label}（複製）` : "KPI（複製）",
-    };
-    patch({ kpis: [...draft.kpis, copied] });
+  const addKpiFromTemplate = (source: KPI) => {
+    patch({ kpis: [...draft.kpis, cloneKpiFromTemplate(source)] });
   };
 
   const deleteKpi = (kpiId: string) => {
@@ -316,21 +391,94 @@ export default function ActivityDetailPanel({
     patch({ planItems: planItems.filter((p) => p.id !== itemId) });
   };
 
-  const copyPlanItem = (itemId: string) => {
-    const source = planItems.find((p) => p.id === itemId);
-    if (!source) return;
-    const copied: ActivityPlanItem = {
-      ...source,
-      id: genId(),
-      description: source.description
-        ? `${source.description}（複製）`
-        : "（複製）",
-      completed: false,
-      actualEndDate: undefined,
-      showInCalendar: false,
-    };
-    patch({ planItems: [...planItems, copied] });
+  const addPlanItemFromTemplate = (
+    quarter: string,
+    source: ActivityPlanItem,
+  ) => {
+    patch({
+      planItems: [...planItems, clonePlanItemFromTemplate(source, quarter)],
+    });
   };
+
+  const activityTemplateSources = useMemo<ActivityTemplateSource[]>(() => {
+    const sources: ActivityTemplateSource[] = [];
+
+    workspace.departments.forEach((department) => {
+      let hasCurrentActivity = false;
+      (department.activities ?? []).forEach((activity) => {
+        const nextActivity =
+          department.id === deptId && activity.id === draft.id
+            ? draft
+            : activity;
+        if (department.id === deptId && nextActivity.id === draft.id) {
+          hasCurrentActivity = true;
+        }
+        sources.push({
+          deptId: department.id,
+          deptName: department.name,
+          activity: nextActivity,
+        });
+      });
+
+      if (department.id === deptId && !hasCurrentActivity) {
+        sources.push({
+          deptId: department.id,
+          deptName: department.name,
+          activity: draft,
+        });
+      }
+    });
+
+    return sources;
+  }, [deptId, draft, workspace.departments]);
+
+  const kpiTemplateCandidates = useMemo<KpiTemplateCandidate[]>(
+    () =>
+      activityTemplateSources.flatMap(({ deptId, deptName, activity }) =>
+        (activity.kpis ?? []).map((kpi) => {
+          const activityName = activity.rawText || "（未命名活動）";
+          const title = getKpiDisplayName(kpi);
+          return {
+            templateId: `${deptId}:${activity.id}:kpi:${kpi.id}`,
+            sourceDeptId: deptId,
+            sourceDeptName: deptName,
+            sourceActivityId: activity.id,
+            sourceActivityName: activityName,
+            title,
+            subtitle: `${deptName} / ${activityName}`,
+            searchText:
+              `${title} ${kpi.label ?? ""} ${activityName} ${deptName}`.toLowerCase(),
+            kpi,
+          };
+        }),
+      ),
+    [activityTemplateSources],
+  );
+
+  const planTemplateCandidates = useMemo<PlanTemplateCandidate[]>(
+    () =>
+      activityTemplateSources.flatMap(({ deptId, deptName, activity }) =>
+        (activity.planItems ?? []).map((item) => {
+          const activityName = activity.rawText || "（未命名活動）";
+          const sourceQuarter = item.quarter ?? "Q1";
+          const title = item.description || "（無說明）";
+          return {
+            templateId: `${deptId}:${activity.id}:plan:${item.id}`,
+            sourceDeptId: deptId,
+            sourceDeptName: deptName,
+            sourceActivityId: activity.id,
+            sourceActivityName: activityName,
+            sourceQuarter,
+            title,
+            subtitle: `${deptName} / ${activityName} / ${sourceQuarter}`,
+            searchText:
+              `${title} ${activityName} ${deptName} ${sourceQuarter} ${item.owner ?? ""} ${item.notes ?? ""}`.toLowerCase(),
+            item,
+          };
+        }),
+      ),
+    [activityTemplateSources],
+  );
 
   // Derive quarters from existing plan items; always include at least Q1-Q4
   const allQuarters = Array.from(
@@ -340,6 +488,9 @@ export default function ActivityDetailPanel({
       "Q3",
       "Q4",
       ...planItems.map((p) => p.quarter ?? "Q1"),
+      ...planItems
+        .map((p) => getQuarterFromIsoDate(p.actualEndDate))
+        .filter((quarter): quarter is string => quarter !== null),
     ]),
   ).sort();
 
@@ -357,6 +508,37 @@ export default function ActivityDetailPanel({
           siblingKpis={draft.kpis.filter((k) => k.id !== configKpiId)}
           onSave={handleKpiConfigSave}
           onClose={() => setConfigKpiId(null)}
+        />
+      )}
+      {showKpiTemplateModal && (
+        <KpiTemplateModal
+          currentDeptId={deptId}
+          candidates={kpiTemplateCandidates}
+          onCreateBlank={() => {
+            addKpi();
+            setShowKpiTemplateModal(false);
+          }}
+          onApplyTemplate={(template) => {
+            addKpiFromTemplate(template);
+            setShowKpiTemplateModal(false);
+          }}
+          onClose={() => setShowKpiTemplateModal(false)}
+        />
+      )}
+      {planTemplateQuarter && (
+        <PlanTemplateModal
+          currentDeptId={deptId}
+          quarter={planTemplateQuarter}
+          candidates={planTemplateCandidates}
+          onCreateBlank={() => {
+            addPlanItem(planTemplateQuarter);
+            setPlanTemplateQuarter(null);
+          }}
+          onApplyTemplate={(template) => {
+            addPlanItemFromTemplate(planTemplateQuarter, template);
+            setPlanTemplateQuarter(null);
+          }}
+          onClose={() => setPlanTemplateQuarter(null)}
         />
       )}
 
@@ -452,11 +634,9 @@ export default function ActivityDetailPanel({
             <div data-tour="activity-detail-kpi">
               <KpiTab
                 kpis={draft.kpis}
-                activityUpdatedAt={draft.updatedAt}
                 isReadOnly={isReadOnly}
                 onPatchKpi={patchKpi}
-                onAddKpi={addKpi}
-                onCopyKpi={copyKpi}
+                onRequestAddKpi={() => setShowKpiTemplateModal(true)}
                 onDeleteKpi={deleteKpi}
                 onOpenConfig={setConfigKpiId}
               />
@@ -471,8 +651,7 @@ export default function ActivityDetailPanel({
                 isReadOnly={isReadOnly}
                 onUpdateWarnDays={(n) => patch({ warnDaysBefore: n })}
                 onPatch={patchPlanItem}
-                onAdd={addPlanItem}
-                onCopy={copyPlanItem}
+                onRequestAdd={(quarter) => setPlanTemplateQuarter(quarter)}
                 onDelete={deletePlanItem}
               />
             </div>
@@ -1066,29 +1245,21 @@ function TagEditor({
 
 function KpiTab({
   kpis,
-  activityUpdatedAt,
   isReadOnly,
   onPatchKpi,
-  onAddKpi,
-  onCopyKpi,
+  onRequestAddKpi,
   onDeleteKpi,
   onOpenConfig,
 }: {
   kpis: KPI[];
-  activityUpdatedAt?: string;
   isReadOnly: boolean;
   onPatchKpi: (id: string, changes: Partial<KPI>) => void;
-  onAddKpi: () => void;
-  onCopyKpi: (id: string) => void;
+  onRequestAddKpi: () => void;
   onDeleteKpi: (id: string) => void;
   onOpenConfig: (id: string) => void;
 }) {
   return (
     <div className="adp-section-list">
-      <div className="adp-kpi-meta">
-        最後更新：{fmtDateTime(activityUpdatedAt)}
-      </div>
-
       {kpis.length === 0 && (
         <div className="adp-empty-hint">
           尚無 KPI —{" "}
@@ -1108,7 +1279,6 @@ function KpiTab({
             baseline={baseline}
             isReadOnly={isReadOnly}
             onPatch={(changes) => onPatchKpi(kpi.id, changes)}
-            onCopy={() => onCopyKpi(kpi.id)}
             onDelete={() => onDeleteKpi(kpi.id)}
             onOpenConfig={() => onOpenConfig(kpi.id)}
           />
@@ -1116,7 +1286,7 @@ function KpiTab({
       })}
 
       {!isReadOnly && (
-        <button className="adp-add-btn" onClick={onAddKpi}>
+        <button className="adp-add-btn" onClick={onRequestAddKpi}>
           ＋ 新增 KPI
         </button>
       )}
@@ -1130,7 +1300,6 @@ function KpiRow({
   baseline,
   isReadOnly,
   onPatch,
-  onCopy,
   onDelete,
   onOpenConfig,
 }: {
@@ -1139,7 +1308,6 @@ function KpiRow({
   baseline: number | null;
   isReadOnly: boolean;
   onPatch: (c: Partial<KPI>) => void;
-  onCopy: () => void;
   onDelete: () => void;
   onOpenConfig: () => void;
 }) {
@@ -1251,13 +1419,6 @@ function KpiRow({
           </div>
         )}
         <div className="adp-kpi-actions">
-          {!isReadOnly && (
-            <Tooltip content="複製 KPI">
-              <button className="adp-kpi-btn" onClick={onCopy} title="複製">
-                ⧉
-              </button>
-            </Tooltip>
-          )}
           {!isReadOnly && (
             <Tooltip content="刪除 KPI">
               <button
@@ -1378,6 +1539,313 @@ function KpiRow({
             {achText}
           </span>
         </div>
+
+        <div className="adp-kpi-field">
+          <span className="adp-kpi-field-label">最後更新日期</span>
+          {isReadOnly ? (
+            <span className="adp-kpi-field-val">
+              {fmtDateOnly(kpi.confirmedAt)}
+            </span>
+          ) : (
+            <input
+              className="adp-input adp-input-sm"
+              type="date"
+              aria-label="最後更新日期"
+              value={toIsoDateInputValue(kpi.confirmedAt)}
+              onChange={(e) =>
+                onPatch({ confirmedAt: e.target.value || undefined })
+              }
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KpiTemplateModal({
+  currentDeptId,
+  candidates,
+  onCreateBlank,
+  onApplyTemplate,
+  onClose,
+}: {
+  currentDeptId: string;
+  candidates: KpiTemplateCandidate[];
+  onCreateBlank: () => void;
+  onApplyTemplate: (template: KPI) => void;
+  onClose: () => void;
+}) {
+  const [scope, setScope] = useState<"current-dept" | "all-depts">(
+    "current-dept",
+  );
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const filteredCandidates = useMemo(
+    () =>
+      candidates.filter((candidate) => {
+        if (
+          scope === "current-dept" &&
+          candidate.sourceDeptId !== currentDeptId
+        ) {
+          return false;
+        }
+        const keyword = query.trim().toLowerCase();
+        return !keyword || candidate.searchText.includes(keyword);
+      }),
+    [candidates, currentDeptId, query, scope],
+  );
+
+  return (
+    <div className="adp-template-modal-overlay">
+      <div
+        className="adp-template-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adp-kpi-template-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="adp-template-modal-header">
+          <span
+            id="adp-kpi-template-title"
+            className="adp-template-modal-title"
+          >
+            新增 KPI
+          </span>
+          <Tooltip content="關閉模板選擇">
+            <button className="adp-template-modal-close" onClick={onClose}>
+              ×
+            </button>
+          </Tooltip>
+        </div>
+
+        <div className="adp-template-modal-body">
+          <p className="adp-template-modal-hint">
+            可沿用其他活動的 KPI 設定；不會帶入實際值、達成率或最後更新日期。
+          </p>
+
+          <div className="adp-template-filters">
+            <label className="adp-template-filter-field">
+              範圍
+              <select
+                className="adp-template-filter-input"
+                value={scope}
+                onChange={(e) =>
+                  setScope(e.target.value as "current-dept" | "all-depts")
+                }
+              >
+                <option value="current-dept">僅目前部門</option>
+                <option value="all-depts">全部部門</option>
+              </select>
+            </label>
+
+            <label className="adp-template-filter-field adp-template-filter-field-grow">
+              搜尋
+              <input
+                className="adp-template-filter-input"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜尋 KPI 名稱、活動或部門"
+              />
+            </label>
+          </div>
+
+          <div className="adp-template-option-list">
+            {filteredCandidates.length === 0 ? (
+              <div className="adp-empty-hint">
+                目前沒有符合條件的 KPI 模板。
+              </div>
+            ) : (
+              filteredCandidates.map((candidate) => (
+                <button
+                  key={candidate.templateId}
+                  type="button"
+                  className="adp-template-option"
+                  onClick={() => onApplyTemplate(candidate.kpi)}
+                >
+                  <span className="adp-template-option-title">
+                    {candidate.title}
+                  </span>
+                  <span className="adp-template-option-subtitle">
+                    {candidate.subtitle}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="adp-template-modal-footer">
+          <button className="adp-template-btn-cancel" onClick={onClose}>
+            取消
+          </button>
+          <button className="adp-template-btn-primary" onClick={onCreateBlank}>
+            空白建立
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanTemplateModal({
+  currentDeptId,
+  quarter,
+  candidates,
+  onCreateBlank,
+  onApplyTemplate,
+  onClose,
+}: {
+  currentDeptId: string;
+  quarter: string;
+  candidates: PlanTemplateCandidate[];
+  onCreateBlank: () => void;
+  onApplyTemplate: (template: ActivityPlanItem) => void;
+  onClose: () => void;
+}) {
+  const [scope, setScope] = useState<"current-dept" | "all-depts">(
+    "current-dept",
+  );
+  const [sameQuarterOnly, setSameQuarterOnly] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const filteredCandidates = useMemo(
+    () =>
+      candidates.filter((candidate) => {
+        if (
+          scope === "current-dept" &&
+          candidate.sourceDeptId !== currentDeptId
+        ) {
+          return false;
+        }
+        if (sameQuarterOnly && candidate.sourceQuarter !== quarter) {
+          return false;
+        }
+        const keyword = query.trim().toLowerCase();
+        return !keyword || candidate.searchText.includes(keyword);
+      }),
+    [candidates, currentDeptId, query, quarter, sameQuarterOnly, scope],
+  );
+
+  return (
+    <div className="adp-template-modal-overlay">
+      <div
+        className="adp-template-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adp-plan-template-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="adp-template-modal-header">
+          <span
+            id="adp-plan-template-title"
+            className="adp-template-modal-title"
+          >
+            新增行動項目 · {quarter}
+          </span>
+          <Tooltip content="關閉模板選擇">
+            <button className="adp-template-modal-close" onClick={onClose}>
+              ×
+            </button>
+          </Tooltip>
+        </div>
+
+        <div className="adp-template-modal-body">
+          <p className="adp-template-modal-hint">
+            會保留說明與備註，但不帶入完成狀態、實際完成日與依賴關係；跨季套用時也會清空時程欄位。
+          </p>
+
+          <div className="adp-template-filters">
+            <label className="adp-template-filter-field">
+              範圍
+              <select
+                className="adp-template-filter-input"
+                value={scope}
+                onChange={(e) =>
+                  setScope(e.target.value as "current-dept" | "all-depts")
+                }
+              >
+                <option value="current-dept">僅目前部門</option>
+                <option value="all-depts">全部部門</option>
+              </select>
+            </label>
+
+            <label className="adp-template-filter-field">
+              季度
+              <select
+                className="adp-template-filter-input"
+                value={sameQuarterOnly ? "same" : "all"}
+                onChange={(e) => setSameQuarterOnly(e.target.value === "same")}
+              >
+                <option value="same">同季度優先</option>
+                <option value="all">不限季度</option>
+              </select>
+            </label>
+
+            <label className="adp-template-filter-field adp-template-filter-field-grow">
+              搜尋
+              <input
+                className="adp-template-filter-input"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜尋項目說明、活動、部門或備註"
+              />
+            </label>
+          </div>
+
+          <div className="adp-template-option-list">
+            {filteredCandidates.length === 0 ? (
+              <div className="adp-empty-hint">目前沒有符合條件的行動模板。</div>
+            ) : (
+              filteredCandidates.map((candidate) => (
+                <button
+                  key={candidate.templateId}
+                  type="button"
+                  className="adp-template-option"
+                  onClick={() => onApplyTemplate(candidate.item)}
+                >
+                  <span className="adp-template-option-title">
+                    {candidate.title}
+                  </span>
+                  <span className="adp-template-option-subtitle">
+                    {candidate.subtitle}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="adp-template-modal-footer">
+          <button className="adp-template-btn-cancel" onClick={onClose}>
+            取消
+          </button>
+          <button className="adp-template-btn-primary" onClick={onCreateBlank}>
+            空白建立
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1392,8 +1860,7 @@ function PlansTab({
   isReadOnly,
   onUpdateWarnDays,
   onPatch,
-  onAdd,
-  onCopy,
+  onRequestAdd,
   onDelete,
 }: {
   planItems: ActivityPlanItem[];
@@ -1402,8 +1869,7 @@ function PlansTab({
   isReadOnly: boolean;
   onUpdateWarnDays: (n: number) => void;
   onPatch: (id: string, changes: Partial<ActivityPlanItem>) => void;
-  onAdd: (quarter: string) => void;
-  onCopy: (id: string) => void;
+  onRequestAdd: (quarter: string) => void;
   onDelete: (id: string) => void;
 }) {
   const [crossQuarterMode, setCrossQuarterMode] = useState(false);
@@ -1417,7 +1883,44 @@ function PlansTab({
     return (a.description ?? "").localeCompare(b.description ?? "", "zh-TW");
   };
 
-  const allSortedItems = [...planItems].sort(sortByPlannedEndDate);
+  const quarterGroups = useMemo(
+    () =>
+      quarters.map((quarter) => {
+        const primaryItems = planItems
+          .filter((item) => (item.quarter ?? "Q1") === quarter)
+          .sort(sortByPlannedEndDate)
+          .map<QuarterPlanViewItem>((item) => ({
+            item,
+            isMirror: false,
+            sourceQuarter: item.quarter ?? "Q1",
+          }));
+
+        const mirroredItems = crossQuarterMode
+          ? planItems
+              .filter((item) => {
+                if (!item.completed || !item.actualEndDate) return false;
+                const actualQuarter = getQuarterFromIsoDate(item.actualEndDate);
+                const sourceQuarter = item.quarter ?? "Q1";
+                return actualQuarter === quarter && sourceQuarter !== quarter;
+              })
+              .sort((a, b) => {
+                const byActual = (
+                  a.actualEndDate ?? "9999-12-31"
+                ).localeCompare(b.actualEndDate ?? "9999-12-31", "en");
+                if (byActual !== 0) return byActual;
+                return sortByPlannedEndDate(a, b);
+              })
+              .map<QuarterPlanViewItem>((item) => ({
+                item,
+                isMirror: true,
+                sourceQuarter: item.quarter ?? "Q1",
+              }))
+          : [];
+
+        return { quarter, primaryItems, mirroredItems };
+      }),
+    [crossQuarterMode, planItems, quarters],
+  );
 
   return (
     <div className="adp-section-list">
@@ -1450,89 +1953,73 @@ function PlansTab({
             className={`adp-plan-view-toggle${crossQuarterMode ? " active" : ""}`}
             onClick={() => setCrossQuarterMode((v) => !v)}
           >
-            {crossQuarterMode ? "依季度檢視" : "跨季追蹤"}
+            {crossQuarterMode ? "隱藏跨季映射" : "跨季追蹤"}
           </button>
         </div>
       </div>
 
-      {crossQuarterMode && (
-        <div className="adp-plan-quarter">
-          <div className="adp-plan-quarter-header">
-            <span className="adp-plan-q-label">跨季追蹤（依預計完成日）</span>
-            <span className="adp-plan-q-count">
-              {allSortedItems.filter((i) => i.completed).length}/
-              {allSortedItems.length}
-            </span>
-          </div>
-
-          {allSortedItems.length === 0 && (
-            <div className="adp-empty-hint adp-plan-empty">
-              {isReadOnly ? "目前無行動計畫項目" : "點擊「＋」新增行動項目"}
+      {quarterGroups.map(({ quarter, primaryItems, mirroredItems }) => {
+        const visibleItems = [...primaryItems, ...mirroredItems];
+        return (
+          <div key={quarter} className="adp-plan-quarter">
+            <div className="adp-plan-quarter-header">
+              <span className="adp-plan-q-label">{quarter}</span>
+              <span className="adp-plan-q-count">
+                {visibleItems.filter((entry) => entry.item.completed).length}/
+                {visibleItems.length}
+              </span>
             </div>
-          )}
 
-          {allSortedItems.map((item) => (
-            <PlanItemRow
-              key={item.id}
-              item={item}
-              allPlanItems={planItems}
-              warnDaysBefore={warnDaysBefore}
-              isReadOnly={isReadOnly}
-              showQuarterTag
-              onPatch={(c) => onPatch(item.id, c)}
-              onCopy={() => onCopy(item.id)}
-              onDelete={() => {
-                if (window.confirm("刪除此行動計畫項目？")) onDelete(item.id);
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {!crossQuarterMode &&
-        quarters.map((q) => {
-          const items = planItems
-            .filter((p) => (p.quarter ?? "Q1") === q)
-            .sort(sortByPlannedEndDate);
-          return (
-            <div key={q} className="adp-plan-quarter">
-              <div className="adp-plan-quarter-header">
-                <span className="adp-plan-q-label">{q}</span>
-                <span className="adp-plan-q-count">
-                  {items.filter((i) => i.completed).length}/{items.length}
-                </span>
+            {visibleItems.length === 0 && (
+              <div className="adp-empty-hint adp-plan-empty">
+                {isReadOnly ? "此季度無計畫項目" : "點擊「＋」新增行動項目"}
               </div>
+            )}
 
-              {items.length === 0 && (
-                <div className="adp-empty-hint adp-plan-empty">
-                  {isReadOnly ? "此季度無計畫項目" : "點擊「＋」新增行動項目"}
-                </div>
-              )}
+            {primaryItems.map(({ item }) => (
+              <PlanItemRow
+                key={item.id}
+                item={item}
+                allPlanItems={planItems}
+                warnDaysBefore={warnDaysBefore}
+                isReadOnly={isReadOnly}
+                onPatch={(c) => onPatch(item.id, c)}
+                onDelete={() => {
+                  if (window.confirm("刪除此行動計畫項目？")) onDelete(item.id);
+                }}
+              />
+            ))}
 
-              {items.map((item) => (
-                <PlanItemRow
-                  key={item.id}
-                  item={item}
-                  allPlanItems={planItems}
-                  warnDaysBefore={warnDaysBefore}
-                  isReadOnly={isReadOnly}
-                  onPatch={(c) => onPatch(item.id, c)}
-                  onCopy={() => onCopy(item.id)}
-                  onDelete={() => {
-                    if (window.confirm("刪除此行動計畫項目？"))
-                      onDelete(item.id);
-                  }}
-                />
-              ))}
+            {mirroredItems.length > 0 && (
+              <div className="adp-plan-mirror-block">
+                <div className="adp-plan-mirror-label">跨季完成（唯讀）</div>
+                {mirroredItems.map(({ item, sourceQuarter }) => (
+                  <PlanItemRow
+                    key={`${quarter}:${item.id}:mirror`}
+                    item={item}
+                    allPlanItems={planItems}
+                    warnDaysBefore={warnDaysBefore}
+                    isReadOnly
+                    showQuarterTag
+                    mirrorFromQuarter={sourceQuarter}
+                    onPatch={() => {}}
+                    onDelete={() => {}}
+                  />
+                ))}
+              </div>
+            )}
 
-              {!isReadOnly && (
-                <button className="adp-plan-add-btn" onClick={() => onAdd(q)}>
-                  ＋ 新增項目
-                </button>
-              )}
-            </div>
-          );
-        })}
+            {!isReadOnly && (
+              <button
+                className="adp-plan-add-btn"
+                onClick={() => onRequestAdd(quarter)}
+              >
+                ＋ 新增項目
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1543,8 +2030,8 @@ function PlanItemRow({
   warnDaysBefore,
   isReadOnly,
   showQuarterTag = false,
+  mirrorFromQuarter,
   onPatch,
-  onCopy,
   onDelete,
 }: {
   item: ActivityPlanItem;
@@ -1552,8 +2039,8 @@ function PlanItemRow({
   warnDaysBefore: number;
   isReadOnly: boolean;
   showQuarterTag?: boolean;
+  mirrorFromQuarter?: string;
   onPatch: (c: Partial<ActivityPlanItem>) => void;
-  onCopy: () => void;
   onDelete: () => void;
 }) {
   const warnType = getPlanItemWarning(item, warnDaysBefore);
@@ -1614,11 +2101,6 @@ function PlanItemRow({
           />
         )}
         {!isReadOnly && (
-          <button className="adp-kpi-btn" onClick={onCopy} title="複製">
-            ⧉
-          </button>
-        )}
-        {!isReadOnly && (
           <button
             className="adp-kpi-btn adp-kpi-btn-del"
             onClick={onDelete}
@@ -1634,6 +2116,11 @@ function PlanItemRow({
           <span className="adp-plan-badge adp-plan-badge-quarter">
             {(item.quarter ?? "Q1").toUpperCase()}
           </span>
+          {mirrorFromQuarter && (
+            <span className="synced-badge synced-badge-sm">
+              來自 {mirrorFromQuarter}
+            </span>
+          )}
         </div>
       )}
 

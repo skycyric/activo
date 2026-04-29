@@ -44,13 +44,14 @@ const ACTIVITY: DeptActivity = {
 function renderPanel(options?: {
   activity?: DeptActivity;
   forcedTab?: "basic" | "kpi" | "plans" | "notes";
+  workspace?: WorkspaceData;
 }) {
   const onClose = vi.fn();
   render(
     <ActivityDetailPanel
       activity={options?.activity ?? ACTIVITY}
       deptId="dept-1"
-      workspace={WORKSPACE}
+      workspace={options?.workspace ?? WORKSPACE}
       warnDaysBefore={7}
       forcedTab={options?.forcedTab}
       onUpdate={() => {}}
@@ -124,6 +125,78 @@ describe("ActivityDetailPanel close guard", () => {
     expect(screen.getByText(/KPI 設定/)).toBeInTheDocument();
     expect(screen.getByText("目標百分比（%）")).toBeInTheDocument();
   });
+
+  test("kpi last updated date should be user editable inline", async () => {
+    const user = userEvent.setup();
+
+    renderPanel({
+      forcedTab: "kpi",
+      activity: {
+        ...ACTIVITY,
+        kpis: [
+          {
+            id: "kpi-1",
+            label: "營收達成",
+            formulaType: "direct_rate",
+            target: 100,
+            actual: 80,
+            unit: "%",
+            achievementRate: 80,
+          },
+        ],
+      },
+    });
+
+    expect(screen.getByText("最後更新日期")).toBeInTheDocument();
+    expect(screen.getByLabelText("最後更新日期")).toHaveValue("");
+
+    await user.type(screen.getByLabelText("最後更新日期"), "2026-04-28");
+
+    expect(screen.getByDisplayValue("2026-04-28")).toBeInTheDocument();
+  });
+
+  test("add KPI can apply template and should clear actual, achievement and confirmation data", async () => {
+    const user = userEvent.setup();
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          activities: [
+            {
+              id: "source-act-1",
+              rawText: "既有活動",
+              status: "in-progress",
+              startDate: "2026-01-01",
+              endDate: "2026-03-31",
+              kpis: [
+                {
+                  id: "source-kpi-1",
+                  label: "營收模板",
+                  target: 120,
+                  actual: 88,
+                  unit: "%",
+                  formulaType: "direct_rate",
+                  achievementRate: 73.3,
+                  confirmedAt: "2026-04-01T00:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({ forcedTab: "kpi", workspace });
+
+    await user.click(screen.getByRole("button", { name: "＋ 新增 KPI" }));
+    await user.click(screen.getByRole("button", { name: /營收模板/ }));
+
+    expect(screen.getByTitle("編輯 KPI 設定：營收模板")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("120")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("88")).not.toBeInTheDocument();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
 });
 
 describe("ActivityDetailPanel forcedTab", () => {
@@ -170,5 +243,81 @@ describe("ActivityDetailPanel forcedTab", () => {
     expect(screen.getByRole("button", { name: /計畫/i })).toHaveClass(
       "adp-tab-active",
     );
+  });
+
+  test("cross-quarter tracking should mirror completed item into actual quarter as read-only", async () => {
+    const user = userEvent.setup();
+
+    renderPanel({
+      forcedTab: "plans",
+      activity: {
+        ...ACTIVITY,
+        planItems: [
+          {
+            id: "plan-1",
+            description: "跨季項目",
+            quarter: "Q1",
+            completed: true,
+            plannedEndDate: "2026-03-20",
+            actualEndDate: "2026-05-02",
+            dependsOnIds: [],
+            linkedMeasureId: null,
+          },
+        ],
+      },
+    });
+
+    expect(screen.queryByText("跨季完成（唯讀）")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "跨季追蹤" }));
+
+    expect(screen.getByText("跨季完成（唯讀）")).toBeInTheDocument();
+    expect(screen.getByText("來自 Q1")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("跨季項目")).toBeInTheDocument();
+    expect(screen.getByText("跨季項目")).toBeInTheDocument();
+  });
+
+  test("add plan item can apply template and should clear completion state and actual end date", async () => {
+    const user = userEvent.setup();
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          activities: [
+            {
+              id: "source-act-2",
+              rawText: "季度來源活動",
+              status: "in-progress",
+              startDate: "2026-01-01",
+              endDate: "2026-03-31",
+              planItems: [
+                {
+                  id: "source-plan-1",
+                  description: "季度模板",
+                  quarter: "Q1",
+                  completed: true,
+                  plannedEndDate: "2026-03-10",
+                  actualEndDate: "2026-03-20",
+                  dependsOnIds: ["dep-1"],
+                  linkedMeasureId: "measure-1",
+                },
+              ],
+              kpis: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({ forcedTab: "plans", workspace });
+
+    await user.click(screen.getAllByRole("button", { name: "＋ 新增項目" })[0]);
+    await user.click(screen.getByRole("button", { name: /季度模板/ }));
+
+    expect(screen.getByDisplayValue("季度模板")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("2026-03-10")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("2026-03-20")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
 });

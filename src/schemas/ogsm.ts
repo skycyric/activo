@@ -52,6 +52,8 @@ export const KpiBaselineSchema = z.discriminatedUnion("type", [
 export const KPISchema = z.object({
   id: z.string(),
   bizKey: z.string().optional(),
+  /** 使用者手動確認這筆 KPI 的時間 */
+  confirmedAt: z.string().optional(),
   /** 使用者自訂 KPI 名稱，如「業績達成率」「新增客戶數」 */
   name: z.string().optional(),
   /** @deprecated 改用 name；label 保留供舊資料讀取 */
