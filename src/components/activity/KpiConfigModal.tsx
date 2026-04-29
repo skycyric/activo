@@ -4,8 +4,8 @@
  * 設定 KPI 的名稱、單位、公式類型、目標值/目標百分比、baseline。
  * 由 ActivityDetailPanel 的 KPI tab 觸發。
  */
-import { useState, useEffect } from "react";
-import type { KPI, KpiBaseline } from "../../schemas/ogsm";
+import { useEffect, useState } from "react";
+import type { KPI } from "../../schemas/ogsm";
 import { getKpiDisplayName } from "../../utils/kpiCalc";
 import { Tooltip } from "../ui/tooltip";
 
@@ -21,92 +21,232 @@ function getInitialFormulaType(kpi: KPI): FormulaType {
 
 interface Props {
   kpi: KPI;
+  originalKpi: KPI;
   /** 同一活動的其他 KPI（用於 kpiRef baseline 選擇） */
   siblingKpis: KPI[];
+  onChange: (updated: KPI) => void;
   onSave: (updated: KPI) => void;
   onClose: () => void;
 }
 
 export default function KpiConfigModal({
   kpi,
+  originalKpi,
   siblingKpis,
+  onChange,
   onSave,
   onClose,
 }: Props) {
-  const [name, setName] = useState(kpi.name ?? kpi.label ?? "");
-  const [unit, setUnit] = useState(kpi.unit ?? "");
-  const [formulaType, setFormulaType] = useState<FormulaType>(
-    getInitialFormulaType(kpi),
-  );
-  const [targetGrowthRate, setTargetGrowthRate] = useState<string>(
-    kpi.targetGrowthRate !== null && kpi.targetGrowthRate !== undefined
-      ? String(kpi.targetGrowthRate)
-      : "",
-  );
-  const [targetRate, setTargetRate] = useState<string>(
-    kpi.targetRate !== null && kpi.targetRate !== undefined
-      ? String(kpi.targetRate)
-      : "",
-  );
-  const [baselineType, setBaselineType] = useState<"fixed" | "kpiRef">(
+  const formulaType = getInitialFormulaType(kpi);
+  const [baselineMode, setBaselineMode] = useState<"fixed" | "kpiRef">(
     kpi.baseline?.type ?? "fixed",
   );
-  const [baselineFixed, setBaselineFixed] = useState<string>(
-    kpi.baseline?.type === "fixed" ? String(kpi.baseline.value) : "",
-  );
-  const [baselineKpiRef, setBaselineKpiRef] = useState<string>(
-    kpi.baseline?.type === "kpiRef" ? kpi.baseline.kpiId : "",
-  );
-  const currentUnit = (unit ?? "").trim();
+  const baselineType = baselineMode;
+  const baselineFixed =
+    kpi.baseline?.type === "fixed"
+      ? String(kpi.baseline.value)
+      : formulaType === "direct_rate" &&
+          kpi.target !== null &&
+          kpi.target !== undefined
+        ? String(kpi.target)
+        : "";
+  const baselineKpiRef =
+    kpi.baseline?.type === "kpiRef" ? kpi.baseline.kpiId : "";
+  const currentUnit = (kpi.unit ?? "").trim();
 
-  const handleSave = () => {
-    const parsedTargetGrowthRate =
-      targetGrowthRate !== "" ? parseFloat(targetGrowthRate) : null;
-    const parsedTargetRate = targetRate !== "" ? parseFloat(targetRate) : null;
+  useEffect(() => {
+    setBaselineMode(kpi.baseline?.type ?? "fixed");
+  }, [kpi.baseline?.type]);
 
-    let baseline: KpiBaseline | null = null;
-    // direct_rate, growth, target_pct 都支持 baseline
-    if (["direct_rate", "growth", "target_pct"].includes(formulaType)) {
-      if (baselineType === "fixed" && baselineFixed !== "") {
-        baseline = { type: "fixed", value: parseFloat(baselineFixed) };
-      } else if (baselineType === "kpiRef" && baselineKpiRef) {
-        baseline = { type: "kpiRef", kpiId: baselineKpiRef };
-      }
-    }
+  const patchDraft = (changes: Partial<KPI>) => {
+    onChange({ ...kpi, ...changes });
+  };
 
+  const setFormulaType = (nextFormulaType: FormulaType) => {
     const nextKpiType: KPI["kpiType"] =
-      formulaType === "growth"
+      nextFormulaType === "growth"
         ? "growth"
-        : formulaType === "target_pct"
+        : nextFormulaType === "target_pct"
           ? "target_rate"
-          : formulaType === "completion"
+          : nextFormulaType === "completion"
             ? "progress"
             : "value";
 
-    onSave({
-      ...kpi,
-      name: name.trim() || undefined,
-      label: name.trim() || kpi.label,
-      unit: unit.trim(),
-      formulaType,
+    if (nextFormulaType === "completion") {
+      patchDraft({
+        formulaType: nextFormulaType,
+        kpiType: nextKpiType,
+        target: null,
+        targetGrowthRate: null,
+        targetRate: null,
+        baseline: null,
+      });
+      return;
+    }
+
+    if (nextFormulaType === "growth") {
+      patchDraft({
+        formulaType: nextFormulaType,
+        kpiType: nextKpiType,
+        target: null,
+        targetRate: null,
+        baseline:
+          kpi.baseline?.type === "kpiRef"
+            ? kpi.baseline
+            : kpi.baseline?.type === "fixed"
+              ? kpi.baseline
+              : null,
+      });
+      return;
+    }
+
+    if (nextFormulaType === "target_pct") {
+      patchDraft({
+        formulaType: nextFormulaType,
+        kpiType: nextKpiType,
+        target: null,
+        targetGrowthRate: null,
+        baseline:
+          kpi.baseline?.type === "kpiRef"
+            ? kpi.baseline
+            : kpi.baseline?.type === "fixed"
+              ? kpi.baseline
+              : null,
+      });
+      return;
+    }
+
+    patchDraft({
+      formulaType: nextFormulaType,
+      kpiType: nextKpiType,
+      targetGrowthRate: null,
+      targetRate: null,
+      baseline:
+        kpi.baseline?.type === "kpiRef"
+          ? kpi.baseline
+          : {
+              type: "fixed",
+              value:
+                kpi.baseline?.type === "fixed"
+                  ? kpi.baseline.value
+                  : (kpi.target ?? 0),
+            },
+      target:
+        kpi.baseline?.type === "fixed"
+          ? kpi.baseline.value
+          : (kpi.target ?? null),
+    });
+  };
+
+  const setBaselineType = (nextBaselineType: "fixed" | "kpiRef") => {
+    setBaselineMode(nextBaselineType);
+    if (nextBaselineType === "fixed") {
+      patchDraft({
+        baseline: {
+          type: "fixed",
+          value:
+            kpi.baseline?.type === "fixed"
+              ? kpi.baseline.value
+              : (kpi.target ?? 0),
+        },
+        target:
+          formulaType === "direct_rate"
+            ? kpi.baseline?.type === "fixed"
+              ? kpi.baseline.value
+              : (kpi.target ?? null)
+            : kpi.target,
+      });
+      return;
+    }
+
+    patchDraft({
+      baseline: { type: "kpiRef", kpiId: baselineKpiRef || "" },
+      target: formulaType === "direct_rate" ? null : kpi.target,
+    });
+  };
+
+  const normalizeForSave = (draftKpi: KPI): KPI => {
+    const nextFormulaType = getInitialFormulaType(draftKpi);
+    const nextKpiType: KPI["kpiType"] =
+      nextFormulaType === "growth"
+        ? "growth"
+        : nextFormulaType === "target_pct"
+          ? "target_rate"
+          : nextFormulaType === "completion"
+            ? "progress"
+            : "value";
+
+    if (nextFormulaType === "completion") {
+      return {
+        ...draftKpi,
+        formulaType: nextFormulaType,
+        kpiType: nextKpiType,
+        target: null,
+        targetGrowthRate: null,
+        targetRate: null,
+        baseline: null,
+      };
+    }
+
+    if (nextFormulaType === "growth") {
+      return {
+        ...draftKpi,
+        formulaType: nextFormulaType,
+        kpiType: nextKpiType,
+        target: null,
+        targetRate: null,
+        baseline:
+          draftKpi.baseline?.type === "kpiRef"
+            ? draftKpi.baseline.kpiId
+              ? draftKpi.baseline
+              : null
+            : draftKpi.baseline?.type === "fixed"
+              ? draftKpi.baseline
+              : null,
+      };
+    }
+
+    if (nextFormulaType === "target_pct") {
+      return {
+        ...draftKpi,
+        formulaType: nextFormulaType,
+        kpiType: nextKpiType,
+        target: null,
+        targetGrowthRate: null,
+        baseline:
+          draftKpi.baseline?.type === "kpiRef"
+            ? draftKpi.baseline.kpiId
+              ? draftKpi.baseline
+              : null
+            : draftKpi.baseline?.type === "fixed"
+              ? draftKpi.baseline
+              : null,
+      };
+    }
+
+    return {
+      ...draftKpi,
+      formulaType: nextFormulaType,
       kpiType: nextKpiType,
       target:
-        formulaType === "completion" || formulaType === "target_pct"
-          ? null
-          : formulaType === "growth"
-            ? null
-            : baseline?.type === "fixed"
-              ? baseline.value
-              : baseline?.type === "kpiRef"
-                ? null
-                : (kpi.target ?? null),
-      targetGrowthRate:
-        formulaType === "growth" ? parsedTargetGrowthRate : null,
-      targetRate: formulaType === "target_pct" ? parsedTargetRate : null,
-      baseline: ["direct_rate", "growth", "target_pct"].includes(formulaType)
-        ? baseline
-        : null,
-    });
+        draftKpi.baseline?.type === "fixed"
+          ? draftKpi.baseline.value
+          : draftKpi.target,
+      targetGrowthRate: null,
+      targetRate: null,
+      baseline:
+        draftKpi.baseline?.type === "kpiRef"
+          ? draftKpi.baseline.kpiId
+            ? draftKpi.baseline
+            : null
+          : draftKpi.baseline?.type === "fixed"
+            ? draftKpi.baseline
+            : null,
+    };
+  };
+
+  const handleSave = () => {
+    onSave(normalizeForSave(kpi));
   };
 
   // 防止 click-outside 意外關閉，只允許 Esc 鍵
@@ -122,7 +262,7 @@ export default function KpiConfigModal({
   }, [onClose]);
 
   return (
-    <div className="kpi-modal-overlay" aria-hidden="true">
+    <div className="kpi-modal-overlay" role="dialog" aria-modal="true">
       <div className="kpi-modal" onClick={(e) => e.stopPropagation()}>
         <div className="kpi-modal-header">
           <span className="kpi-modal-title">
@@ -141,8 +281,14 @@ export default function KpiConfigModal({
             KPI 名稱
             <input
               className="kpi-modal-input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={kpi.name ?? kpi.label ?? ""}
+              onChange={(e) => {
+                const nextName = e.target.value;
+                patchDraft({
+                  name: nextName.trim() || undefined,
+                  label: nextName.trim() || originalKpi.label,
+                });
+              }}
               placeholder="例：業績達成率、新增客戶數"
             />
           </label>
@@ -152,8 +298,8 @@ export default function KpiConfigModal({
             單位
             <input
               className="kpi-modal-input"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
+              value={kpi.unit ?? ""}
+              onChange={(e) => patchDraft({ unit: e.target.value })}
               placeholder="例：%、件、人、萬元"
             />
           </label>
@@ -228,8 +374,18 @@ export default function KpiConfigModal({
               <input
                 className="kpi-modal-input"
                 type="number"
-                value={targetGrowthRate}
-                onChange={(e) => setTargetGrowthRate(e.target.value)}
+                value={
+                  kpi.targetGrowthRate !== null &&
+                  kpi.targetGrowthRate !== undefined
+                    ? String(kpi.targetGrowthRate)
+                    : ""
+                }
+                onChange={(e) =>
+                  patchDraft({
+                    targetGrowthRate:
+                      e.target.value !== "" ? parseFloat(e.target.value) : null,
+                  })
+                }
                 placeholder="例：20（代表 20%）"
               />
             </label>
@@ -242,8 +398,17 @@ export default function KpiConfigModal({
               <input
                 className="kpi-modal-input"
                 type="number"
-                value={targetRate}
-                onChange={(e) => setTargetRate(e.target.value)}
+                value={
+                  kpi.targetRate !== null && kpi.targetRate !== undefined
+                    ? String(kpi.targetRate)
+                    : ""
+                }
+                onChange={(e) =>
+                  patchDraft({
+                    targetRate:
+                      e.target.value !== "" ? parseFloat(e.target.value) : null,
+                  })
+                }
                 placeholder="例：80（代表目標百分比 80%）"
               />
             </label>
@@ -286,7 +451,18 @@ export default function KpiConfigModal({
                   className="kpi-modal-input"
                   type="number"
                   value={baselineFixed}
-                  onChange={(e) => setBaselineFixed(e.target.value)}
+                  onChange={(e) => {
+                    const nextValue =
+                      e.target.value !== "" ? parseFloat(e.target.value) : null;
+                    patchDraft({
+                      baseline:
+                        nextValue === null
+                          ? null
+                          : { type: "fixed", value: nextValue },
+                      target:
+                        formulaType === "direct_rate" ? nextValue : kpi.target,
+                    });
+                  }}
                   placeholder={
                     formulaType === "growth"
                       ? "基期值，例：1000"
@@ -302,7 +478,16 @@ export default function KpiConfigModal({
                   <select
                     className="kpi-modal-input"
                     value={baselineKpiRef}
-                    onChange={(e) => setBaselineKpiRef(e.target.value)}
+                    onChange={(e) => {
+                      const nextKpiId = e.target.value;
+                      patchDraft({
+                        baseline: nextKpiId
+                          ? { type: "kpiRef", kpiId: nextKpiId }
+                          : null,
+                        target:
+                          formulaType === "direct_rate" ? null : kpi.target,
+                      });
+                    }}
                     style={{ marginTop: 6 }}
                   >
                     <option value="">選擇 KPI…</option>

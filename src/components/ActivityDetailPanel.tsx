@@ -24,6 +24,7 @@ import {
 import {
   countPlanWarnings,
   getPlanItemWarning,
+  isPlannedEndDateOutsideQuarter,
   isLateCompletion,
 } from "../utils/planWarnings";
 import KpiConfigModal from "./activity/KpiConfigModal";
@@ -226,7 +227,7 @@ export default function ActivityDetailPanel({
   }
 
   // ── KPI Config Modal ───────────────────────────────────────────────────────
-  const [configKpiId, setConfigKpiId] = useState<string | null>(null);
+  const [configKpiDraft, setConfigKpiDraft] = useState<KPI | null>(null);
   const [showKpiTemplateModal, setShowKpiTemplateModal] = useState(false);
   const [planTemplateQuarter, setPlanTemplateQuarter] = useState<string | null>(
     null,
@@ -299,6 +300,21 @@ export default function ActivityDetailPanel({
   };
 
   const handleSave = () => {
+    const invalidQuarterPlans = (draft.planItems ?? []).filter(
+      isPlannedEndDateOutsideQuarter,
+    );
+    if (invalidQuarterPlans.length > 0) {
+      const invalidNames = invalidQuarterPlans
+        .slice(0, 3)
+        .map((item) => item.description || "（未命名行動計畫）")
+        .join("、");
+      window.alert(
+        `有行動計畫的預計完成日不在所屬季度內，請先修正後再儲存：${invalidNames}${invalidQuarterPlans.length > 3 ? " 等" : ""}`,
+      );
+      setTab("plans");
+      return;
+    }
+
     const saved: DeptActivity = {
       ...draft,
       kpis: recomputeActivityKpis(draft.kpis ?? []),
@@ -324,10 +340,20 @@ export default function ActivityDetailPanel({
   };
 
   // ── KPI helpers ────────────────────────────────────────────────────────────
-  const patchKpi = (kpiId: string, changes: Partial<KPI>) => {
+  const commitKpi = (kpiId: string, changes: Partial<KPI>) => {
     patch({
       kpis: draft.kpis.map((k) => (k.id === kpiId ? { ...k, ...changes } : k)),
     });
+  };
+
+  const patchKpi = (kpiId: string, changes: Partial<KPI>) => {
+    if (configKpiDraft?.id === kpiId) {
+      setConfigKpiDraft((current) =>
+        current && current.id === kpiId ? { ...current, ...changes } : current,
+      );
+      return;
+    }
+    commitKpi(kpiId, changes);
   };
 
   const addKpi = () => {
@@ -351,9 +377,22 @@ export default function ActivityDetailPanel({
     patch({ kpis: draft.kpis.filter((k) => k.id !== kpiId) });
   };
 
+  const openKpiConfig = (kpiId: string) => {
+    const current = draft.kpis.find((k) => k.id === kpiId);
+    if (!current) return;
+    setConfigKpiDraft({
+      ...current,
+      baseline: current.baseline ? { ...current.baseline } : current.baseline,
+    });
+  };
+
   const handleKpiConfigSave = (updated: KPI) => {
-    patchKpi(updated.id, updated);
-    setConfigKpiId(null);
+    commitKpi(updated.id, updated);
+    setConfigKpiDraft(null);
+  };
+
+  const handleKpiConfigClose = () => {
+    setConfigKpiDraft(null);
   };
 
   // ── PlanItems helpers ──────────────────────────────────────────────────────
@@ -495,19 +534,25 @@ export default function ActivityDetailPanel({
   ).sort();
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const configKpi = configKpiId
-    ? draft.kpis.find((k) => k.id === configKpiId)
+  const displayKpis = configKpiDraft
+    ? draft.kpis.map((k) => (k.id === configKpiDraft.id ? configKpiDraft : k))
+    : draft.kpis;
+  const configKpi = configKpiDraft;
+  const originalConfigKpi = configKpiDraft
+    ? (draft.kpis.find((k) => k.id === configKpiDraft.id) ?? null)
     : null;
 
   return (
     <>
       {/* KPI Config Modal (portal-style, rendered at root level) */}
-      {configKpi && (
+      {configKpi && originalConfigKpi && (
         <KpiConfigModal
           kpi={configKpi}
-          siblingKpis={draft.kpis.filter((k) => k.id !== configKpiId)}
+          originalKpi={originalConfigKpi}
+          siblingKpis={displayKpis.filter((k) => k.id !== configKpi.id)}
+          onChange={setConfigKpiDraft}
           onSave={handleKpiConfigSave}
-          onClose={() => setConfigKpiId(null)}
+          onClose={handleKpiConfigClose}
         />
       )}
       {showKpiTemplateModal && (
@@ -633,12 +678,12 @@ export default function ActivityDetailPanel({
           {tab === "kpi" && (
             <div data-tour="activity-detail-kpi">
               <KpiTab
-                kpis={draft.kpis}
+                kpis={displayKpis}
                 isReadOnly={isReadOnly}
                 onPatchKpi={patchKpi}
                 onRequestAddKpi={() => setShowKpiTemplateModal(true)}
                 onDeleteKpi={deleteKpi}
-                onOpenConfig={setConfigKpiId}
+                onOpenConfig={openKpiConfig}
               />
             </div>
           )}
@@ -2045,6 +2090,7 @@ function PlanItemRow({
 }) {
   const warnType = getPlanItemWarning(item, warnDaysBefore);
   const lateCompletion = isLateCompletion(item);
+  const plannedQuarterMismatch = isPlannedEndDateOutsideQuarter(item);
   const dependsOnIds = item.dependsOnIds ?? [];
   const depCandidates = allPlanItems.filter((p) => p.id !== item.id);
   const [showEventDates, setShowEventDates] = useState(
@@ -2159,6 +2205,11 @@ function PlanItemRow({
         )}
         {lateCompletion && (
           <span className="adp-plan-badge late">⏰ 延遲完成</span>
+        )}
+        {plannedQuarterMismatch && (
+          <span className="adp-plan-badge invalid-quarter">
+            ❗ 預計完成日不在 {(item.quarter ?? "Q1").toUpperCase()}
+          </span>
         )}
         {item.owner !== undefined && (
           <span className="adp-plan-owner">{item.owner}</span>

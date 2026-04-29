@@ -12,8 +12,32 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import KpiConfigModal from "./KpiConfigModal";
 import type { KPI } from "../../schemas/ogsm";
+
+function renderControlledModal(options: {
+  kpi: KPI;
+  siblingKpis: KPI[];
+  onSave?: (updated: KPI) => void;
+  onClose?: () => void;
+}) {
+  function Harness() {
+    const [draft, setDraft] = useState(options.kpi);
+    return (
+      <KpiConfigModal
+        kpi={draft}
+        originalKpi={options.kpi}
+        siblingKpis={options.siblingKpis}
+        onChange={setDraft}
+        onSave={options.onSave ?? (() => {})}
+        onClose={options.onClose ?? (() => {})}
+      />
+    );
+  }
+
+  return render(<Harness />);
+}
 
 describe("KpiConfigModal regression", () => {
   const mockKpi: KPI = {
@@ -51,14 +75,12 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    const { container } = render(
-      <KpiConfigModal
-        kpi={mockKpi}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    const { container } = renderControlledModal({
+      kpi: mockKpi,
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     const overlay = container.querySelector(".kpi-modal-overlay");
     if (!overlay) throw new Error("Overlay not found");
@@ -72,14 +94,12 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    render(
-      <KpiConfigModal
-        kpi={mockKpi}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    renderControlledModal({
+      kpi: mockKpi,
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     await userEvent.keyboard("{Escape}");
 
@@ -90,14 +110,12 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    const { container } = render(
-      <KpiConfigModal
-        kpi={mockKpi}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    const { container } = renderControlledModal({
+      kpi: mockKpi,
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     const cancelBtn = container.querySelector(".kpi-modal-btn-cancel");
     if (!cancelBtn) throw new Error("Cancel button not found");
@@ -111,14 +129,12 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    render(
-      <KpiConfigModal
-        kpi={mockKpi}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    renderControlledModal({
+      kpi: mockKpi,
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     expect(screen.getByText("按 Esc 可取消")).toBeInTheDocument();
   });
@@ -127,18 +143,16 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    render(
-      <KpiConfigModal
-        kpi={{
-          ...mockKpi,
-          formulaType: "growth",
-          baseline: { type: "kpiRef", kpiId: "KPI-2" },
-        }}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    renderControlledModal({
+      kpi: {
+        ...mockKpi,
+        formulaType: "growth",
+        baseline: { type: "kpiRef", kpiId: "KPI-2" },
+      },
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     // 選擇器應該顯示有實際值的 KPI 及其值
     const option2 = screen.getByText(/G1-KPI-2.*150/);
@@ -175,17 +189,15 @@ describe("KpiConfigModal regression", () => {
       },
     ];
 
-    const { container } = render(
-      <KpiConfigModal
-        kpi={{
-          ...mockKpi,
-          formulaType: "growth",
-        }}
-        siblingKpis={allEmptyKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    const { container } = renderControlledModal({
+      kpi: {
+        ...mockKpi,
+        formulaType: "growth",
+      },
+      siblingKpis: allEmptyKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     // 當選擇 "引用此活動的另一個 KPI" 時，應顯示警告
     const kpiRefRadios = container.querySelectorAll(
@@ -203,17 +215,15 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    const { container } = render(
-      <KpiConfigModal
-        kpi={{
-          ...mockKpi,
-          formulaType: "target_pct",
-        }}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    const { container } = renderControlledModal({
+      kpi: {
+        ...mockKpi,
+        formulaType: "target_pct",
+      },
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     const targetPctRadio = container.querySelector(
       'input[type="radio"][value="target_pct"]',
@@ -243,17 +253,15 @@ describe("KpiConfigModal regression", () => {
     const mockOnClose = vi.fn();
     const mockOnSave = vi.fn();
 
-    const { container } = render(
-      <KpiConfigModal
-        kpi={{
-          ...mockKpi,
-          formulaType: "completion",
-        }}
-        siblingKpis={mockSiblingKpis}
-        onSave={mockOnSave}
-        onClose={mockOnClose}
-      />,
-    );
+    const { container } = renderControlledModal({
+      kpi: {
+        ...mockKpi,
+        formulaType: "completion",
+      },
+      siblingKpis: mockSiblingKpis,
+      onSave: mockOnSave,
+      onClose: mockOnClose,
+    });
 
     const completionRadio = container.querySelector(
       'input[type="radio"][value="completion"]',

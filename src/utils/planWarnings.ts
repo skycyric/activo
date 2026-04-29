@@ -5,6 +5,24 @@ export interface PlanWarnCounts {
   warning: number;
 }
 
+function getQuarterFromIsoDate(date: string | undefined): string | null {
+  if (!date) return null;
+  const parts = date.split("-");
+  if (parts.length < 2) return null;
+  const month = Number(parts[1]);
+  if (!Number.isFinite(month) || month < 1 || month > 12) return null;
+  return `Q${Math.floor((month - 1) / 3) + 1}`;
+}
+
+export function isPlannedEndDateOutsideQuarter(
+  item: PlanItem & { quarter?: string },
+): boolean {
+  if (!item.plannedEndDate || !item.quarter) return false;
+  const plannedQuarter = getQuarterFromIsoDate(item.plannedEndDate);
+  if (!plannedQuarter) return false;
+  return plannedQuarter !== item.quarter;
+}
+
 /** 計算單一 PlanItem 的警示狀態（未完成才適用） */
 export function getPlanItemWarning(
   item: PlanItem,

@@ -4,6 +4,7 @@ import {
   countPlanWarnings,
   countStrategyWarnings,
   isLateCompletion,
+  isPlannedEndDateOutsideQuarter,
 } from "./planWarnings";
 import type { PlanItem, Strategy } from "../schemas/ogsm";
 
@@ -174,6 +175,42 @@ describe("countStrategyWarnings", () => {
   test("無 actionPlan 的策略 → 0/0", () => {
     const s = makeStrategy();
     expect(countStrategyWarnings(s, 7)).toEqual({ overdue: 0, warning: 0 });
+  });
+});
+
+describe("isPlannedEndDateOutsideQuarter", () => {
+  test("預計完成日在所屬季度內 → false", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-03-20" }),
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string };
+    expect(isPlannedEndDateOutsideQuarter(item)).toBe(false);
+  });
+
+  test("預計完成日超出所屬季度 → true", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-04-10" }),
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string };
+    expect(isPlannedEndDateOutsideQuarter(item)).toBe(true);
+  });
+
+  test("缺少季度或日期時不報錯 → false", () => {
+    expect(
+      isPlannedEndDateOutsideQuarter({
+        ...makePlanItem(),
+        quarter: "Q1",
+      } as PlanItem & {
+        quarter?: string;
+      }),
+    ).toBe(false);
+    expect(
+      isPlannedEndDateOutsideQuarter(
+        makePlanItem({ plannedEndDate: "2026-04-10" }) as PlanItem & {
+          quarter?: string;
+        },
+      ),
+    ).toBe(false);
   });
 });
 

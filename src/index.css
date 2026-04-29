@@ -9724,6 +9724,11 @@ body,
   color: #7c3aed;
   border: 1px solid #ddd6fe;
 }
+.adp-plan-badge.invalid-quarter {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
 .adp-plan-badge-quarter {
   background: #eef2ff;
   color: #3730a3;
