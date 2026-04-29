@@ -121,6 +121,9 @@ export const PlanItemSchema = z.object({
   notes: z.string().optional(),
   /** 是否呈現在月曆視圖（需有 plannedEndDate 才可勾選） */
   showInCalendar: z.boolean().optional(),
+  /** 活動實際執行起訖日（用於月曆/時間序列分析的 treatment window） */
+  eventStartDate: IsoDate,
+  eventEndDate: IsoDate,
 });
 
 // ── ActionPlan ────────────────────────────────────────────────────────────────

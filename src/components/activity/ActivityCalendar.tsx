@@ -14,6 +14,8 @@ interface CalEntry {
   description: string;
   completed: boolean;
   activityStatus: string;
+  isEventStart: boolean;
+  isEventEnd: boolean;
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -37,21 +39,42 @@ export default function ActivityCalendar({
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth()); // 0-indexed
 
-  // Collect all plan items with showInCalendar=true AND plannedEndDate set
+  // Collect plan items with showInCalendar=true AND eventStartDate set (event range)
   const entries = useMemo<CalEntry[]>(() => {
     const result: CalEntry[] = [];
     for (const act of activities) {
       for (const item of act.planItems ?? []) {
-        if (!item.showInCalendar || !item.plannedEndDate) continue;
-        result.push({
-          date: item.plannedEndDate,
+        const base = {
           activityId: act.id,
           deptId: act.deptId,
           activityName: act.rawText,
           description: item.description,
           completed: item.completed,
           activityStatus: act.status ?? "not-started",
-        });
+        };
+
+        // event-range entries (one per day from eventStartDate to eventEndDate)
+        // showInCalendar now gates the event range, not the deadline dot
+        if (item.showInCalendar && item.eventStartDate) {
+          const startStr = item.eventStartDate;
+          const endStr = item.eventEndDate ?? item.eventStartDate;
+          const start = new Date(startStr + "T00:00:00");
+          const end = new Date(endStr + "T00:00:00");
+          // safety cap: max 180-day range
+          const cap = new Date(start.getTime() + 180 * 86400000);
+          const safeEnd = end > cap ? cap : end;
+          const cur = new Date(start);
+          while (cur <= safeEnd) {
+            const dateStr = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+            result.push({
+              ...base,
+              date: dateStr,
+              isEventStart: dateStr === startStr,
+              isEventEnd: dateStr === endStr,
+            });
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
       }
     }
     result.sort((a, b) => a.date.localeCompare(b.date));
@@ -112,7 +135,8 @@ export default function ActivityCalendar({
         </span>
         {entries.length === 0 && (
           <span className="act-cal-hint">
-            尚無項目。在行動計畫頁籤中勾選「📅 月曆」即可加入。
+            尚無項目。在行動計畫頁籤中設定「執行期間」並勾選「📅
+            月曆」即可加入。
           </span>
         )}
       </div>
@@ -167,20 +191,36 @@ export default function ActivityCalendar({
                       ? STATUS_DOT.completed
                       : (STATUS_DOT[entry.activityStatus] ??
                         STATUS_DOT["not-started"]);
+                    const eventMark = entry.isEventStart
+                      ? "▶"
+                      : entry.isEventEnd
+                        ? "◼"
+                        : "─";
                     return (
                       <button
                         key={`${entry.activityId}-${dateStr}-${idx}`}
-                        className={`act-cal-item${entry.completed ? " done" : ""}`}
+                        className={[
+                          "act-cal-item",
+                          "act-cal-item-event",
+                          entry.completed ? "done" : "",
+                          entry.isEventStart ? "event-start" : "",
+                          entry.isEventEnd ? "event-end" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                         onClick={() =>
                           onJumpToActivity(entry.deptId, entry.activityId)
                         }
-                        title={`${entry.activityName}：${entry.description || "（無說明）"}`}
+                        title={`${entry.activityName}：${entry.description || "（無說明）"}（執行期間${entry.isEventStart ? "開始" : entry.isEventEnd ? "結束" : "中"}）`}
                       >
                         <span
                           className="act-cal-dot"
                           style={{ background: dotColor }}
                         />
                         <span className="act-cal-item-body">
+                          <span className="act-cal-event-mark">
+                            {eventMark}
+                          </span>
                           <span className="act-cal-act-name">
                             {entry.activityName}
                           </span>

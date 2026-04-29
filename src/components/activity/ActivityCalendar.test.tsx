@@ -57,6 +57,8 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
           id: "p1",
           description: "應顯示的計畫",
           plannedEndDate: "2026-04-20",
+          eventStartDate: "2026-04-20",
+          eventEndDate: "2026-04-20",
           actualEndDate: undefined,
           completed: false,
           showInCalendar: true,
@@ -72,16 +74,17 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
     expect(screen.getByText("測試活動")).toBeInTheDocument();
   });
 
-  test("showInCalendar=true 但無 plannedEndDate 的項目不應顯示", () => {
+  test("showInCalendar=true 但無 eventStartDate 的項目不應顯示", () => {
     const act = makeActivity({
       planItems: [
         {
           id: "p1",
           description: "沒有日期的計畫",
           plannedEndDate: undefined,
+          eventStartDate: undefined,
           actualEndDate: undefined,
           completed: false,
-          showInCalendar: true, // 勾了但無日期（防呆應從 UI 阻止，但渲染端也需安全）
+          showInCalendar: true, // 勾了但無執行日期（防呆應從 UI 阻止，但渲染端也需安全）
         },
       ],
     });
@@ -100,6 +103,8 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
           id: "p1",
           description: "可點擊計畫",
           plannedEndDate: "2026-04-20",
+          eventStartDate: "2026-04-20",
+          eventEndDate: "2026-04-20",
           actualEndDate: undefined,
           completed: false,
           showInCalendar: true,
@@ -125,6 +130,8 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
           id: "p1",
           description: "三月計畫",
           plannedEndDate: "2026-03-15",
+          eventStartDate: "2026-03-15",
+          eventEndDate: "2026-03-15",
           actualEndDate: undefined,
           completed: false,
           showInCalendar: true,

@@ -1404,6 +1404,9 @@ function PlanItemRow({
   const lateCompletion = isLateCompletion(item);
   const dependsOnIds = item.dependsOnIds ?? [];
   const depCandidates = allPlanItems.filter((p) => p.id !== item.id);
+  const [showEventDates, setShowEventDates] = useState(
+    !!(item.eventStartDate || item.eventEndDate),
+  );
 
   const toggleDependency = (depId: string) => {
     const next = new Set(dependsOnIds);
@@ -1504,25 +1507,6 @@ function PlanItemRow({
         {item.owner !== undefined && (
           <span className="adp-plan-owner">{item.owner}</span>
         )}
-        {/* 月曆勾選：需有預計完成日才可啟用 */}
-        <label
-          className={`adp-plan-calendar-toggle${!item.plannedEndDate ? " disabled" : ""}`}
-          title={
-            !item.plannedEndDate
-              ? "需先設定「預計完成日」才能加入月曆"
-              : item.showInCalendar
-                ? "點擊取消在月曆顯示"
-                : "點擊後將在月曆顯示此行動計畫"
-          }
-        >
-          <input
-            type="checkbox"
-            checked={item.showInCalendar ?? false}
-            disabled={isReadOnly || !item.plannedEndDate}
-            onChange={(e) => onPatch({ showInCalendar: e.target.checked })}
-          />
-          <span>📅 月曆</span>
-        </label>
       </div>
 
       {/* 備註：唯讀且空白時隱藏 */}
@@ -1541,6 +1525,80 @@ function PlanItemRow({
           )}
         </div>
       )}
+
+      {/* 執行期間：記錄活動實際起訖日（不同於任務截止日） */}
+      {showEventDates || item.eventStartDate || item.eventEndDate ? (
+        <div className="adp-plan-item-meta adp-plan-item-event-dates">
+          <span className="adp-plan-meta-label adp-plan-event-label">
+            執行期間：
+          </span>
+          <input
+            className="adp-input adp-input-sm adp-plan-date"
+            type="date"
+            value={item.eventStartDate ?? ""}
+            disabled={isReadOnly}
+            title="執行開始日"
+            onChange={(e) =>
+              onPatch({ eventStartDate: e.target.value || undefined })
+            }
+          />
+          <span className="adp-plan-event-sep">～</span>
+          <input
+            className="adp-input adp-input-sm adp-plan-date"
+            type="date"
+            value={item.eventEndDate ?? ""}
+            disabled={isReadOnly}
+            title="執行結束日"
+            onChange={(e) =>
+              onPatch({ eventEndDate: e.target.value || undefined })
+            }
+          />
+          {/* 月曆勾選：需有執行開始日才可啟用 */}
+          <label
+            className={`adp-plan-calendar-toggle${!item.eventStartDate ? " disabled" : ""}`}
+            title={
+              !item.eventStartDate
+                ? "需先設定「執行開始日」才能加入月曆"
+                : item.showInCalendar
+                  ? "點擊取消在月曆顯示"
+                  : "點擊後將在月曆顯示此執行期間"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={item.showInCalendar ?? false}
+              disabled={isReadOnly || !item.eventStartDate}
+              onChange={(e) => onPatch({ showInCalendar: e.target.checked })}
+            />
+            <span>📅 月曆</span>
+          </label>
+          {!isReadOnly && (
+            <button
+              className="adp-plan-event-clear"
+              title="清除執行期間"
+              onClick={() => {
+                setShowEventDates(false);
+                onPatch({
+                  eventStartDate: undefined,
+                  eventEndDate: undefined,
+                  showInCalendar: false,
+                });
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ) : !isReadOnly ? (
+        <div className="adp-plan-item-meta">
+          <button
+            className="adp-plan-event-add"
+            onClick={() => setShowEventDates(true)}
+          >
+            + 執行期間
+          </button>
+        </div>
+      ) : null}
 
       <div className="adp-plan-item-meta adp-plan-item-deps">
         <span className="adp-plan-meta-label">前置依賴：</span>
