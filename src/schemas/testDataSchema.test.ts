@@ -13,7 +13,6 @@ describe("test fixtures schema compliance", () => {
 
     const failures: string[] = [];
     for (const [filePath, data] of files) {
-
       const ws = WorkspaceDataSchema.safeParse(data);
       if (ws.success) continue;
 

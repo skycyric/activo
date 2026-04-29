@@ -1,10 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-const testSources = import.meta.glob(["/src/**/*.test.ts", "/src/**/*.test.tsx"], {
-  eager: true,
-  query: "?raw",
-  import: "default",
-}) as Record<string, string>;
+const testSources = import.meta.glob(
+  ["/src/**/*.test.ts", "/src/**/*.test.tsx"],
+  {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  },
+) as Record<string, string>;
 
 const ALLOWLIST = new Set(["src/utils/storage.test.ts"]);
 
