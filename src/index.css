@@ -9694,6 +9694,11 @@ body,
   color: #b45309;
   border: 1px solid #fde68a;
 }
+.adp-plan-badge.late {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+}
 .adp-plan-add-btn {
   align-self: flex-start;
   background: none;

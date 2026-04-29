@@ -21,7 +21,11 @@ import {
   recomputeActivityKpis,
   resolveBaseline,
 } from "../utils/kpiCalc";
-import { countPlanWarnings, getPlanItemWarning } from "../utils/planWarnings";
+import {
+  countPlanWarnings,
+  getPlanItemWarning,
+  isLateCompletion,
+} from "../utils/planWarnings";
 import KpiConfigModal from "./activity/KpiConfigModal";
 import AssistUnitPicker from "./activity/AssistUnitPicker";
 import OwnerPicker from "./activity/OwnerPicker";
@@ -1397,6 +1401,7 @@ function PlanItemRow({
   onDelete: () => void;
 }) {
   const warnType = getPlanItemWarning(item, warnDaysBefore);
+  const lateCompletion = isLateCompletion(item);
   const dependsOnIds = item.dependsOnIds ?? [];
   const depCandidates = allPlanItems.filter((p) => p.id !== item.id);
 
@@ -1492,6 +1497,9 @@ function PlanItemRow({
           >
             {warnType === "overdue" ? "🔴 逾期" : "⚠️ 即將到期"}
           </span>
+        )}
+        {lateCompletion && (
+          <span className="adp-plan-badge late">⏰ 延遲完成</span>
         )}
         {item.owner !== undefined && (
           <span className="adp-plan-owner">{item.owner}</span>

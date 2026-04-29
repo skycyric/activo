@@ -406,6 +406,7 @@ export default function App() {
   >(null);
 
   const deptSaveToastTimerRef = useRef<number | null>(null);
+  const deptMergeToastTimerRef = useRef<number | null>(null);
 
   const showDeptSaveToast = useCallback(
     (message: string, tone: InlineToastTone = "success") => {
@@ -839,7 +840,17 @@ export default function App() {
       const freshEntry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
-      if (!freshEntry) return;
+      if (!freshEntry) {
+        // dept was unlinked while the 3 s wait was in progress; reset status
+        setDeptFiles((prev) =>
+          prev.map((f) =>
+            f.workspace.departments[0]?.id === deptId
+              ? { ...f, syncStatus: "error" as SyncStatus }
+              : f,
+          ),
+        );
+        return "error" as SaveDeptResult;
+      }
 
       // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
       const secondMeta = await readDataFileMeta(freshEntry.handle);
@@ -1717,6 +1728,9 @@ export default function App() {
     return () => {
       if (deptSaveToastTimerRef.current !== null) {
         window.clearTimeout(deptSaveToastTimerRef.current);
+      }
+      if (deptMergeToastTimerRef.current !== null) {
+        window.clearTimeout(deptMergeToastTimerRef.current);
       }
     };
   }, []);

@@ -3,6 +3,7 @@ import {
   getPlanItemWarning,
   countPlanWarnings,
   countStrategyWarnings,
+  isLateCompletion,
 } from "./planWarnings";
 import type { PlanItem, Strategy } from "../schemas/ogsm";
 
@@ -89,6 +90,31 @@ describe("getPlanItemWarning", () => {
     const item = makePlanItem({ plannedEndDate: WARN7 }); // TODAY + 7 days
     expect(getPlanItemWarning(item, 7)).toBe("warning");
   });
+
+  test("已填實際完成日且準時（≤ 預計完成日）→ null，即使今天已逾期", () => {
+    const item = makePlanItem({
+      plannedEndDate: PAST,
+      actualEndDate: PAST, // 準時填入，等於預計完成日
+    });
+    expect(getPlanItemWarning(item, 7)).toBeNull();
+  });
+
+  test("已填實際完成日且早於預計完成日 → null", () => {
+    const item = makePlanItem({
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-05",
+    });
+    expect(getPlanItemWarning(item, 7)).toBeNull();
+  });
+
+  test("已填實際完成日但晚於預計完成日（延遲）→ 仍回傳 overdue（由 isLateCompletion 另行標示）", () => {
+    // actualEndDate > plannedEndDate 且未勾 completed → 逾期警示保留
+    const item = makePlanItem({
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-20",
+    });
+    expect(getPlanItemWarning(item, 7)).toBe("overdue");
+  });
 });
 
 // ─── countPlanWarnings ────────────────────────────────────────────────────────
@@ -148,5 +174,61 @@ describe("countStrategyWarnings", () => {
   test("無 actionPlan 的策略 → 0/0", () => {
     const s = makeStrategy();
     expect(countStrategyWarnings(s, 7)).toEqual({ overdue: 0, warning: 0 });
+  });
+});
+
+// ─── isLateCompletion ─────────────────────────────────────────────────────────
+
+describe("isLateCompletion", () => {
+  test("未完成的項目回傳 false", () => {
+    const item = makePlanItem({
+      completed: false,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-20",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("已完成但無實際完成日回傳 false", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("已完成但無預計完成日回傳 false", () => {
+    const item = makePlanItem({
+      completed: true,
+      actualEndDate: "2026-01-20",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("實際完成日 > 預計完成日 → true（延遲完成）", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-20",
+    });
+    expect(isLateCompletion(item)).toBe(true);
+  });
+
+  test("實際完成日 = 預計完成日 → false（準時完成）", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-10",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("實際完成日 < 預計完成日 → false（提早完成）", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-05",
+    });
+    expect(isLateCompletion(item)).toBe(false);
   });
 });
