@@ -268,6 +268,8 @@ export const DeptActivitySchema = MeasureSchema.extend({
   lifecycleStartPeriodId: z.string().optional(),
   /** 活動生命週期結束期別；未結束可為 undefined */
   lifecycleEndPeriodId: z.string().optional(),
+  /** Tombstone: 使用者刻意清空的欄位名稱清單（用於 merge 時區分「未填」與「主動清空」） */
+  clearedFields: z.array(z.string()).optional(),
   // ── 已棄用欄位（migration 讀取用，勿直接寫入）──────────────────────────────
   /** @deprecated 使用 dashboardLinks 取代 */
   ogsmLink: OgsmLinkSchema.optional(),

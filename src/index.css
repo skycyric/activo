@@ -569,7 +569,7 @@ body,
   background: var(--surface);
   border-radius: 14px;
   width: 100%;
-  max-width: 740px;
+  max-width: 900px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -660,6 +660,10 @@ body,
 .conflict-type-team {
   background: #fef3c7;
   color: #92400e;
+}
+.conflict-type-activity {
+  background: #fce7f3;
+  color: #9d174d;
 }
 
 .conflict-entity-name {
@@ -846,6 +850,101 @@ body,
 .conflict-footer-btns {
   display: flex;
   gap: 8px;
+}
+
+/* ─── Rich value display in ConflictModal ────────────────────────────────── */
+.conflict-val-cleared {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.conflict-val-plain {
+  color: var(--text);
+  word-break: break-word;
+}
+.conflict-val-empty {
+  color: var(--text3);
+  font-style: italic;
+}
+.conflict-val-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.conflict-val-pill {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.conflict-val-longtext {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.conflict-val-longtext-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 80px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text);
+}
+.conflict-val-longtext-expanded {
+  max-height: none;
+}
+.conflict-val-expand-btn {
+  font-size: 11px;
+  color: var(--brand);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
+}
+.conflict-val-complex {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.conflict-val-count {
+  font-size: 12px;
+  color: var(--text3);
+}
+.conflict-val-detail {
+  margin-top: 4px;
+}
+.conflict-val-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.conflict-val-quarter-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  margin-right: 4px;
+}
+.conflict-val-done-item {
+  text-decoration: line-through;
+  color: var(--text3);
+}
+.conflict-val-done-mark {
+  color: #16a34a;
+}
+.conflict-val-muted {
+  color: var(--text3);
 }
 
 /* ?????? Sidebar ?????????????????????????????????????????????????????????????????????????????????????? */

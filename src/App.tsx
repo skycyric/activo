@@ -993,6 +993,7 @@ export default function App() {
           : f,
       ),
     );
+    let reOpenModal = false;
     try {
       // 解衝突後重讀：使用者解決衝突期間磁碟可能已再次被他人更新
       let freshDisk = onDisk;
@@ -1004,6 +1005,39 @@ export default function App() {
       } catch {
         // best-effort：讀不到就沿用原衝突快照
       }
+
+      // 若磁碟在使用者解衝突期間再次被他人更新，重新偵測是否有新的未解衝突
+      const diskChangedAgain =
+        freshDisk.version !== onDisk.version ||
+        freshDisk.savedAt !== onDisk.savedAt;
+      if (diskChangedAgain) {
+        const recheck = detectConflicts(entry.workspace, freshDisk);
+        const unresolved = recheck.filter((c) =>
+          c.fieldDiffs.some((d) => {
+            const fieldKey = `${c.id}.${d.field}`;
+            const entityKey = c.id;
+            return (
+              conflictDeptResolutions[fieldKey] === undefined &&
+              conflictDeptResolutions[entityKey] === undefined
+            );
+          }),
+        );
+        if (unresolved.length > 0) {
+          // 重新開啟 modal，保留已有的決策，更新磁碟快照
+          reOpenModal = true;
+          conflictDeptDiskWsRef.current = freshDisk;
+          setConflictDeptEntries(unresolved);
+          setDeptFiles((prev) =>
+            prev.map((f) =>
+              f.workspace.departments[0]?.id === deptId
+                ? { ...f, syncStatus: "pending" as SyncStatus }
+                : f,
+            ),
+          );
+          return;
+        }
+      }
+
       const { workspace: merged } = mergeWorkspaces(
         entry.workspace,
         freshDisk,
@@ -1059,11 +1093,13 @@ export default function App() {
       );
       alert("衝突解決後寫入失敗：" + String(e));
     } finally {
-      setConflictDeptEntries([]);
-      setConflictDeptResolutions({});
-      setConflictDeptId(null);
-      conflictDeptDiskWsRef.current = null;
-      conflictDeptSourceCopyRef.current = null;
+      if (!reOpenModal) {
+        setConflictDeptEntries([]);
+        setConflictDeptResolutions({});
+        setConflictDeptId(null);
+        conflictDeptDiskWsRef.current = null;
+        conflictDeptSourceCopyRef.current = null;
+      }
     }
   }, [conflictDeptId, conflictDeptResolutions]);
 
@@ -2300,8 +2336,35 @@ export default function App() {
   /** V3 flat handler：直接 patch dept.activities[]，無需 periodId/goalId/stratId */
   const handleUpdateDeptActivity = useCallback(
     (deptId: string, activity: DeptActivity) => {
+      const prevActivity = (() => {
+        if (isMultiFileMode) {
+          const entry = deptFiles.find(
+            (f) => f.workspace.departments[0]?.id === deptId,
+          );
+          return entry?.workspace.departments
+            .flatMap((d) => d.activities ?? [])
+            .find((a) => a.id === activity.id);
+        }
+        return workspace.departments
+          .flatMap((d) => d.activities ?? [])
+          .find((a) => a.id === activity.id);
+      })();
+      const tracked = prevActivity
+        ? trackClearedFields(prevActivity, activity, [
+            "notes",
+            "description",
+            "budget",
+            "personDays",
+            "owners",
+            "tags",
+            "planItems",
+            "assistUnits",
+            "prerequisites",
+            "relatedActivities",
+          ])
+        : activity;
       const stamped: DeptActivity = {
-        ...activity,
+        ...tracked,
         updatedAt: new Date().toISOString(),
       };
       const patchDepts = (deps: typeof workspace.departments) =>

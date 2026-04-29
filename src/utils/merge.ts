@@ -41,6 +41,14 @@ export interface FieldDiff {
   label: string;
   localVal: string;
   remoteVal: string;
+  /**
+   * 原始值，用於 ConflictModal 展示詳細內容。
+   * - null      = 刻意清空（tombstone）
+   * - undefined = 無需額外展示（使用 localVal/remoteVal 字串即可）
+   * - 其他值    = 實際資料，ConflictModal 會依型別做富文本渲染
+   */
+  rawLocalVal?: unknown;
+  rawRemoteVal?: unknown;
 }
 
 export interface ConflictEntry {
@@ -121,13 +129,14 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
     const lv = String(ls[f] ?? "");
     const rv = String(rs[f] ?? "");
     if (lv === rv) continue;
-    // Tombstone: 一方刻意清空、另一方有値 → 衝突
     if (isEmpty(ls[f]) && wasClearedBy(ls, f) && !isEmpty(rs[f])) {
       diffs.push({
         field: f,
         label,
         localVal: "(已清空)",
         remoteVal: fmt(rs[f]),
+        rawLocalVal: null,
+        rawRemoteVal: rs[f],
       });
       continue;
     }
@@ -137,16 +146,19 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label,
         localVal: fmt(ls[f]),
         remoteVal: "(已清空)",
+        rawLocalVal: ls[f],
+        rawRemoteVal: null,
       });
       continue;
     }
-    // Regular: 雙方都有値且不同
     if (!isEmpty(ls[f]) && !isEmpty(rs[f])) {
       diffs.push({
         field: f,
         label,
         localVal: fmt(ls[f]),
         remoteVal: fmt(rs[f]),
+        rawLocalVal: ls[f],
+        rawRemoteVal: rs[f],
       });
     }
   }
@@ -159,6 +171,8 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label: "負責人",
         localVal: "(已清空)",
         remoteVal: fmt(rOwners, "owners"),
+        rawLocalVal: null,
+        rawRemoteVal: rOwners,
       });
     } else if (
       isEmpty(rOwners) &&
@@ -170,6 +184,8 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label: "負責人",
         localVal: fmt(lOwners, "owners"),
         remoteVal: "(已清空)",
+        rawLocalVal: lOwners,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lOwners) && !isEmpty(rOwners)) {
       diffs.push({
@@ -177,13 +193,11 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label: "負責人",
         localVal: fmt(lOwners, "owners"),
         remoteVal: fmt(rOwners, "owners"),
+        rawLocalVal: lOwners,
+        rawRemoteVal: rOwners,
       });
     }
   }
-  // manualRate: null = 自動計算。
-  // - null → value: 自動填補，不算衝突（不通報）
-  // - value → null: 對方可能刻意清除手動覆蓋，需通報衝突
-  // - value → 不同 value: 衝突
   if (ls.manualRate !== rs.manualRate && !isEmpty(ls.manualRate)) {
     diffs.push({
       field: "manualRate",
@@ -196,9 +210,10 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         rs.manualRate !== null && rs.manualRate !== undefined
           ? `${rs.manualRate}%`
           : "(自動計算)",
+      rawLocalVal: ls.manualRate,
+      rawRemoteVal: rs.manualRate,
     });
   }
-  // actionPlans：雙方都有資料且不同 → 列入衝突（筆數/結構差異提示）
   const lAP = ls.actionPlans ?? [];
   const rAP = rs.actionPlans ?? [];
   if (JSON.stringify(lAP) !== JSON.stringify(rAP)) {
@@ -208,6 +223,8 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label: "季度計畫",
         localVal: "(已清空)",
         remoteVal: fmt(rAP, "actionPlans"),
+        rawLocalVal: null,
+        rawRemoteVal: rAP,
       });
     } else if (
       isEmpty(rAP) &&
@@ -219,6 +236,8 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label: "季度計畫",
         localVal: fmt(lAP, "actionPlans"),
         remoteVal: "(已清空)",
+        rawLocalVal: lAP,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lAP) && !isEmpty(rAP)) {
       diffs.push({
@@ -226,6 +245,8 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         label: "季度計畫",
         localVal: fmt(lAP, "actionPlans"),
         remoteVal: fmt(rAP, "actionPlans"),
+        rawLocalVal: lAP,
+        rawRemoteVal: rAP,
       });
     }
   }
@@ -236,7 +257,6 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
 
 function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
   const diffs: FieldDiff[] = [];
-  // title
   if (lg.title !== rg.title) {
     if (isEmpty(lg.title) && wasClearedBy(lg, "title") && !isEmpty(rg.title)) {
       diffs.push({
@@ -244,6 +264,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "目標名稱",
         localVal: "(已清空)",
         remoteVal: fmt(rg.title),
+        rawLocalVal: null,
+        rawRemoteVal: rg.title,
       });
     } else if (
       isEmpty(rg.title) &&
@@ -255,6 +277,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "目標名稱",
         localVal: fmt(lg.title),
         remoteVal: "(已清空)",
+        rawLocalVal: lg.title,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lg.title) && !isEmpty(rg.title)) {
       diffs.push({
@@ -262,10 +286,11 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "目標名稱",
         localVal: fmt(lg.title),
         remoteVal: fmt(rg.title),
+        rawLocalVal: lg.title,
+        rawRemoteVal: rg.title,
       });
     }
   }
-  // fullText
   if ((lg.fullText ?? "") !== (rg.fullText ?? "")) {
     if (
       isEmpty(lg.fullText) &&
@@ -277,6 +302,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "目標說明",
         localVal: "(已清空)",
         remoteVal: fmt(rg.fullText),
+        rawLocalVal: null,
+        rawRemoteVal: rg.fullText,
       });
     } else if (
       isEmpty(rg.fullText) &&
@@ -288,6 +315,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "目標說明",
         localVal: fmt(lg.fullText),
         remoteVal: "(已清空)",
+        rawLocalVal: lg.fullText,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lg.fullText) && !isEmpty(rg.fullText)) {
       diffs.push({
@@ -295,10 +324,11 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "目標說明",
         localVal: fmt(lg.fullText),
         remoteVal: fmt(rg.fullText),
+        rawLocalVal: lg.fullText,
+        rawRemoteVal: rg.fullText,
       });
     }
   }
-  // goalKpis
   const lgKpis = lg.goalKpis ?? [];
   const rgKpis = rg.goalKpis ?? [];
   if (JSON.stringify(lgKpis) !== JSON.stringify(rgKpis)) {
@@ -308,6 +338,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "KPI 設計",
         localVal: "(已清空)",
         remoteVal: `${rgKpis.length} 層 KPI`,
+        rawLocalVal: null,
+        rawRemoteVal: rgKpis,
       });
     } else if (
       isEmpty(rgKpis) &&
@@ -319,6 +351,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "KPI 設計",
         localVal: `${lgKpis.length} 層 KPI`,
         remoteVal: "(已清空)",
+        rawLocalVal: lgKpis,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lgKpis) && !isEmpty(rgKpis)) {
       diffs.push({
@@ -326,6 +360,8 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
         label: "KPI 設計",
         localVal: `${lgKpis.length} 層 KPI`,
         remoteVal: `${rgKpis.length} 層 KPI`,
+        rawLocalVal: lgKpis,
+        rawRemoteVal: rgKpis,
       });
     }
   }
@@ -334,7 +370,7 @@ function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
 
 /**
  * 比對兩個 DeptActivity 的關鍵欄位差異，供 detectConflicts 使用。
- * Activity 目前無 clearedFields tombstone，僅做值比對。
+ * 支援 clearedFields tombstone：一方刻意清空而另一方有值時，視為衝突。
  */
 function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
   const diffs: FieldDiff[] = [];
@@ -356,16 +392,37 @@ function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
     localVal: string | undefined,
     remoteVal: string | undefined,
   ) => {
-    if (
-      (localVal ?? "") !== (remoteVal ?? "") &&
-      !isEmpty(localVal) &&
-      !isEmpty(remoteVal)
+    if ((localVal ?? "") === (remoteVal ?? "")) return;
+    if (isEmpty(localVal) && wasClearedBy(la, field) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: "(已清空)",
+        remoteVal: fmt(remoteVal),
+        rawLocalVal: null,
+        rawRemoteVal: remoteVal,
+      });
+    } else if (
+      isEmpty(remoteVal) &&
+      wasClearedBy(ra, field) &&
+      !isEmpty(localVal)
     ) {
       diffs.push({
         field,
         label,
         localVal: fmt(localVal),
+        remoteVal: "(已清空)",
+        rawLocalVal: localVal,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal),
         remoteVal: fmt(remoteVal),
+        rawLocalVal: localVal,
+        rawRemoteVal: remoteVal,
       });
     }
   };
@@ -376,12 +433,37 @@ function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
     localVal: number | undefined,
     remoteVal: number | undefined,
   ) => {
-    if (localVal !== remoteVal && !isEmpty(localVal) && !isEmpty(remoteVal)) {
+    if (localVal === remoteVal) return;
+    if (isEmpty(localVal) && wasClearedBy(la, field) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: "(已清空)",
+        remoteVal: String(remoteVal),
+        rawLocalVal: null,
+        rawRemoteVal: remoteVal,
+      });
+    } else if (
+      isEmpty(remoteVal) &&
+      wasClearedBy(ra, field) &&
+      !isEmpty(localVal)
+    ) {
+      diffs.push({
+        field,
+        label,
+        localVal: String(localVal),
+        remoteVal: "(已清空)",
+        rawLocalVal: localVal,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
       diffs.push({
         field,
         label,
         localVal: String(localVal),
         remoteVal: String(remoteVal),
+        rawLocalVal: localVal,
+        rawRemoteVal: remoteVal,
       });
     }
   };
@@ -392,25 +474,44 @@ function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
     localVal: unknown,
     remoteVal: unknown,
   ) => {
-    if (
-      JSON.stringify(localVal) !== JSON.stringify(remoteVal) &&
-      !isEmpty(localVal) &&
-      !isEmpty(remoteVal)
+    if (JSON.stringify(localVal) === JSON.stringify(remoteVal)) return;
+    if (isEmpty(localVal) && wasClearedBy(la, field) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: "(已清空)",
+        remoteVal: fmt(remoteVal, field),
+        rawLocalVal: null,
+        rawRemoteVal: remoteVal,
+      });
+    } else if (
+      isEmpty(remoteVal) &&
+      wasClearedBy(ra, field) &&
+      !isEmpty(localVal)
     ) {
       diffs.push({
         field,
         label,
         localVal: fmt(localVal, field),
+        remoteVal: "(已清空)",
+        rawLocalVal: localVal,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal, field),
         remoteVal: fmt(remoteVal, field),
+        rawLocalVal: localVal,
+        rawRemoteVal: remoteVal,
       });
     }
   };
 
   pushStringDiff("rawText", "活動名稱", la.rawText, ra.rawText);
   pushStringDiff("status", "狀態", la.status, ra.status);
-  const lOwners = la.owners ?? [];
-  const rOwners = ra.owners ?? [];
-  pushJsonDiff("owners", "負責人", lOwners, rOwners);
+  pushJsonDiff("owners", "負責人", la.owners ?? [], ra.owners ?? []);
   pushStringDiff("startDate", "開始日期", la.startDate, ra.startDate);
   pushStringDiff("endDate", "結束日期", la.endDate, ra.endDate);
   pushNumberDiff("budget", "預算", la.budget, ra.budget);
@@ -471,6 +572,8 @@ function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
       label: "KPI",
       localVal: summarizeKpis(lKpis),
       remoteVal: summarizeKpis(rKpis),
+      rawLocalVal: lKpis,
+      rawRemoteVal: rKpis,
     });
   }
   return diffs;
@@ -564,7 +667,6 @@ function fieldMergeActivity(
 
 function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
   const diffs: FieldDiff[] = [];
-  // name
   if (lt.name !== rt.name) {
     if (isEmpty(lt.name) && wasClearedBy(lt, "name") && !isEmpty(rt.name)) {
       diffs.push({
@@ -572,6 +674,8 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
         label: "團隊名稱",
         localVal: "(已清空)",
         remoteVal: fmt(rt.name),
+        rawLocalVal: null,
+        rawRemoteVal: rt.name,
       });
     } else if (
       isEmpty(rt.name) &&
@@ -583,6 +687,8 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
         label: "團隊名稱",
         localVal: fmt(lt.name),
         remoteVal: "(已清空)",
+        rawLocalVal: lt.name,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lt.name) && !isEmpty(rt.name)) {
       diffs.push({
@@ -590,10 +696,11 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
         label: "團隊名稱",
         localVal: fmt(lt.name),
         remoteVal: fmt(rt.name),
+        rawLocalVal: lt.name,
+        rawRemoteVal: rt.name,
       });
     }
   }
-  // members
   const lMembers = lt.members ?? [];
   const rMembers = rt.members ?? [];
   if (JSON.stringify(lMembers) !== JSON.stringify(rMembers)) {
@@ -607,6 +714,8 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
         label: "成員",
         localVal: "(已清空)",
         remoteVal: fmt(rMembers, "members"),
+        rawLocalVal: null,
+        rawRemoteVal: rMembers,
       });
     } else if (
       isEmpty(rMembers) &&
@@ -618,6 +727,8 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
         label: "成員",
         localVal: fmt(lMembers, "members"),
         remoteVal: "(已清空)",
+        rawLocalVal: lMembers,
+        rawRemoteVal: null,
       });
     } else if (!isEmpty(lMembers) && !isEmpty(rMembers)) {
       diffs.push({
@@ -625,6 +736,8 @@ function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
         label: "成員",
         localVal: fmt(lMembers, "members"),
         remoteVal: fmt(rMembers, "members"),
+        rawLocalVal: lMembers,
+        rawRemoteVal: rMembers,
       });
     }
   }
