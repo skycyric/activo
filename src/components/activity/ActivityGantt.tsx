@@ -73,10 +73,12 @@ export default function ActivityGantt({
     };
   }, [datedActs]);
 
-  // Choose tick scale: day / week / month
+  // Choose tick scale: day / week / biweek / month
+  // threshold tuned so tick labels never overlap at min 55px/tick spacing
   const { tickDays, tickFormat } = useMemo(() => {
-    if (totalDays <= 60) return { tickDays: 1, tickFormat: "d" };
-    if (totalDays <= 180) return { tickDays: 7, tickFormat: "w" };
+    if (totalDays <= 14) return { tickDays: 1, tickFormat: "d" };
+    if (totalDays <= 90) return { tickDays: 7, tickFormat: "w" };
+    if (totalDays <= 180) return { tickDays: 14, tickFormat: "w" };
     return { tickDays: 30, tickFormat: "m" };
   }, [totalDays]);
 
@@ -160,7 +162,12 @@ export default function ActivityGantt({
 
   // Chart width is determined by container (responsive); use percentage-based px formula
   // We'll use a fixed px-per-day based on a 900px target chart width
-  const CHART_W = Math.max(totalDays * 14, 600); // at least 14px per day
+  // Minimum 14px/day keeps bars readable; minimum 55px/tick prevents label overlap
+  const CHART_W = Math.max(
+    totalDays * 14,
+    Math.ceil(totalDays / tickDays) * 55,
+    600,
+  );
   const pxPerDay = CHART_W / totalDays;
   const totalH = datedActs.length * ROW_H;
 

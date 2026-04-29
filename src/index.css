@@ -6840,6 +6840,7 @@ body,
 .activity-view-area {
   flex: 1;
   overflow: auto;
+  overflow-x: hidden;
   padding: 16px 28px 32px;
   min-height: 0;
   min-width: 0;
@@ -12507,27 +12508,6 @@ body,
   text-overflow: ellipsis;
   max-width: 100%;
   font-size: 10px;
-}
-/* event-range items */
-.act-cal-item-event {
-  background: color-mix(in srgb, var(--brand) 8%, transparent);
-  border-left: 2px solid var(--brand);
-  padding-left: 2px;
-}
-.act-cal-item-event:hover {
-  background: color-mix(in srgb, var(--brand) 18%, transparent);
-}
-.act-cal-item-event.event-start {
-  border-radius: 3px 3px 0 0;
-}
-.act-cal-item-event.event-end {
-  border-radius: 0 0 3px 3px;
-}
-.act-cal-event-mark {
-  font-size: 9px;
-  color: var(--brand);
-  margin-right: 1px;
-  flex-shrink: 0;
 }
 .act-cal-legend {
   display: flex;

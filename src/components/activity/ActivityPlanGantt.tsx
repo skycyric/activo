@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ActivityPlanItem } from "../../schemas/ogsm";
 import type { ActivityWithContext } from "../ActivityPage";
+import { getPlanItemWarning, isLateCompletion } from "../../utils/planWarnings";
 
 interface Props {
   activities: ActivityWithContext[];
   onJumpToActivity: (deptId: string, activityId: string) => void;
+  warnDaysBefore?: number;
 }
 
 const ROW_H = 36;
@@ -23,11 +25,6 @@ function diffDays(a: Date, b: Date): number {
   return Math.round((a.getTime() - b.getTime()) / 86_400_000);
 }
 
-function isOverdue(item: ActivityPlanItem): boolean {
-  if (!item.plannedEndDate || item.completed) return false;
-  return item.plannedEndDate < new Date().toISOString().slice(0, 10);
-}
-
 type Row =
   | {
       kind: "group";
@@ -44,6 +41,7 @@ type Row =
 export default function ActivityPlanGantt({
   activities,
   onJumpToActivity,
+  warnDaysBefore = 7,
 }: Props) {
   const activitiesWithPlans = useMemo(
     () =>
@@ -235,7 +233,12 @@ export default function ActivityPlanGantt({
     );
   }
 
-  const CHART_W = Math.max(totalDays * 12, 680);
+  // Minimum 12px/day keeps milestones readable; minimum 55px/tick prevents label overlap
+  const CHART_W = Math.max(
+    totalDays * 12,
+    Math.ceil(totalDays / tickDays) * 55,
+    680,
+  );
   const pxPerDay = CHART_W / totalDays;
   const totalH = rows.length * ROW_H;
   const dayToX = (dayOffset: number) => dayOffset * pxPerDay;
@@ -254,7 +257,9 @@ export default function ActivityPlanGantt({
           className="gantt-labels plan-gantt-labels"
           style={{ width: LABEL_W }}
         >
-          <div className="gantt-label-hdr">活動 / 行動計畫</div>
+          <div className="gantt-label-hdr" style={{ height: ROW_H }}>
+            活動 / 行動計畫
+          </div>
           {rows.map((row) => {
             if (row.kind === "group") {
               const itemCount = row.activity.planItems?.length ?? 0;
@@ -291,7 +296,22 @@ export default function ActivityPlanGantt({
               );
             }
 
-            const overdue = isOverdue(row.item);
+            const warn = getPlanItemWarning(row.item, warnDaysBefore);
+            const late = isLateCompletion(row.item);
+            const stateClass = row.item.completed
+              ? late
+                ? "late"
+                : "done"
+              : (warn ?? "");
+            const stateLabel = row.item.completed
+              ? late
+                ? "延遲完成"
+                : "已完成"
+              : warn === "overdue"
+                ? "逾期"
+                : warn === "warning"
+                  ? "即將到期"
+                  : "進行中";
             return (
               <div
                 key={row.key}
@@ -305,19 +325,16 @@ export default function ActivityPlanGantt({
                   {row.item.description || "（未命名項目）"}
                 </span>
                 <span
-                  className={`plan-gantt-item-state${row.item.completed ? " done" : overdue ? " overdue" : ""}`}
+                  className={`plan-gantt-item-state${stateClass ? " " + stateClass : ""}`}
                 >
-                  {row.item.completed ? "已完成" : overdue ? "逾期" : "進行中"}
+                  {stateLabel}
                 </span>
               </div>
             );
           })}
         </div>
 
-        <div
-          className="gantt-chart-area"
-          style={{ overflowX: "auto", flex: 1 }}
-        >
+        <div className="gantt-chart-area" style={{ flex: 1, minWidth: 0 }}>
           <div style={{ width: CHART_W, position: "relative" }}>
             <div
               className="gantt-tick-hdr"
@@ -359,11 +376,17 @@ export default function ActivityPlanGantt({
                 const x = dayToX(
                   diffDays(parseDate(row.item.plannedEndDate), minDate),
                 );
-                const overdue = isOverdue(row.item);
+                const warn = getPlanItemWarning(row.item, warnDaysBefore);
+                const late = isLateCompletion(row.item);
+                const msClass = row.item.completed
+                  ? late
+                    ? "late"
+                    : "done"
+                  : (warn ?? "");
                 return (
                   <div
                     key={row.key}
-                    className={`plan-gantt-milestone${row.item.completed ? " done" : overdue ? " overdue" : ""}`}
+                    className={`plan-gantt-milestone${msClass ? " " + msClass : ""}`}
                     style={{ left: x, top: top + ROW_H / 2 }}
                     title={`${row.item.description || "（未命名項目）"}\n預計完成: ${row.item.plannedEndDate}${row.item.actualEndDate ? `\n實際完成: ${row.item.actualEndDate}` : ""}`}
                   />
