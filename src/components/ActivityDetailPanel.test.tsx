@@ -299,6 +299,55 @@ describe("ActivityDetailPanel close guard", () => {
     expect(screen.queryByDisplayValue("88")).not.toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
+
+  test("template KPI with fixed baseline should remain editable from panel target input", async () => {
+    const user = userEvent.setup();
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          activities: [
+            {
+              id: "source-act-2",
+              rawText: "既有活動(含固定基底)",
+              status: "in-progress",
+              startDate: "2026-01-01",
+              endDate: "2026-03-31",
+              kpis: [
+                {
+                  id: "source-kpi-2",
+                  label: "固定目標模板",
+                  target: 120,
+                  actual: 88,
+                  unit: "%",
+                  formulaType: "direct_rate",
+                  baseline: { type: "fixed", value: 120 },
+                  achievementRate: 73.3,
+                  confirmedAt: "2026-04-01T00:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({ forcedTab: "kpi", workspace });
+
+    await user.click(screen.getByRole("button", { name: "＋ 新增 KPI" }));
+    await user.click(screen.getByRole("button", { name: /固定目標模板/ }));
+
+    const panelTargetInput = screen.getByPlaceholderText("目標值");
+    expect(panelTargetInput).toHaveValue(120);
+
+    await user.clear(panelTargetInput);
+    await user.type(panelTargetInput, "150");
+    expect(panelTargetInput).toHaveValue(150);
+
+    await user.click(screen.getByTitle("編輯 KPI 設定：固定目標模板"));
+    expect(screen.getByPlaceholderText("目標值，例：100")).toHaveValue(150);
+  });
 });
 
 describe("ActivityDetailPanel forcedTab", () => {

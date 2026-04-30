@@ -768,9 +768,12 @@ export function detectConflicts(
         const rg = remoteGoalMap.get(lg.id);
         if (!rg || deleted.has(rg.id)) continue;
 
-        // 無論 timestamp 是否不同（或缺少），只要內容有差異就列入衝突；
-        // updatedAt 僅影響 LWW 方向，不用來 gate 偵測。
-        {
+        // LWW gate：若兩側都有 updatedAt 且時間戳不同，代表只有一方在最後寫入後編輯過；
+        // mergeWorkspaces 的 newerOf() 可安全自動解決，不需打擾使用者。
+        // 只有「時間戳相同但內容不同」才是真正的並發衝突，需拋出給使用者裁決。
+        const goalTimestampsDiffer =
+          lg.updatedAt && rg.updatedAt && lg.updatedAt !== rg.updatedAt;
+        if (!goalTimestampsDiffer) {
           // goalDiffs 已包含 title / fullText / goalKpis（含 tombstone 判斷）
           const diffs = goalDiffs(lg, rg);
           if (diffs.length > 0) {
@@ -792,7 +795,9 @@ export function detectConflicts(
           if (deleted.has(ls.id)) continue;
           const rs = remoteStratMap.get(ls.id);
           if (!rs || deleted.has(rs.id)) continue;
-          {
+          const stratTimestampsDiffer =
+            ls.updatedAt && rs.updatedAt && ls.updatedAt !== rs.updatedAt;
+          if (!stratTimestampsDiffer) {
             const diffs = strategyDiffs(ls, rs);
             if (diffs.length > 0) {
               entries.push({
@@ -817,7 +822,9 @@ export function detectConflicts(
     if (deleted.has(lt.id)) continue;
     const rt = remoteTeamMap.get(lt.id);
     if (!rt || deleted.has(rt.id)) continue;
-    {
+    const teamTimestampsDiffer =
+      lt.updatedAt && rt.updatedAt && lt.updatedAt !== rt.updatedAt;
+    if (!teamTimestampsDiffer) {
       const diffs = teamDiffs(lt, rt);
       if (diffs.length > 0) {
         entries.push({
@@ -845,18 +852,22 @@ export function detectConflicts(
       if (deleted.has(la.id)) continue;
       const ra = remoteActivityMap.get(la.id);
       if (!ra || deleted.has(ra.id)) continue;
-      const diffs = activityDiffs(la, ra);
-      if (diffs.length > 0) {
-        entries.push({
-          id: la.id,
-          entityType: "activity",
-          entityLabel: la.rawText ?? la.id,
-          localUpdatedAt: la.updatedAt,
-          remoteUpdatedAt: ra.updatedAt,
-          fieldDiffs: diffs,
-          localEntity: la,
-          remoteEntity: ra,
-        });
+      const actTimestampsDiffer =
+        la.updatedAt && ra.updatedAt && la.updatedAt !== ra.updatedAt;
+      if (!actTimestampsDiffer) {
+        const diffs = activityDiffs(la, ra);
+        if (diffs.length > 0) {
+          entries.push({
+            id: la.id,
+            entityType: "activity",
+            entityLabel: la.rawText ?? la.id,
+            localUpdatedAt: la.updatedAt,
+            remoteUpdatedAt: ra.updatedAt,
+            fieldDiffs: diffs,
+            localEntity: la,
+            remoteEntity: ra,
+          });
+        }
       }
     }
   }

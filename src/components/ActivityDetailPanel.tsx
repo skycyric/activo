@@ -1434,6 +1434,17 @@ function KpiRow({
       : null;
   const targetPctTargetPercent =
     formulaType === "target_pct" ? (kpi.targetRate ?? null) : null;
+  const growthActualPercent =
+    formulaType === "growth" &&
+    kpi.actual !== null &&
+    kpi.actual !== undefined &&
+    baseline !== null &&
+    baseline !== undefined &&
+    baseline !== 0
+      ? Math.round(((kpi.actual - baseline) / baseline) * 10000) / 100
+      : null;
+  const growthTargetPercent =
+    formulaType === "growth" ? (kpi.targetGrowthRate ?? null) : null;
   const achPct = achieved !== null ? `${achieved.toFixed(1)}%` : "—";
   const achColor =
     achieved === null
@@ -1446,11 +1457,19 @@ function KpiRow({
               ? "var(--yellow)"
               : "var(--red)"
           : "var(--text3)"
-        : achieved >= 100
-          ? "var(--green)"
-          : achieved >= 70
-            ? "var(--yellow)"
-            : "var(--red)";
+        : formulaType === "growth" &&
+            growthActualPercent !== null &&
+            growthTargetPercent !== null
+          ? growthActualPercent >= growthTargetPercent
+            ? "var(--green)"
+            : growthActualPercent >= growthTargetPercent - 5
+              ? "var(--yellow)"
+              : "var(--red)"
+          : achieved >= 100
+            ? "var(--green)"
+            : achieved >= 70
+              ? "var(--yellow)"
+              : "var(--red)";
   const formulaLabel =
     formulaType === "growth"
       ? "成長率"
@@ -1481,7 +1500,11 @@ function KpiRow({
             ? (baseline ?? kpi.target)
             : kpi.target;
   const achLabel =
-    formulaType === "target_pct" ? "實際達成% / 目標%" : "達成率";
+    formulaType === "target_pct"
+      ? "實際達成% / 目標%"
+      : formulaType === "growth"
+        ? "實際成長% / 目標成長%"
+        : "達成率";
   const achText =
     formulaType === "target_pct"
       ? `${
@@ -1493,7 +1516,17 @@ function KpiRow({
             ? `${targetPctTargetPercent.toFixed(1)}%`
             : "—"
         }`
-      : achPct;
+      : formulaType === "growth"
+        ? `${
+            growthActualPercent !== null
+              ? `${growthActualPercent.toFixed(1)}%`
+              : "—"
+          } / ${
+            growthTargetPercent !== null
+              ? `${growthTargetPercent.toFixed(1)}%`
+              : "—"
+          }`
+        : achPct;
 
   return (
     <div className="adp-kpi-row">
@@ -1569,6 +1602,18 @@ function KpiRow({
                     }
                     if (formulaType === "target_pct") {
                       onPatch({ targetRate: value });
+                      return;
+                    }
+                    if (formulaType === "direct_rate") {
+                      if (kpi.baseline?.type === "fixed") {
+                        onPatch({
+                          target: value,
+                          baseline:
+                            value === null ? null : { type: "fixed", value },
+                        });
+                        return;
+                      }
+                      onPatch({ target: value });
                       return;
                     }
                     onPatch({ target: value });
