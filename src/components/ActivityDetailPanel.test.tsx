@@ -373,6 +373,43 @@ describe("ActivityDetailPanel forcedTab", () => {
     expect(screen.getByText("跨季項目")).toBeInTheDocument();
   });
 
+  test("unchecking completed should keep actual end date", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+
+    renderPanel({
+      forcedTab: "plans",
+      onUpdate,
+      activity: {
+        ...ACTIVITY,
+        planItems: [
+          {
+            id: "plan-keep-date",
+            description: "保留日期測試",
+            quarter: "Q1",
+            completed: true,
+            plannedEndDate: "2026-03-20",
+            actualEndDate: "2026-03-25",
+            dependsOnIds: [],
+            linkedMeasureId: null,
+          },
+        ],
+      },
+    });
+
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox).toBeChecked();
+    expect(screen.getByDisplayValue("2026-03-25")).toBeInTheDocument();
+
+    await user.click(checkbox);
+    await user.click(screen.getByRole("button", { name: "儲存" }));
+
+    expect(onUpdate).toHaveBeenCalledOnce();
+    const savedActivity = onUpdate.mock.calls[0][1] as DeptActivity;
+    expect(savedActivity.planItems?.[0]?.completed).toBe(false);
+    expect(savedActivity.planItems?.[0]?.actualEndDate).toBe("2026-03-25");
+  });
+
   test("add plan item can apply template and should clear completion state and actual end date", async () => {
     const user = userEvent.setup();
     const workspace: WorkspaceData = {

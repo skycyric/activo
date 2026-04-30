@@ -263,6 +263,20 @@ export default function ActivityPage({
     [confirmSwitchAway, isDetailControlled, onSelectedActivityIdChange],
   );
 
+  const handleAddActivity = useCallback(
+    (deptId: string, activity: DeptActivity) => {
+      onAddActivity(deptId, activity);
+      panelDirtyRef.current = false;
+      if (!isDetailControlled) {
+        setLocalSelectedActivityId(activity.id);
+        setLocalExpandedId(activity.id);
+      }
+      onSelectedActivityIdChange?.(activity.id);
+      setShowAddModal(false);
+    },
+    [isDetailControlled, onAddActivity, onSelectedActivityIdChange],
+  );
+
   // Flatten all activities from all depts.
   // Compatibility contract: prefer canonical dept.activities, and only read
   // legacy strategy.measures when a department has not been materialized into
@@ -793,7 +807,7 @@ export default function ActivityPage({
         <ActivityAddModal
           workspace={workspace}
           fixedDeptId={activeDeptId}
-          onAdd={onAddActivity}
+          onAdd={handleAddActivity}
           onClose={() => setShowAddModal(false)}
         />
       )}

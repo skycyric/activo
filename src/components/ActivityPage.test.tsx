@@ -63,7 +63,31 @@ vi.mock("./activity/ActivityCalendar", () => ({
   default: () => <div data-testid="activity-calendar" />,
 }));
 vi.mock("./activity/ActivityAddModal", () => ({
-  default: () => <div data-testid="activity-add-modal" />,
+  default: ({
+    onAdd,
+    onClose,
+  }: {
+    onAdd: (deptId: string, activity: DeptActivity) => void;
+    onClose: () => void;
+  }) => (
+    <div data-testid="activity-add-modal">
+      <button
+        onClick={() => {
+          onAdd("dept-1", {
+            id: "act-new",
+            rawText: "新活動",
+            kpis: [],
+            status: "not-started",
+            startDate: "2026-02-01",
+            endDate: "2026-02-28",
+          });
+          onClose();
+        }}
+      >
+        確認新增
+      </button>
+    </div>
+  ),
 }));
 vi.mock("./ActivityDetailPanel", () => ({
   default: ({
@@ -159,6 +183,32 @@ describe("ActivityPage detail panel close", () => {
     );
 
     expect(await screen.findByTestId("activity-add-modal")).toBeInTheDocument();
+  });
+
+  test("adding activity from overview should immediately emit selection for new activity", async () => {
+    const onSelectedActivityIdChange = vi.fn();
+    const onAddActivity = vi.fn();
+
+    render(
+      <ActivityPage
+        workspace={WORKSPACE}
+        activeDeptId="dept-1"
+        onUpdateActivity={() => {}}
+        onDeleteActivity={() => {}}
+        onAddActivity={onAddActivity}
+        onJumpToActivity={() => {}}
+        initialSelectedActivityId={null}
+        onSelectedActivityIdChange={onSelectedActivityIdChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "＋ 新增活動" }));
+    expect(await screen.findByTestId("activity-add-modal")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "確認新增" }));
+
+    expect(onAddActivity).toHaveBeenCalledOnce();
+    expect(onSelectedActivityIdChange).toHaveBeenCalledWith("act-new");
   });
 
   test("tour activity-detail-kpi step should auto-open first activity and force kpi tab", async () => {

@@ -2126,9 +2126,13 @@ function PlanItemRow({
             const checked = e.target.checked;
             onPatch({
               completed: checked,
-              actualEndDate: checked
-                ? item.actualEndDate || new Date().toISOString().slice(0, 10)
-                : undefined,
+              ...(checked
+                ? {
+                    actualEndDate:
+                      item.actualEndDate ||
+                      new Date().toISOString().slice(0, 10),
+                  }
+                : {}),
             });
           }}
         />
