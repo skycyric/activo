@@ -1197,7 +1197,7 @@
                 "strategies": [
                   {
                     "id": "STR-2026-H1-DEPT-G2-S01",
-                    "title": "S1: 透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
+                    "title": "透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
                     "rawText": "S1: 透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
                     "measures": [],
                     "q1Text": "1.1/10-2/24春節檔期\n   12/10發出需求\n   12/15回收需求\n   01/03定案 \n   02/24結案\n\n2.2/25-3/31ESG檔期\n  12/11發出需求\n  12/15回收需求\n  12/31定案\n  03/31結案",
@@ -1223,11 +1223,12 @@
                     "manualRate": null,
                     "status": "not-started",
                     "owners": [],
-                    "bizKey": "STR-2026-H1-DEPT-G2-S01"
+                    "bizKey": "STR-2026-H1-DEPT-G2-S01",
+                    "updatedAt": "2026-04-30T03:07:29.246Z"
                   },
                   {
                     "id": "STR-2026-H1-DEPT-G2-S02",
-                    "title": "S2: 透過會員旅程腳本提升會員交易率。",
+                    "title": "透過會員旅程腳本提升會員交易率。",
                     "rawText": "S2: 透過會員旅程腳本提升會員交易率。",
                     "measures": [],
                     "q1Text": "1月 (首購客)二次消費會員旅程\n1/15 活動推播 \n2/13 2/26 昇議書完成\n2/6 活動推播\n2月(LV1轉活躍)喚起即將沉睡會員旅程\n2/9 確認受眾\n2/13 2/26 昇議書完成\n2/11 製作勿申請\n2/25圖素完成\n2/26 FAXMEMO完成\n2/26 推播設定\n2/27 活動開始\n3/31活動結束\n3月(首購客)二次消費會員旅程\n3/1 活動推播\n3/20 置換下一季圖素 & 設定\n3/25 活動推播",
@@ -1253,11 +1254,12 @@
                     "manualRate": null,
                     "status": "not-started",
                     "owners": [],
-                    "bizKey": "STR-2026-H1-DEPT-G2-S02"
+                    "bizKey": "STR-2026-H1-DEPT-G2-S02",
+                    "updatedAt": "2026-04-30T03:07:32.806Z"
                   },
                   {
                     "id": "STR-2026-H1-DEPT-G2-S03",
-                    "title": "S3: 透過採購的廠商品牌資源，創造體驗活動場景，提升交易接觸點。",
+                    "title": "透過採購的廠商品牌資源，創造體驗活動場景，提升交易接觸點。",
                     "rawText": "S3: 透過採購的廠商品牌資源，創造體驗活動場景，提升交易接觸點。",
                     "measures": [],
                     "q1Text": "採一 -Chinny\n       ◆2/9-2/14 Burberry 咖啡車_CKS \n         -3/6 完成結案\n       ◆2/10~2/19 Coach CNY活動_CKS \n         -3/9 完成結案\n       ◆2/11~3/1 Luxottica CNY活動_CKS\n         -3/13 完成結案\n\n    採二 -心婕 \n       ◆3/7~4/7 ESG話題操作導客活動_AB\n         -2/24確認活動日期、活動宣傳定案\n         -3/7活動開跑\n         -4/21完成結案\n\n    採三-Grace \n       ◆AB_品酒會\n         -2/13 H1 主題&日期定案，賣場業績目標訂定\n         -2/26 3/6上呈 Q2 活動申議書\n         -3/22【微醺畫室-匠心桶藝】麥卡倫品酒會\n         -3/27 完成麥卡倫品酒會結案\n           \n       ◆1/30~2/1 AB_年貨大街酒區集客活動\n         -2/11 完成結案\n\n       ◆3/27~3/29 AB_母親節預購會酒區集客活動\n         -2/13 2/24 活動內容定案，與賣場function企劃確認申議書上呈內容\n         -2/26 完成調酒師聯繫及贈品採購 (改氛圍活動)\n         -4/10 完成結案\n\n    珠採-Chinny\n      ◆3/1 3/8 珠寶沙龍VIP活動\n        -2/6 確認活動流程/客人dress code主題/珠寶商品\n        -2/13 客人紀念品及數位框 定案及採購\n        -2/23 活動現場佈置及茶點訂購狀況確認\n        -3/20 完成結案",
@@ -1311,7 +1313,8 @@
                     "manualRate": null,
                     "status": "not-started",
                     "owners": [],
-                    "bizKey": "STR-2026-H1-DEPT-G2-S03"
+                    "bizKey": "STR-2026-H1-DEPT-G2-S03",
+                    "updatedAt": "2026-04-30T03:07:36.238Z"
                   }
                 ],
                 "completionRate": 0,
@@ -1545,8 +1548,8 @@
           ],
           "quarter": "Q1",
           "owner": "子硯",
-          "updatedAt": "2026-04-29T07:10:34.713Z",
-          "status": "in-progress",
+          "updatedAt": "2026-04-30T09:02:52.570Z",
+          "status": "completed",
           "startDate": "2026-03-02",
           "endDate": "2026-03-22",
           "dashboardLinks": [
@@ -1572,7 +1575,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A001-Q1-I01",
               "actualEndDate": "2026-02-09",
-              "plannedEndDate": "2026-02-09"
+              "plannedEndDate": "2026-02-09",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I02",
@@ -1583,7 +1587,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A001-Q1-I02",
               "actualEndDate": "2026-02-24",
-              "plannedEndDate": "2026-02-11"
+              "plannedEndDate": "2026-02-11",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I03",
@@ -1600,7 +1605,8 @@
               ],
               "eventStartDate": "2026-03-02",
               "eventEndDate": "2026-03-13",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I04",
@@ -1618,7 +1624,8 @@
               ],
               "eventStartDate": "2026-03-11",
               "eventEndDate": "2026-03-20",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I05",
@@ -1632,7 +1639,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I02"
               ],
-              "plannedEndDate": "2026-03-13"
+              "plannedEndDate": "2026-03-13",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I06",
@@ -1648,7 +1656,8 @@
                 "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I01",
                 "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I02"
               ],
-              "actualEndDate": "2026-03-18"
+              "actualEndDate": "2026-03-18",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A001-Q1-I07",
@@ -1666,7 +1675,8 @@
               ],
               "showInCalendar": true,
               "eventStartDate": "2026-03-21",
-              "eventEndDate": "2026-03-22"
+              "eventEndDate": "2026-03-22",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojpsy1c_00j_691cbf5d",
@@ -1676,7 +1686,8 @@
               "plannedEndDate": "2026-04-12",
               "actualEndDate": "2026-04-12",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojptglk_00k_715e62eb",
@@ -1687,7 +1698,8 @@
               "dependsOnIds": [
                 "id_mojpsy1c_00j_691cbf5d"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -1716,7 +1728,7 @@
               "target": 2000,
               "actual": 543,
               "unit": "%",
-              "achievementRate": 27.15
+              "achievementRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S01-A002-K02",
@@ -1724,7 +1736,7 @@
               "target": 1100,
               "actual": 309,
               "unit": "%",
-              "achievementRate": 28.09
+              "achievementRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S01-A002-K03",
@@ -1732,7 +1744,7 @@
               "target": 200,
               "actual": 14,
               "unit": "%",
-              "achievementRate": 7
+              "achievementRate": null
             }
           ],
           "quarter": "Q1",
@@ -1764,7 +1776,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A002-Q1-I01",
               "plannedEndDate": "2026-02-09",
-              "actualEndDate": "2026-02-09"
+              "actualEndDate": "2026-02-09",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I02",
@@ -1778,7 +1791,8 @@
               "actualEndDate": "2026-03-06",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I03",
@@ -1792,7 +1806,8 @@
               "actualEndDate": "2026-03-31",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A002-Q2-I01",
@@ -1810,7 +1825,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I01",
                 "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I02"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A002-Q2-I02",
@@ -1828,7 +1844,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I01",
                 "PIT-2026-H1-DEPT-G1-S01-A002-Q1-I03"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojputkp_00l_9ba7e070",
@@ -1837,7 +1854,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-07",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -1866,7 +1884,7 @@
               "target": 2500,
               "actual": 2680,
               "unit": "人",
-              "achievementRate": 107.2,
+              "achievementRate": null,
               "name": "觸及",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -1883,7 +1901,7 @@
               "target": 1375,
               "actual": 1781,
               "unit": "人",
-              "achievementRate": 129.53,
+              "achievementRate": null,
               "name": "綁定",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -1900,7 +1918,7 @@
               "target": 250,
               "actual": 24,
               "unit": "人",
-              "achievementRate": 9.6,
+              "achievementRate": null,
               "name": "交易",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -1941,7 +1959,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A003-Q1-I01",
               "plannedEndDate": "2026-02-23",
-              "actualEndDate": "2026-02-23"
+              "actualEndDate": "2026-02-23",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I02",
@@ -1955,7 +1974,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I01"
               ],
-              "actualEndDate": "2026-03-10"
+              "actualEndDate": "2026-03-10",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I03",
@@ -1969,7 +1989,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I02"
               ],
-              "actualEndDate": "2026-03-11"
+              "actualEndDate": "2026-03-11",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I04",
@@ -1983,7 +2004,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I02"
               ],
-              "actualEndDate": "2026-03-11"
+              "actualEndDate": "2026-03-11",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I05",
@@ -1997,7 +2019,8 @@
               "actualEndDate": "2026-03-13",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I03"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojpldjl_00f_b8d7fdcd",
@@ -2009,7 +2032,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A003-Q1-I05"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2087,7 +2111,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-22",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojprmzr_00h_a6d8b95e",
@@ -2096,7 +2121,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-29",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojprz8f_00i_a00a9b13",
@@ -2104,7 +2130,8 @@
               "quarter": "Q2",
               "completed": false,
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2202,7 +2229,7 @@
               "target": 8850,
               "actual": 5590,
               "unit": "人",
-              "achievementRate": 63.16,
+              "achievementRate": null,
               "name": "觸及",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -2219,7 +2246,7 @@
               "target": 4867,
               "actual": 3555,
               "unit": "人",
-              "achievementRate": 73.04,
+              "achievementRate": null,
               "name": "綁定",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -2236,7 +2263,7 @@
               "target": 885,
               "actual": 195,
               "unit": "人",
-              "achievementRate": 22.03,
+              "achievementRate": null,
               "name": "交易",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -2277,7 +2304,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A006-Q1-I01",
               "plannedEndDate": "2026-02-02",
-              "actualEndDate": "2026-02-02"
+              "actualEndDate": "2026-02-02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A006-Q1-I02",
@@ -2291,7 +2319,8 @@
               "actualEndDate": "2026-02-06",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A006-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A006-Q1-I03",
@@ -2305,7 +2334,8 @@
               "actualEndDate": "2026-02-11",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A006-Q1-I02"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A006-Q1-I04",
@@ -2322,7 +2352,8 @@
               ],
               "eventStartDate": "2026-03-03",
               "eventEndDate": "2026-03-15",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojq26y8_00m_2840a19c",
@@ -2331,7 +2362,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-07",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2360,7 +2392,7 @@
               "target": 1880,
               "actual": 920,
               "unit": "人",
-              "achievementRate": 48.94,
+              "achievementRate": null,
               "name": "觸及",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -2377,7 +2409,7 @@
               "target": 1034,
               "actual": 454,
               "unit": "人",
-              "achievementRate": 43.91,
+              "achievementRate": null,
               "name": "綁定",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -2394,7 +2426,7 @@
               "target": 188,
               "actual": 51,
               "unit": "人",
-              "achievementRate": 27.13,
+              "achievementRate": null,
               "name": "交易",
               "formulaType": "direct_rate",
               "kpiType": "value",
@@ -2441,7 +2473,8 @@
               "actualEndDate": "2026-04-03",
               "eventStartDate": "2026-04-03",
               "eventEndDate": "2026-04-03",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I01",
@@ -2452,7 +2485,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A007-Q1-I02",
               "plannedEndDate": "2026-02-06",
-              "actualEndDate": "2026-02-06"
+              "actualEndDate": "2026-02-06",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I02",
@@ -2466,7 +2500,8 @@
               "actualEndDate": "2026-02-23",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I03",
@@ -2480,7 +2515,8 @@
               "actualEndDate": "2026-03-10",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I04",
@@ -2494,7 +2530,8 @@
               "actualEndDate": "2026-03-16",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S01-A007-Q1-I05",
@@ -2508,7 +2545,8 @@
               "actualEndDate": "2026-03-25",
               "eventStartDate": "2026-03-25",
               "eventEndDate": "2026-05-06",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojq93am_00n_b7edeec6",
@@ -2518,7 +2556,8 @@
               "plannedEndDate": "2026-04-21",
               "actualEndDate": "2026-04-21",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojq9mkf_00o_cb96f1d3",
@@ -2527,7 +2566,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-07",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2612,7 +2652,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A008-Q1-I01",
               "plannedEndDate": "2026-03-16",
-              "actualEndDate": "2026-03-16"
+              "actualEndDate": "2026-03-16",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojqjzhj_00s_70bfdf4e",
@@ -2624,7 +2665,8 @@
               "dependsOnIds": [
                 "id_mojql0gg_00v_42811887"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojqkhts_00t_5d9ef2b7",
@@ -2633,7 +2675,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-05",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojql0gg_00v_42811887",
@@ -2645,7 +2688,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S02-A008-Q1-I01"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2663,8 +2707,8 @@
           "strategyId": "STR-2026-H1-DEPT-G1-S02",
           "strategyTitle": "透過銀行、壽險、旅遊等異業夥伴，拓展潛在出國客群與高價值族群，藉由資源互換會員互導提升品牌曝光。",
           "warnDaysBefore": 3,
-          "status": "attention",
-          "updatedAt": "2026-04-29T07:32:39.529Z"
+          "status": "in-progress",
+          "updatedAt": "2026-04-30T09:02:28.339Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S02-A009",
@@ -2676,7 +2720,7 @@
               "target": 1500,
               "actual": 641,
               "unit": "%",
-              "achievementRate": 42.73
+              "achievementRate": null
             },
             {
               "id": "id_mojqir9a_00r_37ae3a00",
@@ -2684,7 +2728,7 @@
               "target": 525,
               "actual": 236,
               "unit": "人",
-              "achievementRate": 44.95,
+              "achievementRate": null,
               "formulaType": "direct_rate",
               "name": "交易",
               "kpiType": "value",
@@ -2726,7 +2770,8 @@
               "quarter": "Q1",
               "dependsOnIds": [],
               "bizKey": "PIT-2026-H1-DEPT-A009-Q1-I01",
-              "actualEndDate": "2026-01-01"
+              "actualEndDate": "2026-01-01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A009-Q1-I01",
@@ -2739,7 +2784,8 @@
               "bizKey": "PIT-2026-H1-DEPT-A009-Q1-I02",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S02-A009-Q1-I04"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A009-Q1-I02",
@@ -2753,7 +2799,8 @@
               "bizKey": "PIT-2026-H1-DEPT-A009-Q1-I03",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S02-A009-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojqpy44_00w_7f864b2c",
@@ -2764,7 +2811,8 @@
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S02-A009-Q1-I04"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2866,7 +2914,8 @@
               "plannedEndDate": "2026-03-20",
               "actualEndDate": "2026-04-22",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojrajtw_015_9c96e4d4",
@@ -2876,7 +2925,8 @@
               "plannedEndDate": "2026-04-27",
               "actualEndDate": "2026-04-27",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -2983,7 +3033,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A011-Q1-I01",
               "plannedEndDate": "2026-02-11",
-              "actualEndDate": "2026-02-11"
+              "actualEndDate": "2026-02-11",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A011-Q1-I02",
@@ -2997,7 +3048,8 @@
               "actualEndDate": "2026-03-10",
               "dependsOnIds": [
                 "PIT-2026-H1-DEPT-G1-S02-A011-Q1-I01"
-              ]
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A011-Q1-I03",
@@ -3008,7 +3060,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A011-Q1-I03",
               "plannedEndDate": "2026-03-20",
-              "actualEndDate": "2026-03-20"
+              "actualEndDate": "2026-03-20",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A011-Q2-I01",
@@ -3021,7 +3074,8 @@
               "bizKey": "PIT-2026-H1-DEPT-A011-Q2-I04",
               "eventStartDate": "2026-05-01",
               "eventEndDate": "2026-07-31",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -3076,9 +3130,9 @@
           "quarter": "Q1",
           "owner": "雅琪",
           "status": "in-progress",
-          "updatedAt": "2026-04-29T07:42:57.308Z",
+          "updatedAt": "2026-04-30T09:00:02.905Z",
           "startDate": "2026-02-01",
-          "endDate": "2026-02-01",
+          "endDate": "2026-12-31",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A012-L01",
@@ -3102,7 +3156,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A012-Q1-I01",
               "plannedEndDate": "2026-02-01",
-              "actualEndDate": "2026-02-01"
+              "actualEndDate": "2026-02-01",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -3131,7 +3186,7 @@
               "target": 1000,
               "actual": 945,
               "unit": "%",
-              "achievementRate": 94.5
+              "achievementRate": null
             }
           ],
           "quarter": "Q1",
@@ -3163,7 +3218,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A013-Q1-I01",
               "plannedEndDate": "2026-01-09",
-              "actualEndDate": "2026-01-09"
+              "actualEndDate": "2026-01-09",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A013-Q1-I02",
@@ -3174,7 +3230,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A013-Q1-I02",
               "plannedEndDate": "2026-01-16",
-              "actualEndDate": "2026-01-16"
+              "actualEndDate": "2026-01-16",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A013-Q1-I03",
@@ -3185,7 +3242,8 @@
               "quarter": "Q1",
               "bizKey": "PIT-2026-H1-DEPT-A013-Q1-I03",
               "plannedEndDate": "2026-02-19",
-              "actualEndDate": "2026-02-19"
+              "actualEndDate": "2026-02-19",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -3234,7 +3292,8 @@
               "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S02-A014",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A014-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A014-Q1-I01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A014-Q1-I02",
@@ -3243,7 +3302,8 @@
               "completed": false,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S02-A014",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A014-Q1-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A014-Q1-I02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S02-A014-Q2-I01",
@@ -3253,7 +3313,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S02-A014",
               "plannedEndDate": "2026-05-31",
               "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A014-Q2-I03"
+              "bizKey": "PIT-2026-H1-DEPT-A014-Q2-I03",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -3278,13 +3339,82 @@
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A015",
-          "rawText": "APP徽章任務/SKIN-隱藏徽章任務",
-          "kpis": [],
+          "rawText": "APP 隱藏徽章任務",
+          "kpis": [
+            {
+              "id": "id_mokwnssn_000_4b4c3c3e",
+              "label": "精品-徽章任務",
+              "target": 132,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "formulaType": "direct_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 132
+              },
+              "name": "精品-徽章任務",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null
+            },
+            {
+              "id": "id_mokwokuf_001_f6663084",
+              "label": "香化-徽章任務",
+              "target": 440,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "formulaType": "direct_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 440
+              },
+              "name": "香化-徽章任務",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null
+            },
+            {
+              "id": "id_mokwp1qo_002_a48b0127",
+              "label": "酒類-徽章任務",
+              "target": 4500,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "formulaType": "direct_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 4500
+              },
+              "name": "酒類-徽章任務",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null
+            },
+            {
+              "id": "id_mokwpo6w_003_ae8f763c",
+              "label": "異業活動-徽章任務",
+              "target": 1400,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "formulaType": "direct_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 1400
+              },
+              "name": "異業活動-徽章任務",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null
+            }
+          ],
           "quarter": "Q1",
           "status": "in-progress",
           "owner": "子硯",
-          "startDate": "2026-01-27",
-          "endDate": "2026-03-18",
+          "startDate": "2026-06-01",
+          "endDate": "2026-12-31",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A015-L01",
@@ -3301,123 +3431,154 @@
           ],
           "planItems": [
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A015-Q1-I01",
-              "description": "提供案型給資訊以及採購單位評估可行性",
-              "owner": "",
+              "id": "id_mokwro2h_004_1ebaf3c7",
+              "description": "案型定案",
+              "quarter": "Q2",
               "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A015",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A015-Q1-I01"
+              "plannedEndDate": "2026-04-30",
+              "actualEndDate": "2026-04-30",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A015-Q1-I02",
-              "description": "採購討論,會再提供6檔活動",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A015",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A015-Q1-I02"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A015-Q1-I03",
-              "description": "依照現有功能完成提案",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A015",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A015-Q1-I03"
-            }
-          ],
-          "frameworks": [
-            "ogsm"
-          ],
-          "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A015"
-        },
-        {
-          "id": "ACT-2026-H1-DEPT-G1-S03-A016",
-          "rawText": "APP徽章任務/SKIN-SKIN活動 ",
-          "kpis": [],
-          "quarter": "Q1",
-          "status": "in-progress",
-          "owner": "George",
-          "startDate": "2026-02-27",
-          "endDate": "2026-04-10",
-          "dashboardLinks": [
-            {
-              "id": "DLK-2026-H1-DEPT-A016-L01",
-              "type": "ogsm",
-              "periodId": "PER-2026-H1-DEPT",
-              "goalId": "GOAL-2026-H1-DEPT-G1",
-              "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false
-            }
-          ],
-          "owners": [
-            "Momo team",
-            "George team"
-          ],
-          "planItems": [
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A016-Q1-I01",
-              "description": "初步討論",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A016",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A016-Q1-I01"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A016-Q1-I02",
-              "description": "活動提案",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A016",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A016-Q1-I02"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A016-Q1-I03",
-              "description": "設計製作物清單完成",
-              "owner": "",
-              "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A016",
-              "notes": "文案陸續提供",
-              "plannedEndDate": "2026-04-10",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A016-Q1-I03"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A016-Q1-I04",
-              "description": "報價蒐集完成",
-              "owner": "",
-              "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A016",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A016-Q1-I04"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A016-Q1-I05",
+              "id": "id_mokwsa3t_005_d8f94e84",
               "description": "上呈申議書",
-              "owner": "",
+              "quarter": "Q2",
               "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A016",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A016-Q1-I05"
+              "plannedEndDate": "2026-05-06",
+              "dependsOnIds": [
+                "id_mokwro2h_004_1ebaf3c7"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwskz5_006_6515248e",
+              "description": "精品徽章視覺完稿",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-15",
+              "dependsOnIds": [
+                "id_mokwsa3t_005_d8f94e84"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwsx8i_007_3c8fae66",
+              "description": "精品徽章系統建置完成",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-22",
+              "dependsOnIds": [
+                "id_mokwskz5_006_6515248e"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwtqi2_008_2aa5fdd5",
+              "description": "精品徽章上線",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-01",
+              "dependsOnIds": [
+                "id_mokwsx8i_007_3c8fae66"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwukyz_009_39be5913",
+              "description": "香化/異業徽章視覺完稿",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-15",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwv65f_00a_fd3868ab",
+              "description": "香化/異業徽章系統建置完成",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-22",
+              "dependsOnIds": [
+                "id_mokwukyz_009_39be5913"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokww7f8_00b_c288d11b",
+              "description": "香化/異業徽章上線",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-07-01",
+              "dependsOnIds": [
+                "id_mokwv65f_00a_fd3868ab"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwxdfh_00c_ed858bd0",
+              "description": "酒類徽章視覺完稿",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-07-15",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwxx1o_00d_ec23398b",
+              "description": "酒類徽章系統建置完成",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-07-22",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokwyf4d_00e_4f1f577f",
+              "description": "酒類徽章上線",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-08-01",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A016"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A015",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T03:17:59.509Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A017",
           "rawText": "主題線上互動活動-會員互動活動-母親節線上互動活動",
           "kpis": [],
           "quarter": "Q1",
-          "status": "in-progress",
+          "status": "completed",
           "owner": "雅琪",
           "startDate": "2026-03-27",
           "endDate": "2026-04-20",
@@ -3443,7 +3604,8 @@
               "completed": false,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A017",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A017-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A017-Q1-I01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A017-Q1-I02",
@@ -3452,24 +3614,68 @@
               "completed": false,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A017",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A017-Q1-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A017-Q1-I02",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A017"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A017",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T09:03:20.282Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A018",
           "rawText": "主題線上互動活動-會員互動活動-暑期互動-小學課本的逆襲-心理測驗",
-          "kpis": [],
+          "kpis": [
+            {
+              "id": "id_mokx8j6j_00f_f0214b87",
+              "label": "綁定",
+              "target": 11750,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "綁定",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            },
+            {
+              "id": "id_mokx8unn_00g_7fed26af",
+              "label": "交易",
+              "target": null,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "交易",
+              "formulaType": "target_pct",
+              "kpiType": "target_rate",
+              "targetGrowthRate": null,
+              "targetRate": 10,
+              "baseline": {
+                "type": "fixed",
+                "value": 0
+              }
+            }
+          ],
           "quarter": "Q1",
           "status": "in-progress",
           "owner": "雅琪",
-          "startDate": "2026-03-13",
-          "endDate": "2026-04-10",
+          "startDate": "2026-07-01",
+          "endDate": "2026-08-31",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A018-L01",
@@ -3486,56 +3692,100 @@
           ],
           "planItems": [
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A018-Q1-I01",
-              "description": "方向討論",
-              "owner": "",
+              "id": "id_mokxb85p_00h_ed4870cb",
+              "description": "腳本提案",
+              "quarter": "Q2",
               "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A018",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A018-Q1-I01"
+              "plannedEndDate": "2026-04-17",
+              "actualEndDate": "2026-04-17",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A018-Q1-I02",
-              "description": "廠商提案",
-              "owner": "",
+              "id": "id_mokxbkks_00i_90f21c1a",
+              "description": "上呈申議書",
+              "quarter": "Q2",
               "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A018",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A018-Q1-I02"
+              "plannedEndDate": "2026-05-13",
+              "dependsOnIds": [
+                "id_mokxb85p_00h_ed4870cb"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokxburo_00j_35da86cc",
+              "description": "整體風格定案",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-29",
+              "dependsOnIds": [
+                "id_mokxbkks_00i_90f21c1a"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A018"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A018",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T03:28:32.142Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A019",
-          "rawText": "未綁定活動",
+          "rawText": "LINE OA 未綁定活動",
           "kpis": [
             {
-              "id": "ACT-2026-H1-DEPT-G1-S03-A019-K01",
-              "label": "2月綁定",
-              "target": 2350,
-              "actual": 2084,
-              "unit": "%",
-              "achievementRate": null
+              "id": "id_mokxdp5a_00k_9e297ad5",
+              "label": "綁定",
+              "target": 11750,
+              "actual": 4308,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "綁定",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
             },
             {
-              "id": "ACT-2026-H1-DEPT-G1-S03-A019-K02",
-              "label": "2月交易",
+              "id": "id_mokxdzp2_00l_8f44bff3",
+              "label": "交易",
               "target": null,
               "actual": null,
-              "unit": "%",
-              "achievementRate": null
+              "unit": "人",
+              "achievementRate": null,
+              "name": "交易",
+              "formulaType": "target_pct",
+              "kpiType": "target_rate",
+              "targetGrowthRate": null,
+              "targetRate": 10,
+              "baseline": {
+                "type": "kpiRef",
+                "kpiId": "id_mokxdp5a_00k_9e297ad5"
+              }
             }
           ],
           "quarter": "Q1",
           "status": "in-progress",
           "owner": "Lorie",
-          "startDate": "2026-02-02",
-          "endDate": "2026-03-14",
+          "startDate": "2026-02-01",
+          "endDate": "2026-12-31",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A019-L01",
@@ -3558,45 +3808,133 @@
               "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A019",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I01",
+              "plannedEndDate": "2026-02-02",
+              "actualEndDate": "2026-02-02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A019-Q1-I02",
-              "description": "上呈申議書",
+              "description": "上呈Q1申議書",
               "owner": "",
               "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A019",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I02",
+              "plannedEndDate": "2026-02-06",
+              "actualEndDate": "2026-02-06",
+              "dependsOnIds": [
+                "PIT-2026-H1-DEPT-G1-S03-A019-Q1-I01"
+              ],
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A019-Q1-I03",
-              "description": "二月檔上線",
+              "description": "二月檔(新春發紅包)上線",
               "owner": "",
               "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A019",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I03"
+              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I03",
+              "plannedEndDate": "2026-02-13",
+              "dependsOnIds": [
+                "PIT-2026-H1-DEPT-G1-S03-A019-Q1-I02"
+              ],
+              "actualEndDate": "2026-02-13",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A019-Q1-I04",
-              "description": "三月檔上線",
+              "description": "三月檔(RICHCLUB轉運站)上線",
               "owner": "",
               "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A019",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I04"
+              "bizKey": "PIT-2026-H1-DEPT-A019-Q1-I04",
+              "plannedEndDate": "2026-03-14",
+              "actualEndDate": "2026-03-14",
+              "dependsOnIds": [
+                "PIT-2026-H1-DEPT-G1-S03-A019-Q1-I02"
+              ],
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokxk7le_00m_e97302d3",
+              "description": "Q2提案完成",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-01",
+              "actualEndDate": "2026-04-01",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokxkull_00n_75cf8d46",
+              "description": "上呈Q2申議書",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-07",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "actualEndDate": "2026-04-07",
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokxn54j_00o_5e76d425",
+              "description": "四月檔(白沙屯發組聯名-綁定結好緣)上線",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-15",
+              "actualEndDate": "2026-04-15",
+              "dependsOnIds": [
+                "id_mokxkull_00n_75cf8d46"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokxodc7_00p_6382a108",
+              "description": "五月檔(心花點點開)上線",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-16",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokxoy3z_00q_fcecc508",
+              "description": "六月檔上線",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-15",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A019"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A019",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T03:38:29.655Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A020",
-          "rawText": "MGM",
+          "rawText": "MGM活動",
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A020-K01",
@@ -3609,14 +3947,22 @@
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A020-K02",
               "label": "交易",
-              "target": 300,
+              "target": null,
               "actual": null,
-              "unit": "%",
-              "achievementRate": null
+              "unit": "人",
+              "achievementRate": null,
+              "baseline": {
+                "type": "fixed",
+                "value": 0
+              },
+              "formulaType": "target_pct",
+              "kpiType": "target_rate",
+              "targetGrowthRate": null,
+              "targetRate": 10
             }
           ],
           "quarter": "Q1",
-          "status": "in-progress",
+          "status": "completed",
           "owner": "Lorie",
           "startDate": "2026-03-10",
           "endDate": "2026-03-30",
@@ -3636,105 +3982,60 @@
           ],
           "planItems": [
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A020-Q1-I01",
+              "id": "id_mokxrr21_00r_7c6035b7",
               "description": "提案完成",
-              "owner": "",
+              "quarter": "Q2",
               "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A020",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A020-Q1-I01"
+              "plannedEndDate": "2026-04-14",
+              "actualEndDate": "2026-04-14",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A020-Q1-I02",
+              "id": "id_mokxsaq1_00s_a65f414f",
               "description": "上呈申議書",
-              "owner": "",
+              "quarter": "Q2",
               "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A020",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A020-Q1-I02"
+              "plannedEndDate": "2026-04-17",
+              "dependsOnIds": [
+                "id_mokxrr21_00r_7c6035b7"
+              ],
+              "linkedMeasureId": null,
+              "actualEndDate": "2026-04-17",
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A020-Q1-I03",
-              "description": "三月檔上線",
-              "owner": "",
-              "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A020",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A020-Q1-I03"
+              "id": "id_mokxso1d_00t_6d3f3e1f",
+              "description": "4月檔上線",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-20",
+              "actualEndDate": "2026-04-20",
+              "dependsOnIds": [
+                "id_mokxsaq1_00s_a65f414f"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A020"
-        },
-        {
-          "id": "ACT-2026-H1-DEPT-G1-S03-A021",
-          "rawText": "點數換福袋",
-          "kpis": [
-            {
-              "id": "ACT-2026-H1-DEPT-G1-S03-A021-K01",
-              "label": "兌換率",
-              "target": 234,
-              "actual": 110,
-              "unit": "%",
-              "achievementRate": null
-            }
-          ],
-          "quarter": "Q1",
-          "status": "in-progress",
-          "owner": "Teresa",
-          "startDate": "2026-02-02",
-          "endDate": "2026-03-13",
-          "dashboardLinks": [
-            {
-              "id": "DLK-2026-H1-DEPT-A021-L01",
-              "type": "ogsm",
-              "periodId": "PER-2026-H1-DEPT",
-              "goalId": "GOAL-2026-H1-DEPT-G1",
-              "strategyId": "STR-2026-H1-DEPT-G1-S03",
-              "exclude": false
-            }
-          ],
-          "owners": [
-            "Momo team",
-            "George team"
-          ],
-          "planItems": [
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A021-Q1-I01",
-              "description": "提案完成",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A021",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A021-Q1-I01"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A021-Q1-I02",
-              "description": "上呈申議書",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A021",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A021-Q1-I02"
-            },
-            {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A021-Q1-I03",
-              "description": "上線",
-              "owner": "",
-              "completed": true,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A021",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A021-Q1-I03"
-            }
-          ],
-          "frameworks": [
-            "ogsm"
-          ],
-          "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A021"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A020",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T09:03:06.002Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A022",
@@ -3742,34 +4043,51 @@
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A022-K01",
-              "label": "活動參與目標350人",
+              "label": "參與人數",
               "target": 350,
-              "actual": null,
+              "actual": 29,
               "unit": "人",
-              "achievementRate": null,
-              "kpiType": "value"
+              "achievementRate": 8.29,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "參與人數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A022-K02",
-              "label": "進店人數目標125人",
+              "label": "進店人數",
               "target": 125,
-              "actual": null,
+              "actual": 24,
               "unit": "人",
-              "achievementRate": null,
-              "kpiType": "value"
+              "achievementRate": 19.2,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "進店人數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A022-K03",
               "label": "轉換率",
-              "target": 35.71,
-              "actual": null,
-              "unit": "%",
-              "achievementRate": null,
-              "kpiType": "value"
+              "target": null,
+              "actual": 24,
+              "unit": "人",
+              "achievementRate": 82.76,
+              "kpiType": "target_rate",
+              "baseline": {
+                "type": "kpiRef",
+                "kpiId": "ACT-2026-H1-DEPT-G1-S03-A022-K01"
+              },
+              "formulaType": "target_pct",
+              "targetGrowthRate": null,
+              "targetRate": 35.71
             }
           ],
           "quarter": "Q1",
-          "status": "in-progress",
+          "status": "completed",
           "owner": "Chloe",
           "startDate": "2026-02-13",
           "endDate": "2026-04-15",
@@ -3797,7 +4115,8 @@
               "plannedEndDate": "2026-02-13",
               "actualEndDate": "2026-02-24",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A022-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A022-Q1-I01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A022-Q1-I05",
@@ -3808,29 +4127,62 @@
               "plannedEndDate": "2026-03-11",
               "actualEndDate": "2026-03-17",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A022-Q1-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A022-Q1-I02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A022-Q2-I01",
               "description": "結案報告",
               "owner": "",
-              "completed": false,
+              "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A022",
               "plannedEndDate": "2026-04-15",
               "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A022-Q2-I03"
+              "bizKey": "PIT-2026-H1-DEPT-A022-Q2-I03",
+              "actualEndDate": "2026-04-13",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A022"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A022",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "assistUnits": [],
+          "updatedAt": "2026-04-30T09:00:09.129Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A023",
           "rawText": "社群自發性增粉-曬機票活動",
-          "kpis": [],
+          "kpis": [
+            {
+              "id": "id_mokyfg2d_016_8d1314b3",
+              "label": "粉絲數",
+              "target": 188300,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "formulaType": "direct_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 188300
+              },
+              "name": "粉絲數",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null
+            }
+          ],
           "quarter": "Q2",
           "status": "in-progress",
           "owner": "Jimmy",
@@ -3853,44 +4205,78 @@
               "id": "PIT-2026-H1-DEPT-G1-S03-A023-Q1-I13",
               "description": "活動規劃定案",
               "owner": "",
-              "completed": false,
+              "completed": true,
               "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A023",
-              "plannedEndDate": "2026-03-08",
+              "plannedEndDate": "2026-03-18",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A023-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A023-Q1-I01",
+              "actualEndDate": "2026-04-10",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A023-Q1-I14",
-              "description": "活動定案",
-              "owner": "",
+              "id": "id_mokykiwg_018_20a77d6b",
+              "description": "活動上線",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-12",
+              "actualEndDate": "2026-05-01",
+              "dependsOnIds": [
+                "PIT-2026-H1-DEPT-G1-S03-A023-Q1-I13"
+              ],
+              "linkedMeasureId": null,
+              "eventStartDate": "2026-05-01",
+              "eventEndDate": "2026-06-30",
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokyly8w_01a_34420c73",
+              "description": "結案",
+              "quarter": "Q3",
               "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A023",
-              "plannedEndDate": "2026-03-08",
-              "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A023-Q1-I02"
+              "plannedEndDate": "2026-07-20",
+              "dependsOnIds": [
+                "id_mokykiwg_018_20a77d6b"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "deptId": "dept_mn48prth_qdgi",
+          "deptId": "DEP-2026-DEPT",
           "deptName": "商務發展部",
           "isReadOnly": false,
-          "periodId": "period_mn48prth_j6lm",
+          "periodId": "PER-2026-H1-DEPT",
           "periodLabel": "2026 H1",
-          "goalId": "goal_mn48prtf_p6nm",
-          "goalTitle": "G1:提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
-          "strategyId": "str_mn48prtg_81nn",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
           "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
           "warnDaysBefore": 3,
-          "updatedAt": "2026-04-20T01:32:09.463Z",
+          "updatedAt": "2026-04-30T04:04:12.977Z",
           "bizKey": "ACT-2026-H1-DEPT-G1-S03-A023"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A024",
           "rawText": "社群自發性增粉-旅人桃機旅程",
-          "kpis": [],
+          "kpis": [
+            {
+              "id": "id_mokymwvd_01b_8d1c36b7",
+              "label": "互動率",
+              "target": null,
+              "actual": null,
+              "unit": "%",
+              "achievementRate": null,
+              "kpiType": "target_rate",
+              "baseline": null,
+              "formulaType": "target_pct",
+              "targetGrowthRate": null,
+              "targetRate": 2,
+              "name": "互動率"
+            }
+          ],
           "quarter": "Q2",
           "status": "in-progress",
           "owner": "寶寶",
@@ -3912,7 +4298,94 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A024"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A024",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [
+            {
+              "id": "id_mokyr6cb_01c_55e41d80",
+              "description": "提案FINAL",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2025-03-02",
+              "actualEndDate": "2025-04-17",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokyrqxf_01d_b5bd24b9",
+              "description": "第一波宣傳上線(享樂小資女)",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-23",
+              "actualEndDate": "2026-04-30",
+              "dependsOnIds": [
+                "id_mokyr6cb_01c_55e41d80"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokysc7o_01e_c83be1a0",
+              "description": "第二波宣傳上線(品味女王族)",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-28",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokysxkk_01f_4b9fd128",
+              "description": "第一次成效檢核",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-30",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokyt764_01g_3afac76c",
+              "description": "第三波宣傳上線(家庭親子客)",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-20",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokytlj8_01h_aa8e541d",
+              "description": "第二次成效檢核",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-28",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokyu6l1_01j_1e905724",
+              "description": "第三次成效檢核",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-07-20",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ],
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T04:10:33.389Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A025",
@@ -3920,19 +4393,25 @@
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A025-K01",
-              "label": "互動率1.64%",
-              "target": 1.64,
-              "actual": 1.33,
-              "unit": "%",
+              "label": "互動率",
+              "target": null,
+              "actual": 426,
+              "unit": "次",
               "achievementRate": null,
-              "kpiType": "value"
+              "kpiType": "target_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 32100
+              },
+              "formulaType": "target_pct",
+              "targetGrowthRate": null,
+              "targetRate": 1.61,
+              "name": "互動率"
             }
           ],
           "quarter": "Q1",
           "status": "in-progress",
           "owner": "Jimmy",
-          "startDate": "2026-01-15",
-          "endDate": "2026-07-20",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A025-L01",
@@ -3957,7 +4436,8 @@
               "plannedEndDate": "2026-01-15",
               "actualEndDate": "2026-01-15",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A025-Q1-I07",
@@ -3968,7 +4448,8 @@
               "plannedEndDate": "2026-01-22",
               "actualEndDate": "2026-01-22",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A025-Q1-I08",
@@ -3979,7 +4460,8 @@
               "plannedEndDate": "2026-01-31",
               "actualEndDate": "2026-01-31",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I03"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I03",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A025-Q1-I09",
@@ -3990,7 +4472,8 @@
               "plannedEndDate": "2026-02-13",
               "actualEndDate": "2026-02-13",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I04"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I04",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A025-Q1-I10",
@@ -4001,7 +4484,8 @@
               "plannedEndDate": "2026-02-25",
               "actualEndDate": "2026-02-25",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I05"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I05",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A025-Q1-I11",
@@ -4012,7 +4496,8 @@
               "plannedEndDate": "2026-03-12",
               "actualEndDate": "2026-03-12",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I06"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I06",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G1-S03-A025-Q1-I12",
@@ -4023,14 +4508,26 @@
               "plannedEndDate": "2026-03-19",
               "actualEndDate": "2026-03-19",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I07"
+              "bizKey": "PIT-2026-H1-DEPT-A025-Q1-I07",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A025"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A025",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T04:14:22.224Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A026",
@@ -4038,44 +4535,67 @@
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A026-K01",
-              "label": "曝光470萬次",
+              "label": "曝光數",
               "target": 47000000,
-              "actual": null,
+              "actual": 26000000,
               "unit": "次",
-              "achievementRate": null,
-              "kpiType": "value"
+              "achievementRate": 55.32,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "曝光數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A026-K02",
-              "label": "總觸及312萬次",
+              "label": "觸及數",
               "target": 3120000,
-              "actual": null,
-              "unit": "人次",
-              "achievementRate": null,
-              "kpiType": "value"
+              "actual": 1280000,
+              "unit": "次",
+              "achievementRate": 41.03,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "觸及數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A026-K03",
-              "label": "CPC4元",
+              "label": "CPC",
               "target": 4,
-              "actual": null,
+              "actual": 4.19,
               "unit": "元",
-              "achievementRate": null,
-              "kpiType": "value"
+              "achievementRate": 104.75,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "CPC",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A026-K04",
-              "label": "CTR 1.2%",
+              "label": "CTR",
               "target": 1.2,
-              "actual": null,
+              "actual": 2.17,
               "unit": "%",
-              "achievementRate": null,
-              "kpiType": "value"
+              "achievementRate": 180.83,
+              "kpiType": "value",
+              "baseline": {
+                "type": "fixed",
+                "value": 1.2
+              },
+              "name": "CTR",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             }
           ],
           "quarter": "Q1",
-          "status": "in-progress",
-          "owner": "Jimmy",
+          "status": "completed",
+          "owner": "",
           "startDate": "2026-01-10",
           "endDate": "2026-04-02",
           "dashboardLinks": [
@@ -4094,21 +4614,33 @@
           ],
           "planItems": [
             {
-              "id": "PIT-2026-H1-DEPT-G1-S03-A026-Q2-I02",
-              "description": "結案報告",
-              "owner": "",
-              "completed": false,
-              "linkedMeasureId": "ACT-2026-H1-DEPT-G1-S03-A026",
-              "plannedEndDate": "2026-04-02",
-              "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A026-Q2-I01"
+              "id": "id_mokz4ro2_01k_294fa573",
+              "description": "結案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-18",
+              "actualEndDate": "2026-04-21",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A026"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A026",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T08:59:53.441Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A027",
@@ -4116,26 +4648,36 @@
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A027-K01",
-              "label": "總觸及2萬次",
+              "label": "觸及數",
               "target": 20000,
-              "actual": null,
-              "unit": "人次",
-              "achievementRate": null,
-              "kpiType": "value"
+              "actual": 21373,
+              "unit": "次",
+              "achievementRate": 106.87,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "觸及數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             },
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A027-K02",
-              "label": "總導入連結點擊100次",
+              "label": "總導入連結點擊數",
               "target": 100,
-              "actual": null,
+              "actual": 72,
               "unit": "次",
-              "achievementRate": null,
-              "kpiType": "value"
+              "achievementRate": 72,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "總導入連結點擊數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             }
           ],
           "quarter": "Q2",
-          "status": "in-progress",
-          "owner": "寶寶",
+          "status": "completed",
+          "owner": "",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A027-L01",
@@ -4154,7 +4696,59 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A027"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A027",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [
+            {
+              "id": "id_mokz8dvo_01l_bc640421",
+              "description": "宣傳提案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-25",
+              "actualEndDate": "2026-02-25",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokz8q84_01m_1f00d410",
+              "description": "宣傳開跑(投廣)",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-25",
+              "actualEndDate": "2026-02-25",
+              "dependsOnIds": [
+                "id_mokz8dvo_01l_bc640421"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokz9c10_01n_aadeff78",
+              "description": "結案",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-15",
+              "actualEndDate": "2026-04-21",
+              "dependsOnIds": [
+                "id_mokz8q84_01m_1f00d410"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ],
+          "warnDaysBefore": 3,
+          "startDate": "2026-02-25",
+          "endDate": "2026-03-31",
+          "updatedAt": "2026-04-30T09:01:28.329Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A028",
@@ -4162,17 +4756,22 @@
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A028-K01",
-              "label": "互動率2%",
+              "label": "互動率",
               "target": 2,
               "actual": null,
               "unit": "%",
               "achievementRate": null,
-              "kpiType": "value"
+              "kpiType": "value",
+              "baseline": null,
+              "name": "互動率",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             }
           ],
           "quarter": "Q2",
           "status": "in-progress",
-          "owner": "寶寶",
+          "owner": "",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A028-L01",
@@ -4191,25 +4790,108 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A028"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A028",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [
+            {
+              "id": "id_mol1lk9v_01t_b1b2bb20",
+              "description": "宣傳提案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-05",
+              "actualEndDate": "2026-03-05",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol1n737_01u_00548f04",
+              "description": "提案會",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-09",
+              "actualEndDate": "2026-03-09",
+              "dependsOnIds": [
+                "id_mol1lk9v_01t_b1b2bb20"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol2ab51_01v_06a31f6b",
+              "description": "宣傳開跑(投廣) ",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-26",
+              "actualEndDate": "2026-03-26",
+              "dependsOnIds": [
+                "id_mol1n737_01u_00548f04"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol2bizi_01x_96ba2bf3",
+              "description": "檔期開跑",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-01",
+              "actualEndDate": "2026-04-01",
+              "dependsOnIds": [
+                "id_mol2ab51_01v_06a31f6b"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol2c8m5_01y_bb0ab773",
+              "description": "結案",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-26",
+              "dependsOnIds": [
+                "id_mol2bizi_01x_96ba2bf3"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ],
+          "warnDaysBefore": 3,
+          "startDate": "2026-04-01",
+          "endDate": "2026-05-11",
+          "updatedAt": "2026-04-30T05:48:41.814Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A029",
-          "rawText": "販宣傳-REEL Summer初夏購時尚",
+          "rawText": "販促宣傳-REEL Summer初夏購時尚",
           "kpis": [
             {
               "id": "ACT-2026-H1-DEPT-G1-S03-A029-K01",
-              "label": "互動率2%",
+              "label": "互動率",
               "target": 2,
               "actual": null,
               "unit": "%",
               "achievementRate": null,
-              "kpiType": "value"
+              "kpiType": "value",
+              "baseline": null,
+              "name": "互動率",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
             }
           ],
           "quarter": "Q2",
           "status": "in-progress",
-          "owner": "Jimmy",
+          "owner": "",
           "dashboardLinks": [
             {
               "id": "DLK-2026-H1-DEPT-A029-L01",
@@ -4228,12 +4910,133 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A029"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A029",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [
+            {
+              "id": "id_mokzgzix_01o_5617541b",
+              "description": "宣傳提案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-27",
+              "actualEndDate": "2026-03-27",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokzhr94_01p_7fc9b603",
+              "description": "提案會",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-02",
+              "actualEndDate": "2026-04-17",
+              "dependsOnIds": [
+                "id_mokzgzix_01o_5617541b"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokzin5t_01q_83fbebbb",
+              "description": "提案修調完成",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-22",
+              "actualEndDate": "2026-04-22",
+              "dependsOnIds": [
+                "id_mokzhr94_01p_7fc9b603"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokzj4ub_01r_8842676a",
+              "description": "檔期/宣傳開跑(投廣)",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-12",
+              "dependsOnIds": [
+                "id_mokzin5t_01q_83fbebbb"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokzjyyx_01s_23556ff9",
+              "description": "結案",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-07-14",
+              "dependsOnIds": [
+                "id_mokzj4ub_01r_8842676a"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ],
+          "warnDaysBefore": 3,
+          "startDate": "2026-05-12",
+          "endDate": "2026-06-30",
+          "updatedAt": "2026-04-30T04:30:44.114Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G1-S03-A030",
           "rawText": "促購活動-澎湖花火節",
-          "kpis": [],
+          "kpis": [
+            {
+              "id": "id_moky1xam_00v_3cfde20d",
+              "label": "參與人數",
+              "target": 2150,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "kpiType": "value",
+              "baseline": null,
+              "name": "參與人數",
+              "formulaType": "direct_rate",
+              "targetGrowthRate": null,
+              "targetRate": null
+            },
+            {
+              "id": "id_moky2e9a_00w_8e65916b",
+              "label": "頁面瀏覽數",
+              "target": 10000,
+              "actual": null,
+              "unit": "次",
+              "achievementRate": null,
+              "formulaType": "direct_rate",
+              "baseline": {
+                "type": "fixed",
+                "value": 10000
+              },
+              "name": "頁面瀏覽數",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null
+            },
+            {
+              "id": "id_moky39rr_00x_32100ef1",
+              "label": "互動率2%",
+              "target": null,
+              "actual": null,
+              "unit": "%",
+              "achievementRate": null,
+              "kpiType": "target_rate",
+              "baseline": null,
+              "formulaType": "target_pct",
+              "targetGrowthRate": null,
+              "targetRate": 2.5
+            }
+          ],
           "quarter": "Q2",
           "status": "not-started",
           "owner": "Chloe",
@@ -4255,7 +5058,98 @@
             "ogsm"
           ],
           "lifecycleStartPeriodId": "period_mn48prth_j6lm",
-          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A030"
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A030",
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [
+            {
+              "id": "id_moky4fnk_00y_00d8755d",
+              "description": "宣傳規劃&目標final",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-20",
+              "actualEndDate": "2026-03-20",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_moky5zko_010_d82a32c7",
+              "description": "決定發票受眾",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-10",
+              "actualEndDate": "2026-04-10",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_moky9f0a_011_27d4e45d",
+              "description": "faxmemo發出",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-21",
+              "actualEndDate": "2026-04-21",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokya3pe_012_48493f9e",
+              "description": "宣傳拍攝",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-27",
+              "actualEndDate": "2026-04-27",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "eventStartDate": "2026-04-27",
+              "eventEndDate": "2026-04-28",
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokybph8_013_d93bce0f",
+              "description": "進店禮活動開跑",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-29",
+              "actualEndDate": "2026-04-29",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokycagc_014_deb0c290",
+              "description": "花火節線上宣傳開跑",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-30",
+              "actualEndDate": "2026-04-30",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokyd02k_015_fdbae98c",
+              "description": "館內加碼活動線上宣傳開跑",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-07",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ],
+          "warnDaysBefore": 3,
+          "updatedAt": "2026-04-30T03:57:11.660Z"
         },
         {
           "id": "ACT-2026-H1-DEPT-G3-S01-A031",
@@ -4287,7 +5181,8 @@
               "plannedEndDate": "2026-02-13",
               "actualEndDate": "2026-02-13",
               "quarter": "Q1",
-              "bizKey": "PIT-2026-H1-DEPT-A031-Q1-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A031-Q1-I01",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -4325,7 +5220,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A032",
               "plannedEndDate": "2026-04-27",
               "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G3-S01-A032-Q2-I02",
@@ -4335,7 +5231,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A032",
               "plannedEndDate": "2026-05-22",
               "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G3-S01-A032-Q2-I03",
@@ -4345,7 +5242,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A032",
               "plannedEndDate": "2026-05-29",
               "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I03"
+              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I03",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G3-S01-A032-Q2-I04",
@@ -4355,7 +5253,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A032",
               "plannedEndDate": "2026-06-30",
               "quarter": "Q2",
-              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I04"
+              "bizKey": "PIT-2026-H1-DEPT-A032-Q2-I04",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -4393,7 +5292,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A033",
               "plannedEndDate": "2026-07-31",
               "quarter": "Q3",
-              "bizKey": "PIT-2026-H1-DEPT-A033-Q3-I01"
+              "bizKey": "PIT-2026-H1-DEPT-A033-Q3-I01",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G3-S01-A033-Q3-I02",
@@ -4403,7 +5303,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A033",
               "plannedEndDate": "2026-08-14",
               "quarter": "Q3",
-              "bizKey": "PIT-2026-H1-DEPT-A033-Q3-I02"
+              "bizKey": "PIT-2026-H1-DEPT-A033-Q3-I02",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "PIT-2026-H1-DEPT-G3-S01-A033-Q3-I03",
@@ -4413,7 +5314,8 @@
               "linkedMeasureId": "ACT-2026-H1-DEPT-G3-S01-A033",
               "plannedEndDate": "2026-08-31",
               "quarter": "Q3",
-              "bizKey": "PIT-2026-H1-DEPT-A033-Q3-I03"
+              "bizKey": "PIT-2026-H1-DEPT-A033-Q3-I03",
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "frameworks": [
@@ -4441,13 +5343,13 @@
             },
             {
               "id": "id_mochpjs7_000_db2bc7b3",
-              "label": "新 KPI",
+              "label": "交易率",
               "target": null,
               "actual": 758,
               "unit": "人",
               "achievementRate": null,
               "formulaType": "target_pct",
-              "name": "新 KPI",
+              "name": "交易率",
               "kpiType": "target_rate",
               "targetGrowthRate": null,
               "targetRate": 10,
@@ -4461,8 +5363,8 @@
           "owner": "Joanna",
           "startDate": "2026-01-16",
           "endDate": "2026-12-31",
-          "status": "not-started",
-          "updatedAt": "2026-04-24T05:50:06.847Z",
+          "status": "in-progress",
+          "updatedAt": "2026-04-30T08:18:51.862Z",
           "dashboardLinks": [
             {
               "id": "dlink_mob9uo4f_000_0de8c2e2",
@@ -4482,122 +5384,57 @@
           "periodId": "PER-2026-H1-DEPT",
           "periodLabel": "2026 H1",
           "goalId": "GOAL-2026-H1-DEPT-G2",
-          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。",
+          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。至少70%活動達到轉換率(進店率或交易率)目標。",
           "strategyId": "STR-2026-H1-DEPT-G2-S02",
-          "strategyTitle": "S2: 透過會員旅程腳本提升會員交易率。",
-          "planItems": []
-        },
-        {
-          "id": "msr_moibbnqw_002_6cc48d7d",
-          "bizKey": "ACT-DEPT-A035",
-          "rawText": "111",
-          "kpis": [],
-          "warnDaysBefore": 3,
-          "description": "111",
-          "owner": "Lily",
-          "startDate": "2026-04-30",
-          "endDate": "2026-05-06",
-          "status": "not-started",
-          "updatedAt": "2026-04-28T07:37:26.700Z",
-          "tags": [
-            "會員經營"
-          ],
-          "deptId": "DEP-2026-DEPT",
-          "deptName": "商務發展部",
-          "isReadOnly": false,
-          "periodId": "",
-          "periodLabel": "",
-          "goalId": "",
-          "goalTitle": "",
-          "strategyId": "",
-          "strategyTitle": "",
-          "planItems": []
-        },
-        {
-          "id": "msr_moibdow4_004_5aefc173",
-          "bizKey": "ACT-DEPT-A036",
-          "rawText": "Lily-test2",
-          "kpis": [],
-          "warnDaysBefore": 3,
-          "owner": "Lily",
-          "startDate": "2026-07-01",
-          "endDate": "2026-07-31",
-          "status": "not-started",
-          "updatedAt": "2026-04-28T07:38:29.807Z",
-          "deptId": "DEP-2026-DEPT",
-          "deptName": "商務發展部",
-          "isReadOnly": false,
-          "periodId": "",
-          "periodLabel": "",
-          "goalId": "",
-          "goalTitle": "",
-          "strategyId": "",
-          "strategyTitle": "",
-          "planItems": [],
-          "tags": [
-            "會員經營"
-          ]
-        },
-        {
-          "id": "msr_moibfpjn_005_69a0fe75",
-          "bizKey": "ACT-DEPT-A037",
-          "rawText": "Lily-test3",
-          "kpis": [
-            {
-              "id": "id_moibicov_006_bb5c978a",
-              "label": "新 KPI",
-              "target": 6,
-              "actual": null,
-              "unit": "",
-              "achievementRate": null,
-              "formulaType": "direct_rate",
-              "name": "新 KPI",
-              "kpiType": "value",
-              "targetGrowthRate": null,
-              "targetRate": null,
-              "baseline": null
-            }
-          ],
-          "warnDaysBefore": 3,
-          "description": "CCCCCCCCCCCCCCCCCCCCCC",
-          "owner": "Lily",
-          "startDate": "2026-07-15",
-          "endDate": "2026-08-14",
-          "status": "not-started",
-          "updatedAt": "2026-04-28T07:42:55.248Z",
-          "deptId": "DEP-2026-DEPT",
-          "deptName": "商務發展部",
-          "isReadOnly": false,
-          "periodId": "",
-          "periodLabel": "",
-          "goalId": "",
-          "goalTitle": "",
-          "strategyId": "",
-          "strategyTitle": "",
+          "strategyTitle": "透過會員旅程腳本提升會員交易率。",
           "planItems": [
             {
-              "id": "id_moibizby_007_5d2022c8",
-              "description": "ADFAD?",
+              "id": "id_mol7mlfh_00m_7dcaaf26",
+              "description": "第一次活動推播",
               "quarter": "Q1",
-              "completed": false,
-              "plannedEndDate": "2026-04-28",
-              "actualEndDate": "2026-04-30",
+              "completed": true,
+              "plannedEndDate": "2026-01-15",
+              "actualEndDate": "2026-01-15",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
-              "id": "id_moibje3j_008_3a906f5f",
-              "description": "QERQERQ",
+              "id": "id_mol7n3d9_00n_03f39690",
+              "description": "上呈申議書",
+              "owner": "",
+              "completed": true,
+              "linkedMeasureId": null,
               "quarter": "Q1",
-              "completed": false,
-              "plannedEndDate": "2026-05-01",
-              "actualEndDate": "2026-05-04",
+              "plannedEndDate": "2026-02-13",
+              "actualEndDate": "2026-02-26",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7nrcu_00o_d61e3a83",
+              "description": "第二次活動推播",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-06",
+              "actualEndDate": "2026-02-06",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7pdmm_00p_0fbc89f1",
+              "description": "確認受眾",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-09",
+              "actualEndDate": "2026-02-09",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
-          ],
-          "tags": [
-            "會員經營"
           ]
         },
         {
@@ -4628,8 +5465,8 @@
           "owner": "Darren",
           "startDate": "2026-04-28",
           "endDate": "2026-06-29",
-          "status": "attention",
-          "updatedAt": "2026-04-28T10:22:11.888Z",
+          "status": "in-progress",
+          "updatedAt": "2026-04-30T09:02:31.883Z",
           "dashboardLinks": [
             {
               "id": "dlink_moib36hw_000_eaff9d17",
@@ -4660,7 +5497,8 @@
               "completed": false,
               "plannedEndDate": "2026-03-31",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_moibegxy_009_1a69b01b",
@@ -4671,7 +5509,8 @@
               "dependsOnIds": [
                 "id_moibds72_008_01f3eb38"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_moibf43c_00a_4994e68b",
@@ -4682,7 +5521,8 @@
               "dependsOnIds": [
                 "id_moibegxy_009_1a69b01b"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ],
           "notes": "送啦"
@@ -4748,8 +5588,8 @@
           "owner": "子硯",
           "startDate": "2026-06-05",
           "endDate": "2026-07-19",
-          "status": "attention",
-          "updatedAt": "2026-04-29T06:56:25.080Z",
+          "status": "in-progress",
+          "updatedAt": "2026-04-30T09:02:24.547Z",
           "dashboardLinks": [
             {
               "id": "dlink_mojp1wpi_000_a80ccfdc",
@@ -4781,7 +5621,8 @@
               "plannedEndDate": "2026-04-26",
               "actualEndDate": "2026-04-26",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojp53oi_007_82191f6d",
@@ -4792,7 +5633,8 @@
               "dependsOnIds": [
                 "id_mojp4hps_006_00e6b8e2"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojp614j_008_7975f277",
@@ -4803,7 +5645,8 @@
               "dependsOnIds": [
                 "id_mojp53oi_007_82191f6d"
               ],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojp7cy4_009_c8530552",
@@ -4812,7 +5655,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-06",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojp7wi4_00a_03aa5566",
@@ -4821,7 +5665,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-20",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojp9m6m_00b_aa4ad8db",
@@ -4830,7 +5675,8 @@
               "completed": false,
               "plannedEndDate": "2026-05-29",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojpa6am_00c_b49561f1",
@@ -4839,7 +5685,8 @@
               "completed": false,
               "plannedEndDate": "2026-06-05",
               "dependsOnIds": [],
-              "linkedMeasureId": null
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojpagtz_00d_cd68b3c1",
@@ -4853,7 +5700,8 @@
               ],
               "linkedMeasureId": null,
               "eventStartDate": "2026-06-05",
-              "eventEndDate": "2026-07-19"
+              "eventEndDate": "2026-07-19",
+              "periodId": "PER-2026-H1-DEPT"
             },
             {
               "id": "id_mojpbcl4_00e_63946fee",
@@ -4865,7 +5713,872 @@
               "linkedMeasureId": null,
               "eventStartDate": "2026-06-13",
               "eventEndDate": "2026-06-14",
-              "showInCalendar": true
+              "showInCalendar": true,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ]
+        },
+        {
+          "id": "msr_mokuoqfb_001_c917847d",
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A040",
+          "rawText": "亞洲萬里通",
+          "kpis": [
+            {
+              "id": "id_mokup6nr_002_5f1e56cf",
+              "label": "觸及",
+              "target": 4620,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "觸及",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            },
+            {
+              "id": "id_mokupgnj_003_8c5d071f",
+              "label": "綁定",
+              "target": 924,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "綁定",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            },
+            {
+              "id": "id_mokupm6f_004_6bca8950",
+              "label": "交易",
+              "target": 1617,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "交易",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            }
+          ],
+          "warnDaysBefore": 3,
+          "owner": "雅琪",
+          "startDate": "2026-07-01",
+          "endDate": "2026-09-30",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T02:21:53.031Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mokuoqfb_000_65f36664",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G1",
+              "strategyId": "STR-2026-H1-DEPT-G1-S02",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S02",
+          "strategyTitle": "透過銀行、壽險、旅遊等異業夥伴，拓展潛在出國客群與高價值族群，藉由資源互換會員互導提升品牌曝光。",
+          "planItems": [
+            {
+              "id": "id_mokuqm48_006_cacf83f8",
+              "description": "提案",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-17",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "actualEndDate": "2026-04-17",
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokur4rs_007_1345c862",
+              "description": "上呈申議書",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-30",
+              "dependsOnIds": [
+                "id_mokuqm48_006_cacf83f8"
+              ],
+              "linkedMeasureId": null,
+              "actualEndDate": "2026-04-30",
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokurr35_008_02dfa553",
+              "description": "導流活動啟動",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-01",
+              "dependsOnIds": [
+                "id_mokur4rs_007_1345c862"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ]
+        },
+        {
+          "id": "msr_mokuw1e4_00b_0f934116",
+          "bizKey": "ACT-2026-H1-DEPT-G1-S02-A042",
+          "rawText": "中華電信",
+          "kpis": [
+            {
+              "id": "id_mokuyzo6_000_73349058",
+              "label": "觸及",
+              "target": 8550,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "觸及",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            },
+            {
+              "id": "id_mokuz5r2_001_d0b2cfd4",
+              "label": "綁定",
+              "target": 1710,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "綁定",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            },
+            {
+              "id": "id_mokuzbmf_002_6e81b279",
+              "label": "交易",
+              "target": 2992,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "交易",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null
+            }
+          ],
+          "warnDaysBefore": 3,
+          "owner": "雅琪",
+          "startDate": "2026-07-01",
+          "endDate": "2026-12-31",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T02:25:03.706Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mokuw1e4_00a_6005dda5",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G1",
+              "strategyId": "STR-2026-H1-DEPT-G1-S02",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S02",
+          "strategyTitle": "透過銀行、壽險、旅遊等異業夥伴，拓展潛在出國客群與高價值族群，藉由資源互換會員互導提升品牌曝光。",
+          "planItems": [
+            {
+              "id": "id_mokuzrvz_003_e606bf4d",
+              "description": "提案",
+              "quarter": "Q2",
+              "completed": true,
+              "plannedEndDate": "2026-04-23",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "actualEndDate": "2026-04-23",
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokv045r_004_6640b004",
+              "description": "上呈申議書",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-06",
+              "dependsOnIds": [
+                "id_mokuzrvz_003_e606bf4d"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokv0iq0_005_ef3ee6ae",
+              "description": "設計完稿",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-29",
+              "dependsOnIds": [
+                "id_mokv045r_004_6640b004"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokv1qm0_007_f632f92e",
+              "description": "導流活動 啟動",
+              "quarter": "Q3",
+              "completed": false,
+              "plannedEndDate": "2026-07-01",
+              "dependsOnIds": [
+                "id_mokv0iq0_005_ef3ee6ae"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ]
+        },
+        {
+          "id": "msr_mokvhun8_001_880d7086",
+          "bizKey": "ACT-2026-H1-DEPT-G2-S01-A043",
+          "rawText": "APP SKIN活動",
+          "kpis": [
+            {
+              "id": "id_mokvitoc_002_77052ddd",
+              "label": "SKIN更換率",
+              "target": null,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "formulaType": "target_pct",
+              "baseline": null,
+              "kpiType": "target_rate",
+              "targetGrowthRate": null,
+              "targetRate": 5,
+              "name": "SKIN更換率"
+            },
+            {
+              "id": "id_mokvpc3d_003_c0e1a00c",
+              "label": "交易率",
+              "target": null,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "交易率",
+              "formulaType": "target_pct",
+              "kpiType": "target_rate",
+              "targetGrowthRate": null,
+              "targetRate": 10,
+              "baseline": null
+            }
+          ],
+          "warnDaysBefore": 3,
+          "owner": "George",
+          "startDate": "2026-05-25",
+          "endDate": "2026-06-07",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T09:03:32.027Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mokvhun8_000_23daa4d8",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G2",
+              "strategyId": "STR-2026-H1-DEPT-G2-S01",
+              "exclude": false
+            },
+            {
+              "id": "dlink_mokvhun8_000_23daa4d8",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G1",
+              "strategyId": "STR-2026-H1-DEPT-G1-S03",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。至少70%活動達到轉換率(進店率或交易率)目標。、提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "strategyTitle": "透過短波段活動，提升各區或各大類臨時性與客導購的話題性。、透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [
+            {
+              "id": "id_mokvr902_004_2b030fbf",
+              "description": "初步討論",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-27",
+              "actualEndDate": "2026-03-27",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokvrygy_005_c0cc0760",
+              "description": "活動提案",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-04-13",
+              "actualEndDate": "2026-04-13",
+              "dependsOnIds": [
+                "id_mokvr902_004_2b030fbf"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokvsaf2_006_4ada3fe3",
+              "description": "設計製作物清單完成",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-04-30",
+              "actualEndDate": "2026-04-30",
+              "dependsOnIds": [
+                "id_mokvrygy_005_c0cc0760"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokvt743_007_e95466f0",
+              "description": "上呈申議書",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-08",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokvtk5n_008_9518fa34",
+              "description": "第一波活動上線",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-25",
+              "dependsOnIds": [
+                "id_mokvt743_007_e95466f0"
+              ],
+              "linkedMeasureId": null,
+              "eventStartDate": "2026-05-25",
+              "eventEndDate": "2026-05-31",
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mokvv199_009_614e3283",
+              "description": "第二波活動上線",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-01",
+              "dependsOnIds": [
+                "id_mokvtk5n_008_9518fa34"
+              ],
+              "linkedMeasureId": null,
+              "eventStartDate": "2026-06-01",
+              "eventEndDate": "2026-06-07",
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ]
+        },
+        {
+          "id": "msr_mokvycy7_00b_de59803b",
+          "bizKey": "ACT-2026-H1-DEPT-G1-S03-A044",
+          "rawText": "隱藏徽章任務",
+          "kpis": [],
+          "warnDaysBefore": 3,
+          "owner": "子硯",
+          "startDate": "2026-06-01",
+          "endDate": "2026-12-31",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T02:49:40.879Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mokvycy7_00a_fcafbeab",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G1",
+              "strategyId": "STR-2026-H1-DEPT-G1-S03",
+              "exclude": false
+            }
+          ]
+        },
+        {
+          "id": "msr_mol3ff9p_001_272ab0fd",
+          "bizKey": "ACT-2026-H1-DEPT-G2-S02-A039",
+          "rawText": "會員旅程(LV1活躍客)",
+          "kpis": [],
+          "warnDaysBefore": 3,
+          "owner": "Joanna",
+          "startDate": "2026-02-27",
+          "endDate": "2026-05-31",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T06:18:54.350Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol3ff9p_000_a08803ee",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G2",
+              "strategyId": "STR-2026-H1-DEPT-G2-S02",
+              "exclude": false
+            }
+          ]
+        },
+        {
+          "id": "msr_mol3h7m7_003_dda65e9f",
+          "bizKey": "ACT-2026-H1-DEPT-G2-S01-A040",
+          "rawText": "春節檔期",
+          "kpis": [
+            {
+              "id": "id_mol3htqu_004_295a9285",
+              "label": "筆數提升率",
+              "target": null,
+              "actual": 192680,
+              "unit": "筆",
+              "achievementRate": null,
+              "formulaType": "growth",
+              "baseline": {
+                "type": "fixed",
+                "value": 191394
+              },
+              "name": "筆數提升率",
+              "kpiType": "growth",
+              "targetRate": null,
+              "targetGrowthRate": 1
+            }
+          ],
+          "warnDaysBefore": 3,
+          "startDate": "2026-01-10",
+          "endDate": "2026-02-24",
+          "status": "completed",
+          "updatedAt": "2026-04-30T07:56:34.852Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol3h7m7_002_34bb5928",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G2",
+              "strategyId": "STR-2026-H1-DEPT-G2-S01",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。至少70%活動達到轉換率(進店率或交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "strategyTitle": "透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
+          "planItems": [
+            {
+              "id": "id_mol6w5yk_003_a6ad057a",
+              "description": "定案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-01-03",
+              "actualEndDate": "2026-01-03",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol6wn3o_004_44ae7633",
+              "description": "結案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-24",
+              "actualEndDate": "2026-02-24",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ]
+        },
+        {
+          "id": "msr_mol5isrh_002_4ee15c95",
+          "bizKey": "ACT-DEPT-A041",
+          "rawText": "Lily-LV4潛力客經營",
+          "kpis": [],
+          "warnDaysBefore": 3,
+          "description": "AAAAAAA",
+          "owner": "Lily",
+          "startDate": "2026-05-01",
+          "endDate": "2026-05-31",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T07:18:43.535Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol5k533_003_fa869dcc",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G1",
+              "strategyId": "STR-2026-H1-DEPT-G1-S02",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "",
+          "periodLabel": "",
+          "goalId": "",
+          "goalTitle": "",
+          "strategyId": "",
+          "strategyTitle": "",
+          "planItems": [],
+          "tags": [
+            "會員經營"
+          ]
+        },
+        {
+          "id": "msr_mol5nzxj_004_f6388108",
+          "bizKey": "ACT-DEPT-A042",
+          "rawText": "Lily-高端會員端午節贈禮",
+          "kpis": [
+            {
+              "id": "id_mol5x0x7_006_7ed9cc35",
+              "label": "交易",
+              "target": 200,
+              "actual": null,
+              "unit": "人",
+              "achievementRate": null,
+              "name": "交易",
+              "formulaType": "direct_rate",
+              "kpiType": "value",
+              "targetGrowthRate": null,
+              "targetRate": null,
+              "baseline": null,
+              "confirmedAt": "2026-04-20"
+            }
+          ],
+          "warnDaysBefore": 3,
+          "description": "",
+          "owner": "Lily",
+          "startDate": "2026-04-15",
+          "endDate": "2026-06-20",
+          "status": "in-progress",
+          "updatedAt": "2026-04-30T07:50:31.761Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol5oqk4_005_e9124407",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G1",
+              "strategyId": "STR-2026-H1-DEPT-G1-S03",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "goalTitle": "提高旅客／會員於非交易期間的互動參與頻次，並使其成為可再利用的會員行為資產。 發生非交易互動後 90 天內，至少60%活動達到轉換率(綁定率及交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "strategyTitle": "透過主題性線上活動，延長會員的活躍週期與品牌關係壽命。",
+          "planItems": [],
+          "tags": [
+            "會員經營"
+          ],
+          "clearedFields": [
+            "description"
+          ]
+        },
+        {
+          "id": "msr_mol6zzw5_006_353c64cc",
+          "bizKey": "ACT-2026-H1-DEPT-G2-S01-A044",
+          "rawText": "ESG檔期",
+          "kpis": [
+            {
+              "id": "id_mol70a11_007_97b305e6",
+              "label": "筆數提升率",
+              "target": null,
+              "actual": 9136,
+              "unit": "筆",
+              "achievementRate": 867.13,
+              "formulaType": "growth",
+              "baseline": {
+                "type": "fixed",
+                "value": 8407
+              },
+              "name": "筆數提升率",
+              "kpiType": "growth",
+              "targetRate": null,
+              "targetGrowthRate": 1
+            }
+          ],
+          "warnDaysBefore": 3,
+          "startDate": "2026-02-25",
+          "endDate": "2026-03-31",
+          "status": "completed",
+          "updatedAt": "2026-04-30T09:00:49.193Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol6zzw5_005_f47d0b91",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G2",
+              "strategyId": "STR-2026-H1-DEPT-G2-S01",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。至少70%活動達到轉換率(進店率或交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "strategyTitle": "透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
+          "planItems": [
+            {
+              "id": "id_mol73fiv_008_b07c086b",
+              "description": "結案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-31",
+              "actualEndDate": "2026-04-30",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ],
+          "owner": ""
+        },
+        {
+          "id": "msr_mol799q9_00a_6d7254a7",
+          "bizKey": "ACT-2026-H1-DEPT-G2-S01-A045",
+          "rawText": "母親節檔期",
+          "kpis": [
+            {
+              "id": "id_mol7a2j5_00b_9f90f225",
+              "label": "筆數提升率",
+              "target": null,
+              "actual": 15173,
+              "unit": "筆",
+              "achievementRate": null,
+              "formulaType": "growth",
+              "baseline": {
+                "type": "fixed",
+                "value": 14370
+              },
+              "name": "筆數提升率",
+              "kpiType": "growth",
+              "targetRate": null,
+              "targetGrowthRate": 1
+            }
+          ],
+          "warnDaysBefore": 3,
+          "startDate": "2026-04-01",
+          "endDate": "2026-05-11",
+          "status": "in-progress",
+          "updatedAt": "2026-04-30T08:09:18.858Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol799q8_009_0f9f8427",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G2",
+              "strategyId": "STR-2026-H1-DEPT-G2-S01",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。至少70%活動達到轉換率(進店率或交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "strategyTitle": "透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
+          "planItems": [
+            {
+              "id": "id_mol7b3c1_00c_e2e293c7",
+              "description": "發出需求",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-09",
+              "actualEndDate": "2026-02-09",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7bqu1_00d_f9dd8a2a",
+              "description": "回收需求",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-23",
+              "actualEndDate": "2026-02-23",
+              "dependsOnIds": [
+                "id_mol7b3c1_00c_e2e293c7"
+              ],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7c82i_00e_cbc5b9a8",
+              "description": "定案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-02-26",
+              "actualEndDate": "2026-02-26",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7d51u_00f_5eca04f9",
+              "description": "結案",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-05-11",
+              "dependsOnIds": [
+                "id_mol7c82i_00e_cbc5b9a8"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            }
+          ]
+        },
+        {
+          "id": "msr_mol7ei4z_00h_baab8c3d",
+          "bizKey": "ACT-2026-H1-DEPT-G2-S01-A046",
+          "rawText": "初夏檔期",
+          "kpis": [],
+          "warnDaysBefore": 3,
+          "startDate": "2026-05-12",
+          "endDate": "2026-06-30",
+          "status": "not-started",
+          "updatedAt": "2026-04-30T08:13:11.347Z",
+          "dashboardLinks": [
+            {
+              "id": "dlink_mol7ei4z_00g_ba0205c8",
+              "type": "ogsm",
+              "periodId": "PER-2026-H1-DEPT",
+              "goalId": "GOAL-2026-H1-DEPT-G2",
+              "strategyId": "STR-2026-H1-DEPT-G2-S01",
+              "exclude": false
+            }
+          ],
+          "frameworks": [
+            "ogsm"
+          ],
+          "deptId": "DEP-2026-DEPT",
+          "deptName": "商務發展部",
+          "isReadOnly": false,
+          "periodId": "PER-2026-H1-DEPT",
+          "periodLabel": "2026 H1",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "goalTitle": "以行銷資源支援賣場對於關鍵客群與商品的銷售轉換，提升整體業績產出效率。至少70%活動達到轉換率(進店率或交易率)目標。",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "strategyTitle": "透過短波段活動，提升各區或各大類臨時性與客導購的話題性。",
+          "planItems": [
+            {
+              "id": "id_mol7exuq_00i_76d5378a",
+              "description": "發出需求",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-03",
+              "actualEndDate": "2026-03-03",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7far6_00j_9613d8f1",
+              "description": "回收需求",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-11",
+              "actualEndDate": "2026-03-11",
+              "dependsOnIds": [
+                "id_mol7exuq_00i_76d5378a"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7hiw3_00k_7d280cbd",
+              "description": "定案",
+              "quarter": "Q1",
+              "completed": true,
+              "plannedEndDate": "2026-03-20",
+              "actualEndDate": "2026-03-20",
+              "dependsOnIds": [
+                "id_mol7far6_00j_9613d8f1"
+              ],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
+            },
+            {
+              "id": "id_mol7i7vw_00l_0a9c589d",
+              "description": "結案",
+              "quarter": "Q2",
+              "completed": false,
+              "plannedEndDate": "2026-06-30",
+              "dependsOnIds": [],
+              "linkedMeasureId": null,
+              "showInCalendar": false,
+              "periodId": "PER-2026-H1-DEPT"
             }
           ]
         }
@@ -4888,6 +6601,123 @@
           "strategyId": "STR-2026-H1-DEPT-G3-S01",
           "exclude": false,
           "activityId": "msr_moib36hw_001_c0d26413"
+        },
+        {
+          "id": "dlink_mojp1wpi_000_a80ccfdc",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S01",
+          "exclude": false,
+          "activityId": "msr_mojp1wpi_001_38eac1bd"
+        },
+        {
+          "id": "dlink_mokuoqfb_000_65f36664",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S02",
+          "exclude": false,
+          "activityId": "msr_mokuoqfb_001_c917847d"
+        },
+        {
+          "id": "dlink_mokuw1e4_00a_6005dda5",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S02",
+          "exclude": false,
+          "activityId": "msr_mokuw1e4_00b_0f934116"
+        },
+        {
+          "id": "dlink_mokvhun8_000_23daa4d8",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "exclude": false,
+          "activityId": "msr_mokvhun8_001_880d7086"
+        },
+        {
+          "id": "dlink_mokvhun8_000_23daa4d8",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "exclude": false,
+          "activityId": "msr_mokvhun8_001_880d7086"
+        },
+        {
+          "id": "dlink_mokvycy7_00a_fcafbeab",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "exclude": false,
+          "activityId": "msr_mokvycy7_00b_de59803b"
+        },
+        {
+          "id": "dlink_mol3ff9p_000_a08803ee",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "strategyId": "STR-2026-H1-DEPT-G2-S02",
+          "exclude": false,
+          "activityId": "msr_mol3ff9p_001_272ab0fd"
+        },
+        {
+          "id": "dlink_mol3h7m7_002_34bb5928",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "exclude": false,
+          "activityId": "msr_mol3h7m7_003_dda65e9f"
+        },
+        {
+          "id": "dlink_mol5k533_003_fa869dcc",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S02",
+          "exclude": false,
+          "activityId": "msr_mol5isrh_002_4ee15c95"
+        },
+        {
+          "id": "dlink_mol5oqk4_005_e9124407",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G1",
+          "strategyId": "STR-2026-H1-DEPT-G1-S03",
+          "exclude": false,
+          "activityId": "msr_mol5nzxj_004_f6388108"
+        },
+        {
+          "id": "dlink_mol6zzw5_005_f47d0b91",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "exclude": false,
+          "activityId": "msr_mol6zzw5_006_353c64cc"
+        },
+        {
+          "id": "dlink_mol799q8_009_0f9f8427",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "exclude": false,
+          "activityId": "msr_mol799q9_00a_6d7254a7"
+        },
+        {
+          "id": "dlink_mol7ei4z_00g_ba0205c8",
+          "type": "ogsm",
+          "periodId": "PER-2026-H1-DEPT",
+          "goalId": "GOAL-2026-H1-DEPT-G2",
+          "strategyId": "STR-2026-H1-DEPT-G2-S01",
+          "exclude": false,
+          "activityId": "msr_mol7ei4z_00h_baab8c3d"
         },
         {
           "id": "DLK-2026-H1-DEPT-A001-L01",
@@ -5040,16 +6870,6 @@
           "bizKey": "DLK-2026-H1-DEPT-A015-L15"
         },
         {
-          "id": "DLK-2026-H1-DEPT-A016-L01",
-          "type": "ogsm",
-          "periodId": "PER-2026-H1-DEPT",
-          "goalId": "GOAL-2026-H1-DEPT-G1",
-          "strategyId": "STR-2026-H1-DEPT-G1-S03",
-          "exclude": false,
-          "activityId": "ACT-2026-H1-DEPT-G1-S03-A016",
-          "bizKey": "DLK-2026-H1-DEPT-A016-L16"
-        },
-        {
           "id": "DLK-2026-H1-DEPT-A017-L01",
           "type": "ogsm",
           "periodId": "PER-2026-H1-DEPT",
@@ -5088,16 +6908,6 @@
           "exclude": false,
           "activityId": "ACT-2026-H1-DEPT-G1-S03-A020",
           "bizKey": "DLK-2026-H1-DEPT-A020-L20"
-        },
-        {
-          "id": "DLK-2026-H1-DEPT-A021-L01",
-          "type": "ogsm",
-          "periodId": "PER-2026-H1-DEPT",
-          "goalId": "GOAL-2026-H1-DEPT-G1",
-          "strategyId": "STR-2026-H1-DEPT-G1-S03",
-          "exclude": false,
-          "activityId": "ACT-2026-H1-DEPT-G1-S03-A021",
-          "bizKey": "DLK-2026-H1-DEPT-A021-L21"
         },
         {
           "id": "DLK-2026-H1-DEPT-A022-L01",
@@ -5247,7 +7057,7 @@
       "bizKey": "DEP-2026-DEPT-01"
     }
   ],
-  "version": 97,
+  "version": 158,
   "_migratedClearOwners": true,
   "teams": [
     {
@@ -5481,9 +7291,15 @@
     "goal_mn48prth_e0ds_h2",
     "goal_mn48prth_p16v_h2",
     "goal_mn48prtf_p6nm_h2",
-    "GOAL-2026-H1-DEPT-G4"
+    "GOAL-2026-H1-DEPT-G4",
+    "ACT-2026-H1-DEPT-G1-S03-A016",
+    "ACT-2026-H1-DEPT-G1-S03-A021",
+    "msr_moibbnqw_002_6cc48d7d",
+    "msr_moibdow4_004_5aefc173",
+    "msr_moibfpjn_005_69a0fe75",
+    "msr_mokutryj_009_cafc2cbe"
   ],
-  "savedAt": "2026-04-29T07:52:54.270Z",
+  "savedAt": "2026-04-30T09:03:36.174Z",
   "_migratedPhase2": true,
   "_migratedPhase3": true,
   "_migratedRelationalV1": true,
@@ -5510,5 +7326,6 @@
       "status": "active",
       "updatedAt": "2026-04-28T01:23:20.399Z"
     }
-  ]
+  ],
+  "_migratedTimelineV2": true
 }
