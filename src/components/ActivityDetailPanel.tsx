@@ -861,6 +861,49 @@ function BasicTab({
     });
   };
 
+  const applyOgsmSelectionToDraft = (
+    periodId: string,
+    goalId: string,
+    strategyId: string,
+  ) => {
+    if (!periodId || !goalId || !strategyId) return;
+    const all = draft.dashboardLinks ?? [];
+    const ogsmOnly = all.filter((l) => l.type === "ogsm");
+
+    // 舊資料（尚未有 OGSM link）: 直接建立第一筆 link
+    if (ogsmOnly.length === 0) {
+      upsertLegacyOgsmLinkFromSelection(periodId, goalId, strategyId);
+      return;
+    }
+
+    // 單一 OGSM link: 視為「切換歸屬」，直接更新該筆並觸發 dirty
+    if (ogsmOnly.length === 1) {
+      const current = ogsmOnly[0];
+      if (
+        current.periodId === periodId &&
+        current.goalId === goalId &&
+        current.strategyId === strategyId
+      ) {
+        return;
+      }
+      patch({
+        dashboardLinks: all.map((l) =>
+          l.id === current.id
+            ? {
+                ...l,
+                periodId,
+                goalId,
+                strategyId,
+              }
+            : l,
+        ),
+        frameworks: frameworks.includes("ogsm")
+          ? frameworks
+          : [...frameworks, "ogsm"],
+      });
+    }
+  };
+
   const removeOgsmLink = (linkId: string) => {
     const next = (draft.dashboardLinks ?? []).filter((l) => l.id !== linkId);
     patch({ dashboardLinks: next.length > 0 ? next : undefined });
@@ -1030,13 +1073,8 @@ function BasicTab({
               onChange={(e) => {
                 const nextStratId = e.target.value;
                 setSelStratId(nextStratId);
-                // 相容舊資料：原本只有 initial* 歸屬（尚未寫入 dashboardLinks）
-                // 在第一次完成三階選擇時就落地到 draft，避免儲存鍵無法啟用。
-                upsertLegacyOgsmLinkFromSelection(
-                  selPeriodId,
-                  selGoalId,
-                  nextStratId,
-                );
+                // 單一 OGSM 歸屬視為切換；舊資料則建立第一筆 link
+                applyOgsmSelectionToDraft(selPeriodId, selGoalId, nextStratId);
               }}
             >
               <option value="">策略…</option>

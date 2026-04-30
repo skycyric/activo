@@ -608,6 +608,261 @@ describe("ActivityDetailPanel forcedTab", () => {
     expect(ogsmLinks[0]?.strategyId).toBe("s2");
   });
 
+  test("switching single existing OGSM attribution should trigger save", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          periods: [
+            {
+              id: "p1",
+              year: 2026,
+              halfYear: "H1",
+              ogsm: {
+                ...WORKSPACE.departments[0].periods[0].ogsm,
+                goals: [
+                  {
+                    id: "g1",
+                    label: "G1",
+                    title: "既有目標",
+                    fullText: "既有目標",
+                    completionRate: 0,
+                    strategies: [
+                      {
+                        id: "s1",
+                        title: "既有策略",
+                        rawText: "",
+                        measures: [],
+                        actionPlans: [],
+                        owners: [],
+                        notes: "",
+                        completionRate: 0,
+                        manualRate: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              id: "p2",
+              year: 2026,
+              halfYear: "H2",
+              ogsm: {
+                ...WORKSPACE.departments[0].periods[0].ogsm,
+                goals: [
+                  {
+                    id: "g2",
+                    label: "G2",
+                    title: "新目標",
+                    fullText: "新目標",
+                    completionRate: 0,
+                    strategies: [
+                      {
+                        id: "s2",
+                        title: "新策略",
+                        rawText: "",
+                        measures: [],
+                        actionPlans: [],
+                        owners: [],
+                        notes: "",
+                        completionRate: 0,
+                        manualRate: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({
+      forcedTab: "basic",
+      workspace,
+      onUpdate,
+      activity: {
+        ...ACTIVITY,
+        frameworks: ["ogsm"],
+        dashboardLinks: [
+          {
+            id: "dlink-1",
+            type: "ogsm",
+            periodId: "p1",
+            goalId: "g1",
+            strategyId: "s1",
+            exclude: false,
+          },
+        ],
+      },
+    });
+
+    await user.selectOptions(screen.getByLabelText("OGSM 期別"), "p2");
+    await user.selectOptions(screen.getByLabelText("OGSM 目標"), "g2");
+    await user.selectOptions(screen.getByLabelText("OGSM 策略"), "s2");
+
+    const saveButton = screen.getByRole("button", { name: "儲存" });
+    expect(saveButton).toBeEnabled();
+
+    await user.click(saveButton);
+    expect(onUpdate).toHaveBeenCalledOnce();
+
+    const saved = onUpdate.mock.calls[0][1] as DeptActivity;
+    const ogsmLinks = (saved.dashboardLinks ?? []).filter(
+      (link) => link.type === "ogsm",
+    );
+    expect(ogsmLinks).toHaveLength(1);
+    expect(ogsmLinks[0]?.periodId).toBe("p2");
+    expect(ogsmLinks[0]?.goalId).toBe("g2");
+    expect(ogsmLinks[0]?.strategyId).toBe("s2");
+  });
+
+  test("switching selector with multiple OGSM links should NOT auto-mutate links", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          periods: [
+            {
+              id: "p1",
+              year: 2026,
+              halfYear: "H1",
+              ogsm: {
+                ...WORKSPACE.departments[0].periods[0].ogsm,
+                goals: [
+                  {
+                    id: "g1",
+                    label: "G1",
+                    title: "目標一",
+                    fullText: "目標一",
+                    completionRate: 0,
+                    strategies: [
+                      {
+                        id: "s1",
+                        title: "策略一",
+                        rawText: "",
+                        measures: [],
+                        actionPlans: [],
+                        owners: [],
+                        notes: "",
+                        completionRate: 0,
+                        manualRate: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              id: "p2",
+              year: 2026,
+              halfYear: "H2",
+              ogsm: {
+                ...WORKSPACE.departments[0].periods[0].ogsm,
+                goals: [
+                  {
+                    id: "g2",
+                    label: "G2",
+                    title: "目標二",
+                    fullText: "目標二",
+                    completionRate: 0,
+                    strategies: [
+                      {
+                        id: "s2",
+                        title: "策略二",
+                        rawText: "",
+                        measures: [],
+                        actionPlans: [],
+                        owners: [],
+                        notes: "",
+                        completionRate: 0,
+                        manualRate: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              id: "p3",
+              year: 2027,
+              halfYear: "H1",
+              ogsm: {
+                ...WORKSPACE.departments[0].periods[0].ogsm,
+                goals: [
+                  {
+                    id: "g3",
+                    label: "G3",
+                    title: "目標三",
+                    fullText: "目標三",
+                    completionRate: 0,
+                    strategies: [
+                      {
+                        id: "s3",
+                        title: "策略三",
+                        rawText: "",
+                        measures: [],
+                        actionPlans: [],
+                        owners: [],
+                        notes: "",
+                        completionRate: 0,
+                        manualRate: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({
+      forcedTab: "basic",
+      workspace,
+      onUpdate,
+      activity: {
+        ...ACTIVITY,
+        frameworks: ["ogsm"],
+        dashboardLinks: [
+          {
+            id: "dlink-1",
+            type: "ogsm",
+            periodId: "p1",
+            goalId: "g1",
+            strategyId: "s1",
+            exclude: false,
+          },
+          {
+            id: "dlink-2",
+            type: "ogsm",
+            periodId: "p2",
+            goalId: "g2",
+            strategyId: "s2",
+            exclude: false,
+          },
+        ],
+      },
+    });
+
+    await user.selectOptions(screen.getByLabelText("OGSM 期別"), "p3");
+    await user.selectOptions(screen.getByLabelText("OGSM 目標"), "g3");
+    await user.selectOptions(screen.getByLabelText("OGSM 策略"), "s3");
+
+    const saveButton = screen.getByRole("button", { name: "儲存" });
+    expect(saveButton).toBeDisabled();
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
   test("overdue plan item should NOT auto-switch status to attention", async () => {
     const user = userEvent.setup();
     const onUpdate = vi.fn();
