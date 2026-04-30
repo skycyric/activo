@@ -491,4 +491,38 @@ describe("ActivityDetailPanel forcedTab", () => {
       "adp-tab-active",
     );
   });
+
+  test("overdue plan item should NOT auto-switch status to attention", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+
+    renderPanel({
+      forcedTab: "plans",
+      onUpdate,
+      activity: {
+        ...ACTIVITY,
+        status: "not-started",
+        planItems: [
+          {
+            id: "plan-overdue",
+            description: "逾期項目",
+            quarter: "Q1",
+            completed: false,
+            plannedEndDate: "2026-01-01", // 遠早於今日，確保逾期
+            actualEndDate: undefined,
+            dependsOnIds: [],
+            linkedMeasureId: null,
+          },
+        ],
+      },
+    });
+
+    // 修改說明以觸發 patch，確保 applyAutoAttention 不再被呼叫
+    await user.type(screen.getByDisplayValue("逾期項目"), "x");
+    await user.click(screen.getByRole("button", { name: "儲存" }));
+
+    expect(onUpdate).toHaveBeenCalledOnce();
+    const saved = onUpdate.mock.calls[0][1] as DeptActivity;
+    expect(saved.status).toBe("not-started");
+  });
 });

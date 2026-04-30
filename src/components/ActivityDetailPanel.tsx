@@ -214,7 +214,6 @@ export default function ActivityDetailPanel({
   }));
   const [tab, setTab] = useState<Tab>(forcedTab ?? "basic");
   const [dirty, setDirty] = useState(false);
-  const [statusManuallyChanged, setStatusManuallyChanged] = useState(false);
 
   // Sync forcedTab during render (React "setState during render" pattern)
   // avoids triggering an extra re-render cycle compared to useEffect.
@@ -274,27 +273,8 @@ export default function ActivityDetailPanel({
   );
 
   // ── Draft helpers ──────────────────────────────────────────────────────────
-  const applyAutoAttention = (nextDraft: DeptActivity): DeptActivity => {
-    if (statusManuallyChanged) return nextDraft;
-
-    const nextWarnDays = Math.max(
-      0,
-      Math.round(nextDraft.warnDaysBefore ?? warnDaysBefore ?? 3),
-    );
-    const hasOverdue = (nextDraft.planItems ?? []).some(
-      (item) => getPlanItemWarning(item, nextWarnDays) === "overdue",
-    );
-    if (!hasOverdue) return nextDraft;
-    if (nextDraft.status === "attention") return nextDraft;
-    if (nextDraft.status && nextDraft.status !== "not-started") {
-      return nextDraft;
-    }
-
-    return { ...nextDraft, status: "attention" };
-  };
-
   const patch = (partial: Partial<DeptActivity>) => {
-    setDraft((d) => applyAutoAttention({ ...d, ...partial }));
+    setDraft((d) => ({ ...d, ...partial }));
     setDirty(true);
     onDirtyChange?.(true);
   };
@@ -663,7 +643,6 @@ export default function ActivityDetailPanel({
                 deptId={deptId}
                 patch={patch}
                 onStatusChange={(status) => {
-                  setStatusManuallyChanged(true);
                   patch({ status });
                 }}
                 overduePlanDescriptions={overduePlanItems.map(
