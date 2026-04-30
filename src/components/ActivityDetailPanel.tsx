@@ -833,6 +833,34 @@ function BasicTab({
     setSelStratId("");
   };
 
+  const upsertLegacyOgsmLinkFromSelection = (
+    periodId: string,
+    goalId: string,
+    strategyId: string,
+  ) => {
+    if (!periodId || !goalId || !strategyId) return;
+    const all = draft.dashboardLinks ?? [];
+    if (all.some((l) => l.type === "ogsm")) return;
+
+    patch({
+      dashboardLinks: [
+        ...all,
+        {
+          id: genId("dlink"),
+          type: "ogsm",
+          periodId,
+          goalId,
+          strategyId,
+          exclude: false,
+        },
+      ],
+      // 舊資料從 fallback 歸屬切換時，同步補上 ogsm framework
+      frameworks: frameworks.includes("ogsm")
+        ? frameworks
+        : [...frameworks, "ogsm"],
+    });
+  };
+
   const removeOgsmLink = (linkId: string) => {
     const next = (draft.dashboardLinks ?? []).filter((l) => l.id !== linkId);
     patch({ dashboardLinks: next.length > 0 ? next : undefined });
@@ -961,6 +989,7 @@ function BasicTab({
 
             <select
               className="adp-select"
+              aria-label="OGSM 期別"
               value={selPeriodId}
               onChange={(e) => {
                 setSelPeriodId(e.target.value);
@@ -977,6 +1006,7 @@ function BasicTab({
             </select>
             <select
               className="adp-select"
+              aria-label="OGSM 目標"
               value={selGoalId}
               disabled={!selPeriodId}
               onChange={(e) => {
@@ -994,9 +1024,20 @@ function BasicTab({
             </select>
             <select
               className="adp-select"
+              aria-label="OGSM 策略"
               value={selStratId}
               disabled={!selGoalId}
-              onChange={(e) => setSelStratId(e.target.value)}
+              onChange={(e) => {
+                const nextStratId = e.target.value;
+                setSelStratId(nextStratId);
+                // 相容舊資料：原本只有 initial* 歸屬（尚未寫入 dashboardLinks）
+                // 在第一次完成三階選擇時就落地到 draft，避免儲存鍵無法啟用。
+                upsertLegacyOgsmLinkFromSelection(
+                  selPeriodId,
+                  selGoalId,
+                  nextStratId,
+                );
+              }}
             >
               <option value="">策略…</option>
               {strategies.map((s, si) => (

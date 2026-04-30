@@ -38,6 +38,7 @@ export default function KpiConfigModal({
   onClose,
 }: Props) {
   const formulaType = getInitialFormulaType(kpi);
+  const [localName, setLocalName] = useState(kpi.name ?? kpi.label ?? "");
   const [baselineMode, setBaselineMode] = useState<"fixed" | "kpiRef">(
     kpi.baseline?.type ?? "fixed",
   );
@@ -57,6 +58,11 @@ export default function KpiConfigModal({
   useEffect(() => {
     setBaselineMode(kpi.baseline?.type ?? "fixed");
   }, [kpi.baseline?.type]);
+
+  // 切換至不同 KPI 時重設 localName
+  useEffect(() => {
+    setLocalName(kpi.name ?? kpi.label ?? "");
+  }, [kpi.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patchDraft = (changes: Partial<KPI>) => {
     onChange({ ...kpi, ...changes });
@@ -281,12 +287,13 @@ export default function KpiConfigModal({
             KPI 名稱
             <input
               className="kpi-modal-input"
-              value={kpi.name ?? kpi.label ?? ""}
-              onChange={(e) => {
-                const nextName = e.target.value;
+              value={localName}
+              onChange={(e) => setLocalName(e.target.value)}
+              onBlur={() => {
+                const trimmed = localName.trim();
                 patchDraft({
-                  name: nextName.trim() || undefined,
-                  label: nextName.trim() || originalKpi.label,
+                  name: trimmed || undefined,
+                  label: trimmed || originalKpi.label,
                 });
               }}
               placeholder="例：業績達成率、新增客戶數"

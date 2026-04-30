@@ -7118,11 +7118,11 @@ body,
   left: 3px;
   width: 2px;
   border-radius: 999px;
-  background: transparent;
+  background: #cbd5e1;
   transition: background 0.12s;
 }
 .act-col-resizer:hover::after {
-  background: #94a3b8;
+  background: #64748b;
 }
 .act-sort-icon {
   margin-left: 4px;
