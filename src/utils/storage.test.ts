@@ -8,6 +8,7 @@ import {
   migrateToV3,
   migrateFrameworksV1,
   migrateTimelineV1,
+  migrateTimelineV2,
   validateOrWarn,
   syncRelationalLinksV1,
   normalizeWorkspaceData,
@@ -1597,6 +1598,119 @@ describe("migrateTimelineV1", () => {
     };
     migrateTimelineV1(ws);
     expect(ws.departments[0].activities![0].lifecycleStartPeriodId).toBe("p1");
+  });
+});
+
+describe("migrateTimelineV2", () => {
+  test("planItems 缺少 periodId → 以 lifecycleStartPeriodId 補值", () => {
+    const act = makeDeptActivity({
+      lifecycleStartPeriodId: "p2",
+      planItems: [
+        {
+          id: "plan1",
+          description: "跨年項目",
+          quarter: "Q4",
+          completed: false,
+          plannedEndDate: "2026-10-10",
+          actualEndDate: undefined,
+          dependsOnIds: [],
+          linkedMeasureId: null,
+        },
+      ],
+    });
+    const ws: WorkspaceData = {
+      ...makeV3Workspace([act]),
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          activities: [act],
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [],
+                period: "2026 H1",
+                importedAt: "",
+                overallRate: 0,
+              },
+            },
+            {
+              id: "p2",
+              halfYear: "H2",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [],
+                period: "2026 H2",
+                importedAt: "",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const changed = migrateTimelineV2(ws);
+
+    expect(changed).toBe(true);
+    expect(ws.departments[0].activities![0].planItems?.[0]?.periodId).toBe(
+      "p2",
+    );
+  });
+
+  test("normalizeWorkspaceData 對已跑過 TimelineV1 的資料仍會補 TimelineV2", () => {
+    const ws = makeWorkspace({
+      _migratedTimelineV1: true,
+      departments: [
+        {
+          id: "dept1",
+          name: "部門A",
+          periods: [
+            {
+              id: "p1",
+              halfYear: "H1",
+              year: 2026,
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [],
+                period: "2026 H1",
+                importedAt: "",
+                overallRate: 0,
+              },
+            },
+          ],
+          activities: [
+            makeDeptActivity({
+              planItems: [
+                {
+                  id: "plan1",
+                  description: "舊資料項目",
+                  quarter: "Q1",
+                  completed: false,
+                  plannedEndDate: "2026-01-10",
+                  actualEndDate: undefined,
+                  dependsOnIds: [],
+                  linkedMeasureId: null,
+                },
+              ],
+            }),
+          ],
+        },
+      ],
+    });
+
+    const changed = normalizeWorkspaceData(ws);
+
+    expect(changed).toBe(true);
+    expect(ws._migratedTimelineV2).toBe(true);
+    expect(ws.departments[0].activities?.[0]?.planItems?.[0]?.periodId).toBe(
+      "p1",
+    );
   });
 });
 

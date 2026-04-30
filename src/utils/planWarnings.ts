@@ -1,4 +1,4 @@
-import type { PlanItem, Strategy } from "../schemas/ogsm";
+import type { PeriodData, PlanItem, Strategy } from "../schemas/ogsm";
 
 export interface PlanWarnCounts {
   overdue: number;
@@ -14,12 +14,41 @@ function getQuarterFromIsoDate(date: string | undefined): string | null {
   return `Q${Math.floor((month - 1) / 3) + 1}`;
 }
 
+function getYearFromIsoDate(date: string | undefined): number | null {
+  if (!date) return null;
+  const parts = date.split("-");
+  if (parts.length < 1) return null;
+  const year = Number(parts[0]);
+  return Number.isFinite(year) ? year : null;
+}
+
+function isQuarterCompatibleWithHalfYear(
+  quarter: string,
+  halfYear: PeriodData["halfYear"],
+): boolean {
+  return halfYear === "H1"
+    ? quarter === "Q1" || quarter === "Q2"
+    : quarter === "Q3" || quarter === "Q4";
+}
+
+export type PlanItemPeriodContext = Pick<PeriodData, "year" | "halfYear">;
+
 export function isPlannedEndDateOutsideQuarter(
-  item: PlanItem & { quarter?: string },
+  item: PlanItem & { quarter?: string; periodId?: string },
+  period?: PlanItemPeriodContext,
 ): boolean {
   if (!item.plannedEndDate || !item.quarter) return false;
   const plannedQuarter = getQuarterFromIsoDate(item.plannedEndDate);
   if (!plannedQuarter) return false;
+  if (!period) {
+    return plannedQuarter !== item.quarter;
+  }
+  const plannedYear = getYearFromIsoDate(item.plannedEndDate);
+  if (plannedYear === null) return false;
+  if (plannedYear !== period.year) return true;
+  if (!isQuarterCompatibleWithHalfYear(item.quarter, period.halfYear)) {
+    return true;
+  }
   return plannedQuarter !== item.quarter;
 }
 

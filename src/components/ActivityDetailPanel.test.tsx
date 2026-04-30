@@ -547,6 +547,71 @@ describe("ActivityDetailPanel forcedTab", () => {
     );
   });
 
+  test("cross-year plan item with matching periodId and quarter should save", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          periods: [
+            {
+              ...WORKSPACE.departments[0].periods[0],
+              id: "p1",
+              year: 2026,
+              halfYear: "H1",
+            },
+            {
+              id: "p3",
+              year: 2027,
+              halfYear: "H1",
+              ogsm: {
+                objectives: { orgO: "", deptO: "" },
+                goals: [],
+                period: "2027 H1",
+                importedAt: "",
+                overallRate: 0,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({
+      forcedTab: "plans",
+      workspace,
+      onUpdate,
+      activity: {
+        ...ACTIVITY,
+        planItems: [
+          {
+            id: "plan-cross-year",
+            description: "跨年正確歸屬",
+            periodId: "p3",
+            quarter: "Q1",
+            completed: false,
+            plannedEndDate: "2027-01-15",
+            actualEndDate: undefined,
+            dependsOnIds: [],
+            linkedMeasureId: null,
+          },
+        ],
+      },
+    });
+    alertSpy.mockClear();
+
+    expect(screen.queryByText("❗ 預計完成日不在 Q1")).not.toBeInTheDocument();
+
+    await user.type(screen.getByDisplayValue("跨年正確歸屬"), "x");
+    await user.click(screen.getByRole("button", { name: "儲存" }));
+
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenCalledOnce();
+  });
+
   test("legacy OGSM attribution selection should become savable", async () => {
     const user = userEvent.setup();
     const onUpdate = vi.fn();
@@ -944,5 +1009,107 @@ describe("ActivityDetailPanel forcedTab", () => {
     expect(onUpdate).toHaveBeenCalledOnce();
     const saved = onUpdate.mock.calls[0][1] as DeptActivity;
     expect(saved.status).toBe("not-started");
+  });
+
+  test("save alert should include period info when plan date is outside quarter", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          periods: [
+            {
+              ...WORKSPACE.departments[0].periods[0],
+              id: "p1",
+              year: 2026,
+              halfYear: "H1",
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({
+      forcedTab: "plans",
+      workspace,
+      onUpdate,
+      activity: {
+        ...ACTIVITY,
+        planItems: [
+          {
+            id: "plan-bad-date",
+            description: "季度錯誤項目",
+            periodId: "p1",
+            quarter: "Q1",
+            completed: false,
+            plannedEndDate: "2026-04-10", // Q2，不符合 Q1
+            actualEndDate: undefined,
+            dependsOnIds: [],
+            linkedMeasureId: null,
+          },
+        ],
+      },
+    });
+
+    alertSpy.mockClear();
+
+    await user.type(screen.getByDisplayValue("季度錯誤項目"), "x");
+    await user.click(screen.getByRole("button", { name: "儲存" }));
+
+    expect(alertSpy).toHaveBeenCalledOnce();
+    const alertMsg = alertSpy.mock.calls[0][0] as string;
+    // 檢查 alert 訊息中包含期別資訊
+    expect(alertMsg).toContain("2026-H1");
+    expect(alertMsg).toContain("Q1");
+    expect(alertMsg).toContain("季度錯誤項目");
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  test("plan item with missing period reference should display warning badge", () => {
+    const workspace: WorkspaceData = {
+      ...WORKSPACE,
+      departments: [
+        {
+          ...WORKSPACE.departments[0],
+          periods: [
+            {
+              ...WORKSPACE.departments[0].periods[0],
+              id: "p1",
+              year: 2026,
+              halfYear: "H1",
+            },
+          ],
+        },
+      ],
+    };
+
+    renderPanel({
+      forcedTab: "plans",
+      workspace,
+      activity: {
+        ...ACTIVITY,
+        planItems: [
+          {
+            id: "plan-missing-period",
+            description: "缺失期別參考",
+            periodId: "p999", // 不存在的期別 ID
+            quarter: "Q1",
+            completed: false,
+            plannedEndDate: "2026-03-10",
+            actualEndDate: undefined,
+            dependsOnIds: [],
+            linkedMeasureId: null,
+          },
+        ],
+      },
+    });
+
+    // 應該顯示「期別『p999』不存在」的警告
+    expect(screen.getByText(/期別「p999」不存在/)).toBeInTheDocument();
+    expect(screen.getByTitle(/所屬期別已被刪除或無法找到/)).toBeInTheDocument();
   });
 });

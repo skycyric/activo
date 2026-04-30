@@ -527,6 +527,32 @@ function periodSortValue(year: number, halfYear: "H1" | "H2"): number {
   return year * 10 + (halfYear === "H1" ? 1 : 2);
 }
 
+function inferActivityPeriodId(
+  activity: DeptActivity,
+  periodById: Map<string, PeriodData>,
+): string | undefined {
+  if (
+    activity.lifecycleStartPeriodId &&
+    periodById.has(activity.lifecycleStartPeriodId)
+  ) {
+    return activity.lifecycleStartPeriodId;
+  }
+
+  const ogsmPeriodIds = Array.from(
+    new Set(
+      (activity.dashboardLinks ?? [])
+        .filter((link) => link.type === "ogsm" && !!link.periodId)
+        .map((link) => link.periodId as string)
+        .filter((periodId) => periodById.has(periodId)),
+    ),
+  );
+  if (ogsmPeriodIds.length === 1) {
+    return ogsmPeriodIds[0];
+  }
+
+  return periodById.keys().next().value;
+}
+
 /**
  * TimelineV1：
  * 1) 對 OGSM dashboardLinks 依 periodId+goalId+strategyId 去重
@@ -585,6 +611,30 @@ export function migrateTimelineV1(ws: WorkspaceData): boolean {
           changed = true;
         }
       }
+    }
+  }
+  return changed;
+}
+
+/**
+ * TimelineV2：
+ * 1) 對舊 planItems 補齊 periodId
+ * 2) 優先使用 activity lifecycle，否則回退到可推導的 OGSM / 部門第一個 period
+ */
+export function migrateTimelineV2(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    const periodById = new Map(dept.periods.map((p) => [p.id, p]));
+    const firstPeriodId = dept.periods[0]?.id;
+    for (const activity of dept.activities ?? []) {
+      const fallbackPeriodId =
+        inferActivityPeriodId(activity, periodById) ?? firstPeriodId;
+      if (!fallbackPeriodId || !activity.planItems?.length) continue;
+      activity.planItems = activity.planItems.map((item) => {
+        if (item.periodId) return item;
+        changed = true;
+        return { ...item, periodId: fallbackPeriodId };
+      });
     }
   }
   return changed;
@@ -737,6 +787,7 @@ type WorkspaceMigrationFlag =
   | "_migratedV3"
   | "_migratedFrameworksV1"
   | "_migratedTimelineV1"
+  | "_migratedTimelineV2"
   | "_migratedRelationalV1";
 
 type WorkspaceFlaggedMigration = {
@@ -1025,6 +1076,13 @@ export const WORKSPACE_FLAGGED_MIGRATIONS: readonly WorkspaceFlaggedMigration[] 
       sunset:
         "Remove after timeline defaults are guaranteed in all persisted workspaces.",
       run: migrateTimelineV1,
+    },
+    {
+      flag: "_migratedTimelineV2",
+      description:
+        "Backfill periodId onto flat plan items for cross-year timeline validation.",
+      sunset: "Remove after all persisted planItems always include periodId.",
+      run: migrateTimelineV2,
     },
     {
       flag: "_migratedRelationalV1",

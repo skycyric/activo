@@ -9833,6 +9833,11 @@ body,
   color: #3730a3;
   border: 1px solid #c7d2fe;
 }
+.adp-plan-badge-period {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
 .adp-plan-add-btn {
   align-self: flex-start;
   background: none;

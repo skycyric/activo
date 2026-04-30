@@ -231,6 +231,8 @@ export const ActivityDashboardLinkSchema = DashboardLinkSchema.extend({
  * quarter 直接掛在項目上，取代原先 ActionPlan.quarter 的層級。
  */
 export const ActivityPlanItemSchema = PlanItemSchema.extend({
+  /** 所屬期別 id，作為年份/半年度的主歸屬 */
+  periodId: z.string().optional(),
   /** 所屬季度，e.g. "Q1" / "Q2" */
   quarter: z.string().optional(),
 });
@@ -477,6 +479,8 @@ export const WorkspaceDataSchema = z.object({
   _migratedFrameworksV1: z.boolean().optional(),
   /** true = 已執行 TimelineV1：多筆 OGSM 歸屬去重 + lifecycle 欄位補值 */
   _migratedTimelineV1: z.boolean().optional(),
+  /** true = 已執行 TimelineV2：planItems 補齊 periodId 以支援跨年度驗證 */
+  _migratedTimelineV2: z.boolean().optional(),
   /** true = 已執行 RelationalV1：建立 departments[].activityLinks 並與 activities[].dashboardLinks 同步 */
   _migratedRelationalV1: z.boolean().optional(),
   warnDaysBefore: z.number().optional(),

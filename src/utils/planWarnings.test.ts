@@ -212,6 +212,50 @@ describe("isPlannedEndDateOutsideQuarter", () => {
       ),
     ).toBe(false);
   });
+
+  test("提供 period 時，同年且 quarter/halfYear 相符 → false", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-10-10" }),
+      periodId: "p2",
+      quarter: "Q4",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2026, halfYear: "H2" }),
+    ).toBe(false);
+  });
+
+  test("提供 period 時，跨到下一年度但歸屬正確 → false", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2027-01-15" }),
+      periodId: "p3",
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2027, halfYear: "H1" }),
+    ).toBe(false);
+  });
+
+  test("提供 period 時，年份不符 → true", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2027-01-15" }),
+      periodId: "p2",
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2026, halfYear: "H2" }),
+    ).toBe(true);
+  });
+
+  test("提供 period 時，quarter 與 halfYear 不相容 → true", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-10-10" }),
+      periodId: "p1",
+      quarter: "Q4",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2026, halfYear: "H1" }),
+    ).toBe(true);
+  });
 });
 
 // ─── isLateCompletion ─────────────────────────────────────────────────────────

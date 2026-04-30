@@ -124,13 +124,17 @@ function cloneKpiFromTemplate(source: KPI): KPI {
 function clonePlanItemFromTemplate(
   source: ActivityPlanItem,
   quarter: string,
+  periodId?: string,
 ): ActivityPlanItem {
   const sourceQuarter = source.quarter ?? "Q1";
-  const keepSchedule = sourceQuarter === quarter;
+  const keepSchedule =
+    sourceQuarter === quarter &&
+    (!source.periodId || source.periodId === periodId);
   return {
     ...source,
     id: genId(),
     bizKey: undefined,
+    periodId,
     quarter,
     completed: false,
     actualEndDate: undefined,
@@ -231,10 +235,22 @@ export default function ActivityDetailPanel({
   const [planTemplateQuarter, setPlanTemplateQuarter] = useState<string | null>(
     null,
   );
+  const deptPeriods =
+    workspace.departments.find((d) => d.id === deptId)?.periods ?? [];
   const effectiveWarnDays = Math.max(
     0,
     Math.round(draft.warnDaysBefore ?? warnDaysBefore ?? 3),
   );
+  const planPeriodById = useMemo(
+    () => new Map(deptPeriods.map((period) => [period.id, period])),
+    [deptPeriods],
+  );
+  const defaultPlanPeriodId =
+    initialPeriodId ??
+    draft.lifecycleStartPeriodId ??
+    (draft.dashboardLinks ?? []).find((link) => link.type === "ogsm")
+      ?.periodId ??
+    deptPeriods[0]?.id;
 
   // ── Panel width (draggable) ────────────────────────────────────────────────
   const [panelWidth, setPanelWidth] = useState(loadWidth);
@@ -280,16 +296,27 @@ export default function ActivityDetailPanel({
   };
 
   const handleSave = () => {
-    const invalidQuarterPlans = (draft.planItems ?? []).filter(
-      isPlannedEndDateOutsideQuarter,
-    );
+    const invalidQuarterPlans = (draft.planItems ?? []).filter((item) => {
+      const period = planPeriodById.get(
+        item.periodId ?? defaultPlanPeriodId ?? "",
+      );
+      return isPlannedEndDateOutsideQuarter(item, period);
+    });
     if (invalidQuarterPlans.length > 0) {
-      const invalidNames = invalidQuarterPlans
+      const invalidDetails = invalidQuarterPlans
         .slice(0, 3)
-        .map((item) => item.description || "（未命名行動計畫）")
-        .join("、");
+        .map((item) => {
+          const period = planPeriodById.get(
+            item.periodId ?? defaultPlanPeriodId ?? "",
+          );
+          const periodLabel = period
+            ? `${period.year}-${period.halfYear}`
+            : "未指定期別";
+          return `「${item.description || "（未命名行動計畫）"}」(歸屬 ${periodLabel}, ${item.quarter ?? "Q1"})`;
+        })
+        .join("\n- ");
       window.alert(
-        `有行動計畫的預計完成日不在所屬季度內，請先修正後再儲存：${invalidNames}${invalidQuarterPlans.length > 3 ? " 等" : ""}`,
+        `下列行動計畫的預計完成日期超出所屬期別的季度範圍，請先修正後再儲存：\n- ${invalidDetails}${invalidQuarterPlans.length > 3 ? "\n- 等" : ""}`,
       );
       setTab("plans");
       return;
@@ -396,6 +423,7 @@ export default function ActivityDetailPanel({
     const newItem: ActivityPlanItem = {
       id: genId(),
       description: "",
+      periodId: defaultPlanPeriodId,
       quarter,
       completed: false,
       plannedEndDate: undefined,
@@ -415,7 +443,10 @@ export default function ActivityDetailPanel({
     source: ActivityPlanItem,
   ) => {
     patch({
-      planItems: [...planItems, clonePlanItemFromTemplate(source, quarter)],
+      planItems: [
+        ...planItems,
+        clonePlanItemFromTemplate(source, quarter, defaultPlanPeriodId),
+      ],
     });
   };
 
@@ -671,6 +702,7 @@ export default function ActivityDetailPanel({
               <PlansTab
                 planItems={planItems}
                 quarters={allQuarters}
+                periodById={planPeriodById}
                 warnDaysBefore={effectiveWarnDays}
                 isReadOnly={isReadOnly}
                 onUpdateWarnDays={(n) => patch({ warnDaysBefore: n })}
@@ -791,7 +823,6 @@ function BasicTab({
       "",
   );
 
-  // 目前部門的 periods
   const deptPeriods =
     workspace.departments.find((d) => d.id === deptId)?.periods ?? [];
   const selPeriod = deptPeriods.find((p) => p.id === selPeriodId);
@@ -2004,6 +2035,7 @@ function PlanTemplateModal({
 function PlansTab({
   planItems,
   quarters,
+  periodById,
   warnDaysBefore,
   isReadOnly,
   onUpdateWarnDays,
@@ -2013,6 +2045,7 @@ function PlansTab({
 }: {
   planItems: ActivityPlanItem[];
   quarters: string[];
+  periodById: Map<string, { year: number; halfYear: "H1" | "H2" }>;
   warnDaysBefore: number;
   isReadOnly: boolean;
   onUpdateWarnDays: (n: number) => void;
@@ -2128,6 +2161,7 @@ function PlansTab({
               <PlanItemRow
                 key={item.id}
                 item={item}
+                period={periodById.get(item.periodId ?? "")}
                 allPlanItems={planItems}
                 warnDaysBefore={warnDaysBefore}
                 isReadOnly={isReadOnly}
@@ -2145,6 +2179,7 @@ function PlansTab({
                   <PlanItemRow
                     key={`${quarter}:${item.id}:mirror`}
                     item={item}
+                    period={periodById.get(item.periodId ?? "")}
                     allPlanItems={planItems}
                     warnDaysBefore={warnDaysBefore}
                     isReadOnly
@@ -2174,6 +2209,7 @@ function PlansTab({
 
 function PlanItemRow({
   item,
+  period,
   allPlanItems,
   warnDaysBefore,
   isReadOnly,
@@ -2183,6 +2219,7 @@ function PlanItemRow({
   onDelete,
 }: {
   item: ActivityPlanItem;
+  period?: { year: number; halfYear: "H1" | "H2" };
   allPlanItems: ActivityPlanItem[];
   warnDaysBefore: number;
   isReadOnly: boolean;
@@ -2193,7 +2230,7 @@ function PlanItemRow({
 }) {
   const warnType = getPlanItemWarning(item, warnDaysBefore);
   const lateCompletion = isLateCompletion(item);
-  const plannedQuarterMismatch = isPlannedEndDateOutsideQuarter(item);
+  const plannedQuarterMismatch = isPlannedEndDateOutsideQuarter(item, period);
   const dependsOnIds = item.dependsOnIds ?? [];
   const depCandidates = allPlanItems.filter((p) => p.id !== item.id);
   const [showEventDates, setShowEventDates] = useState(
@@ -2274,6 +2311,28 @@ function PlanItemRow({
               來自 {mirrorFromQuarter}
             </span>
           )}
+        </div>
+      )}
+
+      {/* 所屬期別 */}
+      {period && (
+        <div className="adp-plan-item-meta">
+          <span className="adp-plan-meta-label">所屬期別：</span>
+          <span className="adp-plan-badge adp-plan-badge-period">
+            {period.year}-{period.halfYear}
+          </span>
+        </div>
+      )}
+
+      {/* 所屬期別缺失警告 */}
+      {!period && item.periodId !== undefined && (
+        <div className="adp-plan-item-meta">
+          <span
+            className="adp-plan-badge invalid-quarter"
+            title="所屬期別已被刪除或無法找到"
+          >
+            ❗ 期別「{item.periodId}」不存在
+          </span>
         </div>
       )}
 
