@@ -10,7 +10,6 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "ignoreDeprecations": "6.0",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
@@ -24,7 +23,6 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
