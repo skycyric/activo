@@ -473,7 +473,7 @@ export default function App() {
         setActivePeriodId(firstDept.periods[0]?.id ?? "");
       }
     },
-    [],
+    [setDeptFiles],
   );
 
   // On mount: restore multi-file root handle if permission is already granted
@@ -746,7 +746,13 @@ export default function App() {
       window.removeEventListener("focus", onWindowFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [fsSupported, isMultiFileMode, conflictDeptId, showDeptSaveToast]);
+  }, [
+    fsSupported,
+    isMultiFileMode,
+    conflictDeptId,
+    showDeptSaveToast,
+    setDeptFiles,
+  ]);
 
   // ─── Multi-file mode handlers ─────────────────────────────────────────
   const handleLinkRootFolder = useCallback(async () => {
@@ -770,7 +776,7 @@ export default function App() {
     setIsAdmin(false);
     rootDirHandleRef.current = null;
     await clearRootHandle();
-  }, []);
+  }, [setDeptFiles]);
 
   /**
    * Update a single dept's workspace in multi-file mode.
@@ -791,44 +797,139 @@ export default function App() {
         }),
       );
     },
-    [],
+    [setDeptFiles],
   );
 
   /** Save a single dept file in multi-file mode (with OneDrive-safe conflict detection). */
-  const saveDeptFile = useCallback(async (deptId: string) => {
-    const entry = deptFilesRef.current.find(
-      (f) => f.workspace.departments[0]?.id === deptId,
-    );
-    if (!entry || entry.isReadOnly || !entry.isDirty) {
-      return "skipped" as SaveDeptResult;
-    }
-
-    // Mark saving
-    setDeptFiles((prev) =>
-      prev.map((f) =>
-        f.workspace.departments[0]?.id === deptId
-          ? { ...f, syncStatus: "saving" as SyncStatus }
-          : f,
-      ),
-    );
-
-    try {
-      // ── 第一次讀磁碟 ─────────────────────────────────────────────
-      const firstMeta = await readDataFileMeta(entry.handle);
-      const diskText = await readDataFile(entry.handle);
-      let onDisk: WorkspaceData = JSON.parse(diskText);
-      normalizeWorkspaceData(onDisk);
-      validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
-
-      // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
-      await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-
-      // ── 重新取最新本地狀態（避免等待期間的編輯遺失）──────────────
-      const freshEntry = deptFilesRef.current.find(
+  const saveDeptFile = useCallback(
+    async (deptId: string) => {
+      const entry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
-      if (!freshEntry) {
-        // dept was unlinked while the 3 s wait was in progress; reset status
+      if (!entry || entry.isReadOnly || !entry.isDirty) {
+        return "skipped" as SaveDeptResult;
+      }
+
+      // Mark saving
+      setDeptFiles((prev) =>
+        prev.map((f) =>
+          f.workspace.departments[0]?.id === deptId
+            ? { ...f, syncStatus: "saving" as SyncStatus }
+            : f,
+        ),
+      );
+
+      try {
+        // ── 第一次讀磁碟 ─────────────────────────────────────────────
+        const firstMeta = await readDataFileMeta(entry.handle);
+        const diskText = await readDataFile(entry.handle);
+        let onDisk: WorkspaceData = JSON.parse(diskText);
+        normalizeWorkspaceData(onDisk);
+        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
+
+        // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
+        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+
+        // ── 重新取最新本地狀態（避免等待期間的編輯遺失）──────────────
+        const freshEntry = deptFilesRef.current.find(
+          (f) => f.workspace.departments[0]?.id === deptId,
+        );
+        if (!freshEntry) {
+          // dept was unlinked while the 3 s wait was in progress; reset status
+          setDeptFiles((prev) =>
+            prev.map((f) =>
+              f.workspace.departments[0]?.id === deptId
+                ? { ...f, syncStatus: "error" as SyncStatus }
+                : f,
+            ),
+          );
+          return "error" as SaveDeptResult;
+        }
+
+        // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
+        const secondMeta = await readDataFileMeta(freshEntry.handle);
+        const diskWasModified = secondMeta !== firstMeta;
+        if (diskWasModified) {
+          const freshText = await readDataFile(freshEntry.handle);
+          onDisk = JSON.parse(freshText);
+          normalizeWorkspaceData(onDisk);
+          validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
+        }
+
+        // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
+        // 同時比對「本機最後已知 lastModified」，避免漏掉
+        //「在本次 save 開始前就已被遠端更新」的情境。
+        // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
+        // 版號相同但內容不同），任一條件成立都進行衝突偵測。
+        const loadedVer = freshEntry.version ?? -1;
+        const probe = evaluateSaveConflictProbe({
+          firstMeta,
+          secondMeta,
+          knownLastModified: freshEntry.lastModified,
+          loadedVersion: loadedVer,
+          onDiskVersion: onDisk.version,
+        });
+        let toWrite = freshEntry.workspace;
+
+        if (probe.shouldDetectConflict) {
+          const conflicts = detectConflicts(freshEntry.workspace, onDisk);
+          if (conflicts.length > 0) {
+            // 暫停存檔，開衝突 modal
+            conflictDeptDiskWsRef.current = onDisk;
+            setConflictDeptId(deptId);
+            setConflictDeptEntries(conflicts);
+            setConflictDeptResolutions({});
+            setDeptFiles((prev) =>
+              prev.map((f) =>
+                f.workspace.departments[0]?.id === deptId
+                  ? { ...f, syncStatus: "pending" as SyncStatus }
+                  : f,
+              ),
+            );
+            return "conflict" as SaveDeptResult;
+          }
+          // 無衝突：自動合併並繼續
+          const { workspace: merged, autoMerged } = mergeWorkspaces(
+            freshEntry.workspace,
+            onDisk,
+          );
+          toWrite = merged;
+          if (autoMerged > 0) {
+            setDeptMergeToast(
+              `[${freshEntry.subfolderName}] 已自動合併 ${autoMerged} 項遠端新增/刪除`,
+            );
+            setTimeout(() => setDeptMergeToast(""), 4000);
+          }
+        }
+
+        // ── 寫入 ────────────────────────────────────────────────────
+        const payload: WorkspaceData = {
+          ...toWrite,
+          version: (freshEntry.version ?? 1) + 1,
+          savedAt: new Date().toISOString(),
+        };
+        await writeDataFile(
+          freshEntry.handle,
+          JSON.stringify(payload, null, 2),
+        );
+        const lm = await readDataFileMeta(freshEntry.handle);
+
+        setDeptFiles((prev) =>
+          prev.map((f) =>
+            f.workspace.departments[0]?.id === deptId
+              ? {
+                  ...f,
+                  workspace: payload,
+                  isDirty: false,
+                  syncStatus: "saved" as SyncStatus,
+                  version: payload.version ?? null,
+                  lastModified: lm,
+                }
+              : f,
+          ),
+        );
+        return "saved" as SaveDeptResult;
+      } catch {
         setDeptFiles((prev) =>
           prev.map((f) =>
             f.workspace.departments[0]?.id === deptId
@@ -838,98 +939,9 @@ export default function App() {
         );
         return "error" as SaveDeptResult;
       }
-
-      // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
-      const secondMeta = await readDataFileMeta(freshEntry.handle);
-      const diskWasModified = secondMeta !== firstMeta;
-      if (diskWasModified) {
-        const freshText = await readDataFile(freshEntry.handle);
-        onDisk = JSON.parse(freshText);
-        normalizeWorkspaceData(onDisk);
-        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
-      }
-
-      // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
-      // 同時比對「本機最後已知 lastModified」，避免漏掉
-      //「在本次 save 開始前就已被遠端更新」的情境。
-      // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
-      // 版號相同但內容不同），任一條件成立都進行衝突偵測。
-      const loadedVer = freshEntry.version ?? -1;
-      const probe = evaluateSaveConflictProbe({
-        firstMeta,
-        secondMeta,
-        knownLastModified: freshEntry.lastModified,
-        loadedVersion: loadedVer,
-        onDiskVersion: onDisk.version,
-      });
-      let toWrite = freshEntry.workspace;
-
-      if (probe.shouldDetectConflict) {
-        const conflicts = detectConflicts(freshEntry.workspace, onDisk);
-        if (conflicts.length > 0) {
-          // 暫停存檔，開衝突 modal
-          conflictDeptDiskWsRef.current = onDisk;
-          setConflictDeptId(deptId);
-          setConflictDeptEntries(conflicts);
-          setConflictDeptResolutions({});
-          setDeptFiles((prev) =>
-            prev.map((f) =>
-              f.workspace.departments[0]?.id === deptId
-                ? { ...f, syncStatus: "pending" as SyncStatus }
-                : f,
-            ),
-          );
-          return "conflict" as SaveDeptResult;
-        }
-        // 無衝突：自動合併並繼續
-        const { workspace: merged, autoMerged } = mergeWorkspaces(
-          freshEntry.workspace,
-          onDisk,
-        );
-        toWrite = merged;
-        if (autoMerged > 0) {
-          setDeptMergeToast(
-            `[${freshEntry.subfolderName}] 已自動合併 ${autoMerged} 項遠端新增/刪除`,
-          );
-          setTimeout(() => setDeptMergeToast(""), 4000);
-        }
-      }
-
-      // ── 寫入 ────────────────────────────────────────────────────
-      const payload: WorkspaceData = {
-        ...toWrite,
-        version: (freshEntry.version ?? 1) + 1,
-        savedAt: new Date().toISOString(),
-      };
-      await writeDataFile(freshEntry.handle, JSON.stringify(payload, null, 2));
-      const lm = await readDataFileMeta(freshEntry.handle);
-
-      setDeptFiles((prev) =>
-        prev.map((f) =>
-          f.workspace.departments[0]?.id === deptId
-            ? {
-                ...f,
-                workspace: payload,
-                isDirty: false,
-                syncStatus: "saved" as SyncStatus,
-                version: payload.version ?? null,
-                lastModified: lm,
-              }
-            : f,
-        ),
-      );
-      return "saved" as SaveDeptResult;
-    } catch {
-      setDeptFiles((prev) =>
-        prev.map((f) =>
-          f.workspace.departments[0]?.id === deptId
-            ? { ...f, syncStatus: "error" as SyncStatus }
-            : f,
-        ),
-      );
-      return "error" as SaveDeptResult;
-    }
-  }, []);
+    },
+    [setDeptFiles],
+  );
 
   // ─── Multi-file conflict resolution handlers ──────────────────────────
 
@@ -962,7 +974,7 @@ export default function App() {
     setConflictDeptId(null);
     conflictDeptDiskWsRef.current = null;
     conflictDeptSourceCopyRef.current = null;
-  }, [conflictDeptId]);
+  }, [conflictDeptId, setDeptFiles]);
 
   const handleDeptConflictConfirm = useCallback(async () => {
     const deptId = conflictDeptId;
@@ -1088,7 +1100,7 @@ export default function App() {
         conflictDeptSourceCopyRef.current = null;
       }
     }
-  }, [conflictDeptId, conflictDeptResolutions]);
+  }, [conflictDeptId, conflictDeptResolutions, setDeptFiles]);
 
   /** Re-read dept file from disk, discarding any in-memory changes. */
   const handleDeptRemoteRefresh = useCallback(
@@ -1139,7 +1151,7 @@ export default function App() {
         }
       }
     },
-    [],
+    [setDeptFiles],
   );
 
   useEffect(() => {
@@ -1223,7 +1235,7 @@ export default function App() {
         alert(`合併副本失敗：${e}`);
       }
     },
-    [],
+    [setDeptFiles],
   );
 
   const handleSaveCurrentDept = useCallback(async () => {
@@ -1301,7 +1313,7 @@ export default function App() {
         ),
       );
     },
-    [],
+    [setDeptFiles],
   );
   // ─────────────────────────────────────────────────────────────────────
 
@@ -1598,7 +1610,7 @@ export default function App() {
         "warning",
       );
     },
-    [isMultiFileMode, showDeptSaveToast],
+    [isMultiFileMode, showDeptSaveToast, setDeptFiles],
   );
 
   // Dept-scoped teams writer: normalize to active dept and keep other depts intact.
@@ -1670,12 +1682,14 @@ export default function App() {
   }, [isMultiFileMode]);
 
   useEffect(() => {
+    const saveRef = deptSaveToastTimerRef;
+    const mergeRef = deptMergeToastTimerRef;
     return () => {
-      if (deptSaveToastTimerRef.current !== null) {
-        window.clearTimeout(deptSaveToastTimerRef.current);
+      if (saveRef.current !== null) {
+        window.clearTimeout(saveRef.current);
       }
-      if (deptMergeToastTimerRef.current !== null) {
-        window.clearTimeout(deptMergeToastTimerRef.current);
+      if (mergeRef.current !== null) {
+        window.clearTimeout(mergeRef.current);
       }
     };
   }, []);
@@ -2172,6 +2186,7 @@ export default function App() {
         departments: patchDepts(entry.workspace.departments),
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `workspace` is referenced only as a TypeScript type annotation (typeof), not at runtime
     [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
@@ -2201,6 +2216,7 @@ export default function App() {
         departments: patchDepts(entry.workspace.departments),
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `workspace` is referenced only as a TypeScript type annotation (typeof), not at runtime
     [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
@@ -2323,6 +2339,7 @@ export default function App() {
         departments: patchDepts(entry.workspace.departments),
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `workspace` is referenced only as a TypeScript type annotation (typeof), not at runtime
     [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
@@ -3307,10 +3324,10 @@ export default function App() {
             onGanttSubViewChange={setActivityGanttSubView}
             readOnlyDeptIds={
               isMultiFileMode
-                ? (deptFiles
+                ? deptFiles
                     .filter((f) => f.isReadOnly)
                     .map((f) => f.workspace.departments[0]?.id)
-                    .filter(Boolean) as string[])
+                    .filter((id): id is string => Boolean(id))
                 : undefined
             }
             onUpdateActivity={handleUpdateDeptActivity}
