@@ -1,6 +1,6 @@
-# OGSM Power Tool
+# Activo
 
-部門 OGSM 看板管理工具，用於追蹤目標（Objectives）、目標分解（Goals）、策略（Strategies）與衡量指標（Measures）。
+部門目標管理工具，整合 OGSM 看板（Objectives、Goals、Strategies、Measures）與活動追蹤，協助團隊對齊策略與執行。
 
 ## 技術棧
 
