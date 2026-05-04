@@ -1,11 +1,21 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi, beforeAll, afterAll } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ActivityCalendar from "./ActivityCalendar";
 import type { ActivityWithContext } from "../ActivityPage";
+
+// 固定系統時間為 2026-04-29，讓月曆初始顯示 2026-04
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-04-29"));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function makeActivity(
   overrides: Partial<ActivityWithContext> = {},
@@ -50,7 +60,6 @@ describe("ActivityCalendar showInCalendar 過濾", () => {
   });
 
   test("showInCalendar=true 且有日期的項目應出現在月格中", () => {
-    // 固定到 2026-04 月份（測試環境日期為 2026-04-29）
     const act = makeActivity({
       planItems: [
         {
