@@ -3320,7 +3320,6 @@ export default function App() {
             deptId={activeDeptId}
             onUpdateTeams={handleUpdateTeamsForDept}
             onUpdateData={updateData}
-            initialTab="team"
           />
         ) : showActivityPage ? (
           <ActivityPage

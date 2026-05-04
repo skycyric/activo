@@ -150,7 +150,6 @@ describe("TourProvider page tours", () => {
         "settings-tabs",
         "settings-team-list",
         "settings-team-actions",
-        "settings-resource-section",
       ],
     },
     {

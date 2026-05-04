@@ -445,8 +445,7 @@ export const TOUR_STEPS: TourStep[] = [
     page: "settings",
     target: "[data-tour='settings-tabs']",
     title: "設定分頁",
-    content:
-      "部門設定分成『團隊設定』與『資源規劃』兩塊。前者管理人員與團隊，後者維護預算與人天投入。",
+    content: "部門設定提供團隊設定功能，可管理人員與團隊。",
     placement: "bottom",
   },
   {
@@ -468,16 +467,6 @@ export const TOUR_STEPS: TourStep[] = [
       "這裡可以新增團隊並儲存團隊設定。新增後的團隊與成員，會出現在策略負責單位與計畫主責者等選單裡。",
     placement: "top",
   },
-  {
-    id: "settings-resource-section",
-    page: "settings",
-    target: "[data-tour='settings-resource-section']",
-    title: "資源規劃明細",
-    content:
-      "切到資源規劃後，可在 Goal / Strategy / Measure 層級維護預算與人天，作為策略可行性與投入追蹤依據。",
-    placement: "top",
-  },
-
   // ── 標籤管理 ──────────────────────────────────────────────────────────
   {
     id: "tags-intro",

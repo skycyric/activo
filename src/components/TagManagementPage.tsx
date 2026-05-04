@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { TagDictionaryItem } from "../schemas/ogsm";
 import { genId } from "../utils/csvParser";
 import { useTour } from "../contexts/TourContext";
@@ -85,6 +85,16 @@ export default function TagManagementPage({
       }
     }
   }
+
+  // Tour: close delete dialog when leaving the delete dialog tour steps.
+  useEffect(() => {
+    if (!isDeleteDialogTourStep && deletingTagId) {
+      setDeletingTagId(null);
+      setDeleteMode("merge");
+      setDeleteMergeTarget("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDeleteDialogTourStep]);
 
   const cancelEditTag = () => {
     setEditingTagId(null);
