@@ -140,11 +140,11 @@ interface Props {
   allActivities: ActivityWithContext[];
   workspace: WorkspaceData;
   expandedId: string | null;
-  onSetExpandedId: (id: string | null) => void;
   ownerFilter: string;
   onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
   onDeleteActivity: (deptId: string, activityId: string) => void;
   onJumpToActivity: (deptId: string, activityId: string) => void;
+  onJumpToOgsm?: (activity: ActivityWithContext) => void;
 }
 
 function formatDate(d: string | undefined): string {
@@ -174,10 +174,10 @@ export default function ActivityTable({
   allActivities,
   workspace,
   expandedId,
-  onSetExpandedId,
   onUpdateActivity,
   onDeleteActivity,
   onJumpToActivity,
+  onJumpToOgsm,
 }: Props) {
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
@@ -617,37 +617,53 @@ export default function ActivityTable({
                 )}
                 {columnVisibility.actions && (
                   <td className="act-td act-td-actions">
-                    <Tooltip content="開啟詳情面板">
-                      <button
-                        className="act-action-btn act-edit-btn"
-                        title="開啟詳情面板"
-                        onClick={() =>
-                          onSetExpandedId(isExpanded ? null : act.id)
-                        }
-                      >
-                        ✏️
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="跳到活動詳情頁">
-                      <button
-                        className="act-action-btn act-jump-btn"
-                        title="開啟活動詳情面板"
-                        onClick={() => onJumpToActivity(act.deptId, act.id)}
-                      >
-                        🔗
-                      </button>
-                    </Tooltip>
-                    {!act.isReadOnly && (
-                      <Tooltip content="刪除活動">
-                        <button
-                          className="act-action-btn act-del-btn"
-                          title="刪除活動"
-                          onClick={() => onDeleteActivity(act.deptId, act.id)}
-                        >
-                          🗑
-                        </button>
-                      </Tooltip>
-                    )}
+                    {(() => {
+                      const canJumpToOgsm = Boolean(
+                        act.goalId && act.strategyId,
+                      );
+                      return (
+                        <>
+                          <Tooltip
+                            content={
+                              canJumpToOgsm
+                                ? "跳到 OGSM 策略詳情"
+                                : "此活動尚未連結到 OGSM"
+                            }
+                          >
+                            <button
+                              className="act-action-btn act-jump-btn"
+                              title={
+                                canJumpToOgsm
+                                  ? "跳到 OGSM 策略詳情"
+                                  : "此活動尚未連結到 OGSM"
+                              }
+                              disabled={!canJumpToOgsm || !onJumpToOgsm}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!canJumpToOgsm || !onJumpToOgsm) return;
+                                onJumpToOgsm(act);
+                              }}
+                            >
+                              🔗
+                            </button>
+                          </Tooltip>
+                          {!act.isReadOnly && (
+                            <Tooltip content="刪除活動">
+                              <button
+                                className="act-action-btn act-del-btn"
+                                title="刪除活動"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteActivity(act.deptId, act.id);
+                                }}
+                              >
+                                🗑
+                              </button>
+                            </Tooltip>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
                 )}
               </tr>

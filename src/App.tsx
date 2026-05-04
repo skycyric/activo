@@ -71,7 +71,9 @@ import TagManagementPage, {
   type TagDeleteOp,
   type TagRename,
 } from "./components/TagManagementPage";
-import ActivityPage from "./components/ActivityPage";
+import ActivityPage, {
+  type ActivityWithContext,
+} from "./components/ActivityPage";
 import HomePage from "./components/HomePage";
 import KpiDesigner from "./components/KpiDesigner";
 import { TourOverlay } from "./components/TourOverlay";
@@ -2302,6 +2304,24 @@ export default function App() {
     [currentRouteState],
   );
 
+  /** 活動入口：從活動總覽跳回 OGSM 並定位到對應策略/計畫 */
+  const handleJumpToOgsmFromActivity = useCallback(
+    (activity: ActivityWithContext) => {
+      if (!activity.goalId || !activity.strategyId) return;
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowTagManagement(false);
+      setShowHomePage(false);
+      setShowKpiDesigner(false);
+      setActiveDeptId(activity.deptId);
+      setSelectedGoalId(activity.goalId);
+      setSelectedStrategyId(activity.strategyId);
+      setPendingDetailNav({ tab: "plans", measureId: activity.id });
+      setPendingActivityDetailId(null);
+    },
+    [],
+  );
+
   const handleToggleExcludeFromOgsm = useCallback(
     (
       deptId: string,
@@ -3341,6 +3361,7 @@ export default function App() {
             onDeleteActivity={handleDeleteDeptActivity}
             onAddActivity={handleAddDeptActivity}
             onJumpToActivity={handleJumpToActivity}
+            onJumpToOgsm={handleJumpToOgsmFromActivity}
             initialSelectedActivityId={pendingActivityDetailId}
             onSelectedActivityIdChange={setPendingActivityDetailId}
           />

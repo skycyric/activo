@@ -73,6 +73,7 @@ interface Props {
       activityGanttSubView?: "activity" | "plan";
     },
   ) => void;
+  onJumpToOgsm?: (activity: ActivityWithContext) => void;
   /** 從外部（DetailPanel M tab）預先開啟某活動 ID */
   initialSelectedActivityId?: string | null;
   /** controlled detail id 變更回呼（含關閉時傳 null） */
@@ -90,6 +91,7 @@ export default function ActivityPage({
   onUpdateActivity,
   onDeleteActivity,
   onAddActivity,
+  onJumpToOgsm,
   initialSelectedActivityId,
   onSelectedActivityIdChange,
 }: Props) {
@@ -236,18 +238,6 @@ export default function ActivityPage({
   }, [filters.owners]);
 
   // Table row selection should open/close panel and keep one expanded row.
-  const handleSetExpandedId = useCallback(
-    (id: string | null) => {
-      if (!confirmSwitchAway(id)) return;
-      panelDirtyRef.current = false;
-      if (!isDetailControlled) {
-        setLocalExpandedId(id);
-        setLocalSelectedActivityId(id);
-      }
-      if (id !== null) setView("table");
-    },
-    [confirmSwitchAway, isDetailControlled, setView],
-  );
 
   // Open activity detail panel (without forcing table view)
   const handleSelectActivity = useCallback(
@@ -701,11 +691,11 @@ export default function ActivityPage({
               allActivities={allActivities}
               workspace={workspace}
               expandedId={expandedId}
-              onSetExpandedId={handleSetExpandedId}
               ownerFilter={filters.owners.join("、")}
               onUpdateActivity={onUpdateActivity}
               onDeleteActivity={onDeleteActivity}
               onJumpToActivity={handleOpenActivityDetail}
+              onJumpToOgsm={onJumpToOgsm}
             />
           )}
           {view === "kanban" && (
