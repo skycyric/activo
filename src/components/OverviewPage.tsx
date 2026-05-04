@@ -21,6 +21,7 @@ interface Props {
   onSelectMeasure: (goalId: string, stratId: string, measureId: string) => void;
   onEditObjective: (text: string) => void;
   onAddGoal: () => void;
+  onGoToKpiDesigner?: () => void;
   isReadOnly?: boolean;
   /** V3 架構：部門活動清單，供 GoalKPI 計算使用 */
   deptActivities?: DeptActivity[];
@@ -128,6 +129,7 @@ export default function OverviewPage({
   onSelectMeasure,
   onEditObjective,
   onAddGoal,
+  onGoToKpiDesigner,
   isReadOnly = false,
   deptActivities = [],
 }: Props) {
@@ -661,7 +663,17 @@ export default function OverviewPage({
         <div className="empty-state" style={{ padding: 60 }}>
           <div className="empty-icon">🎯</div>
           <h2>尚未建立任何目標</h2>
-          <p>點選上方「＋ 新增目標（G）」開始建立 OGSM</p>
+          {onGoToKpiDesigner ? (
+            <p>
+              請前往
+              <button className="ov-link-btn" onClick={onGoToKpiDesigner}>
+                目標編輯器
+              </button>
+              新增目標，開始建立 OGSM
+            </p>
+          ) : (
+            <p>點選上方「＋ 新增目標（G）」開始建立 OGSM</p>
+          )}
         </div>
       ) : (
         <div className="org-tree-wrap">

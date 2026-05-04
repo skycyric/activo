@@ -2753,6 +2753,14 @@ export default function App() {
         }}
         onEditObjective={handleEditObjective}
         onAddGoal={handleAddGoal}
+        onGoToKpiDesigner={() => {
+          setShowKpiDesigner(true);
+          setKpiDesignerGoalId(null);
+          setShowHomePage(false);
+          setShowActivityPage(false);
+          setShowDeptSettings(false);
+          setShowTagManagement(false);
+        }}
         isReadOnly={true}
         deptActivities={effectiveDeptActivities}
       />
