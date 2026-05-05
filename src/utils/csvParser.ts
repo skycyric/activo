@@ -1,4 +1,9 @@
 import type { OGSMData, Goal, Strategy, Measure, KPI } from "../schemas/ogsm";
+import {
+  generateUniqueBizKey,
+  generateUniqueGoalBizKey,
+  generateUniqueStrategyBizKey,
+} from "./bizKey";
 
 let _genIdCounter = 0;
 
@@ -114,12 +119,32 @@ export function avgRate(rates: number[]): number {
   return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
 }
 
+function toDeptCode(name: string | undefined): string {
+  const base = (name ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return (base || "DEPT").slice(0, 12);
+}
+
+function parseGoalOrder(label: string | undefined, fallback: number): number {
+  const matched = (label ?? "").match(/^G(\d+)/i);
+  const parsed = matched ? Number.parseInt(matched[1], 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 // ─── Main OGSM Parser ─────────────────────────────────────────────────────
 
 export function parseOGSM(csvText: string): OGSMData {
   const rows = parseCSVRaw(csvText);
   const orgO = rows[0]?.[1] || "";
   const deptO = rows[1]?.[1] || "";
+  const now = new Date();
+  const half: "H1" | "H2" = now.getMonth() >= 6 ? "H2" : "H1";
+  const year = now.getFullYear();
+  const deptCode = toDeptCode(deptO);
 
   const dataRows = rows.slice(4);
   const goals: Goal[] = [];
@@ -137,9 +162,35 @@ export function parseOGSM(csvText: string): OGSMData {
     if (!currentGoal) return;
     const kpis = extractKPIs(cText);
     const rate = avgRate(kpis.map((k) => k.achievementRate ?? 0));
-    const measure: Measure = { id: genId("msr"), rawText: cText, kpis };
-    ref.currentStrategy = {
+    const goalOrder = parseGoalOrder(currentGoal.label, goals.length);
+    const strategyOrder = currentGoal.strategies.length + 1;
+    const measure: Measure = {
+      id: genId("msr"),
+      bizKey: generateUniqueBizKey({
+        input: {
+          entityType: "activity",
+          year,
+          halfYear: half,
+          deptCode,
+          goalOrder,
+          strategyOrder,
+          activityOrder: 1,
+        },
+        existingKeys: [],
+      }),
+      rawText: cText,
+      kpis,
+    };
+    const strategy: Strategy = {
       id: genId("str"),
+      bizKey: generateUniqueStrategyBizKey({
+        year,
+        halfYear: half,
+        deptCode,
+        goalOrder,
+        strategyOrder,
+        strategies: currentGoal.strategies,
+      }),
       title: bText.split("\n")[0].trim().substring(0, 60),
       rawText: bText,
       measures: [measure],
@@ -151,7 +202,8 @@ export function parseOGSM(csvText: string): OGSMData {
       completionRate: rate,
       manualRate: null,
     };
-    currentGoal.strategies.push(ref.currentStrategy);
+    ref.currentStrategy = strategy;
+    currentGoal.strategies.push(strategy);
   };
 
   for (const row of dataRows) {
@@ -170,6 +222,13 @@ export function parseOGSM(csvText: string): OGSMData {
         aT.match(/^G\d+[：:]\s*([^\n]+)/)?.[1]?.trim() ?? aT.substring(0, 50);
       currentGoal = {
         id: genId("goal"),
+        bizKey: generateUniqueGoalBizKey({
+          year,
+          halfYear: half,
+          deptCode,
+          goalOrder: goals.length + 1,
+          goals,
+        }),
         label,
         title,
         fullText: aT,
@@ -182,8 +241,28 @@ export function parseOGSM(csvText: string): OGSMData {
       addStrategy(bT, cT, dT, eT, fT, gT);
     } else if (!aT && !bT && cT && ref.currentStrategy) {
       const kpis = extractKPIs(cT);
+      const goalOrder = currentGoal
+        ? parseGoalOrder(currentGoal.label, goals.length)
+        : goals.length;
+      const strategyOrder = currentGoal
+        ? currentGoal.strategies.findIndex(
+            (s) => s.id === ref.currentStrategy?.id,
+          ) + 1
+        : 1;
       ref.currentStrategy.measures.push({
         id: genId("msr"),
+        bizKey: generateUniqueBizKey({
+          input: {
+            entityType: "activity",
+            year,
+            halfYear: half,
+            deptCode,
+            goalOrder,
+            strategyOrder: strategyOrder > 0 ? strategyOrder : 1,
+            activityOrder: ref.currentStrategy.measures.length + 1,
+          },
+          existingKeys: ref.currentStrategy.measures.map((m) => m.bizKey),
+        }),
         rawText: cT,
         kpis,
       });
@@ -209,9 +288,6 @@ export function parseOGSM(csvText: string): OGSMData {
   }
 
   const overallRate = avgRate(goals.map((g) => g.completionRate));
-
-  const now = new Date();
-  const half = now.getMonth() >= 6 ? "H2" : "H1";
 
   return {
     objectives: { orgO, deptO },

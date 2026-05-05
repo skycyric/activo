@@ -3,6 +3,8 @@ import {
   getPlanItemWarning,
   countPlanWarnings,
   countStrategyWarnings,
+  isLateCompletion,
+  isPlannedEndDateOutsideQuarter,
 } from "./planWarnings";
 import type { PlanItem, Strategy } from "../schemas/ogsm";
 
@@ -89,6 +91,31 @@ describe("getPlanItemWarning", () => {
     const item = makePlanItem({ plannedEndDate: WARN7 }); // TODAY + 7 days
     expect(getPlanItemWarning(item, 7)).toBe("warning");
   });
+
+  test("已填實際完成日且準時（≤ 預計完成日）→ null，即使今天已逾期", () => {
+    const item = makePlanItem({
+      plannedEndDate: PAST,
+      actualEndDate: PAST, // 準時填入，等於預計完成日
+    });
+    expect(getPlanItemWarning(item, 7)).toBeNull();
+  });
+
+  test("已填實際完成日且早於預計完成日 → null", () => {
+    const item = makePlanItem({
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-05",
+    });
+    expect(getPlanItemWarning(item, 7)).toBeNull();
+  });
+
+  test("已填實際完成日但晚於預計完成日（延遲）→ 仍回傳 overdue（由 isLateCompletion 另行標示）", () => {
+    // actualEndDate > plannedEndDate 且未勾 completed → 逾期警示保留
+    const item = makePlanItem({
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-20",
+    });
+    expect(getPlanItemWarning(item, 7)).toBe("overdue");
+  });
 });
 
 // ─── countPlanWarnings ────────────────────────────────────────────────────────
@@ -148,5 +175,141 @@ describe("countStrategyWarnings", () => {
   test("無 actionPlan 的策略 → 0/0", () => {
     const s = makeStrategy();
     expect(countStrategyWarnings(s, 7)).toEqual({ overdue: 0, warning: 0 });
+  });
+});
+
+describe("isPlannedEndDateOutsideQuarter", () => {
+  test("預計完成日在所屬季度內 → false", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-03-20" }),
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string };
+    expect(isPlannedEndDateOutsideQuarter(item)).toBe(false);
+  });
+
+  test("預計完成日超出所屬季度 → true", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-04-10" }),
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string };
+    expect(isPlannedEndDateOutsideQuarter(item)).toBe(true);
+  });
+
+  test("缺少季度或日期時不報錯 → false", () => {
+    expect(
+      isPlannedEndDateOutsideQuarter({
+        ...makePlanItem(),
+        quarter: "Q1",
+      } as PlanItem & {
+        quarter?: string;
+      }),
+    ).toBe(false);
+    expect(
+      isPlannedEndDateOutsideQuarter(
+        makePlanItem({ plannedEndDate: "2026-04-10" }) as PlanItem & {
+          quarter?: string;
+        },
+      ),
+    ).toBe(false);
+  });
+
+  test("提供 period 時，同年且 quarter/halfYear 相符 → false", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-10-10" }),
+      periodId: "p2",
+      quarter: "Q4",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2026, halfYear: "H2" }),
+    ).toBe(false);
+  });
+
+  test("提供 period 時，跨到下一年度但歸屬正確 → false", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2027-01-15" }),
+      periodId: "p3",
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2027, halfYear: "H1" }),
+    ).toBe(false);
+  });
+
+  test("提供 period 時，年份不符 → true", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2027-01-15" }),
+      periodId: "p2",
+      quarter: "Q1",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2026, halfYear: "H2" }),
+    ).toBe(true);
+  });
+
+  test("提供 period 時，quarter 與 halfYear 不相容 → true", () => {
+    const item = {
+      ...makePlanItem({ plannedEndDate: "2026-10-10" }),
+      periodId: "p1",
+      quarter: "Q4",
+    } as PlanItem & { quarter?: string; periodId?: string };
+    expect(
+      isPlannedEndDateOutsideQuarter(item, { year: 2026, halfYear: "H1" }),
+    ).toBe(true);
+  });
+});
+
+// ─── isLateCompletion ─────────────────────────────────────────────────────────
+
+describe("isLateCompletion", () => {
+  test("未完成的項目回傳 false", () => {
+    const item = makePlanItem({
+      completed: false,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-20",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("已完成但無實際完成日回傳 false", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("已完成但無預計完成日回傳 false", () => {
+    const item = makePlanItem({
+      completed: true,
+      actualEndDate: "2026-01-20",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("實際完成日 > 預計完成日 → true（延遲完成）", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-20",
+    });
+    expect(isLateCompletion(item)).toBe(true);
+  });
+
+  test("實際完成日 = 預計完成日 → false（準時完成）", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-10",
+    });
+    expect(isLateCompletion(item)).toBe(false);
+  });
+
+  test("實際完成日 < 預計完成日 → false（提早完成）", () => {
+    const item = makePlanItem({
+      completed: true,
+      plannedEndDate: "2026-01-10",
+      actualEndDate: "2026-01-05",
+    });
+    expect(isLateCompletion(item)).toBe(false);
   });
 });

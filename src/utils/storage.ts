@@ -6,6 +6,10 @@ import {
   type Strategy,
   type ActionPlan,
   type PlanItem,
+  type DeptActivity,
+  type DashboardLink,
+  type ActivityDashboardLink,
+  type TagDictionaryItem,
   WorkspaceDataSchema,
   OGSMDataSchema,
 } from "../schemas/ogsm";
@@ -37,12 +41,22 @@ export function validateOrWarn<T>(
   }
 }
 
-export function saveWorkspace(ws: WorkspaceData): void {
+export type SaveWorkspaceResult =
+  | { ok: true }
+  | { ok: false; error: "quota_exceeded" | "unknown" };
+
+export function saveWorkspace(ws: WorkspaceData): SaveWorkspaceResult {
   try {
-    normalizeWorkspaceData(ws);
-    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(ws));
+    const copy = structuredClone(ws);
+    normalizeWorkspaceData(copy);
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(copy));
+    return { ok: true };
   } catch (e) {
     console.error("Failed to save workspace", e);
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      return { ok: false, error: "quota_exceeded" };
+    }
+    return { ok: false, error: "unknown" };
   }
 }
 
@@ -322,32 +336,491 @@ export function migrateOwnerToOwners(ws: WorkspaceData): boolean {
   return changed;
 }
 
-function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+/**
+ * V3 遷移：
+ * 1. ogsmLink → dashboardLinks[{ type:"ogsm", ...ogsmLink, exclude }]
+ * 2. actionPlans 平坦化 → planItems（每 item 加 quarter）
+ * 3. 清除己棄用欄位：ogsmLink / excludeFromOgsm / actionPlans
+ * 4. 若 dept.activities 已有資料，清空 strategy.measures[]
+ */
+export function migrateToV3(ws: WorkspaceData): boolean {
   let changed = false;
-  // One-time heavy migrations — gated by _migratedPhase2 so they run only once
-  if (!ws._migratedPhase2) {
-    if (migrateSyncDuplicates(ws)) changed = true;
-    if (migratePlanItemDateFields(ws)) changed = true;
-    for (const dept of ws.departments) {
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      // 1. ogsmLink → dashboardLinks
+      if (
+        activity.ogsmLink &&
+        (!activity.dashboardLinks || activity.dashboardLinks.length === 0)
+      ) {
+        activity.dashboardLinks = [
+          {
+            id: genId("dlink"),
+            type: "ogsm",
+            periodId: activity.ogsmLink.periodId,
+            goalId: activity.ogsmLink.goalId,
+            strategyId: activity.ogsmLink.strategyId,
+            exclude: activity.excludeFromOgsm ?? false,
+          },
+        ];
+        changed = true;
+      }
+      if (activity.ogsmLink !== undefined) {
+        activity.ogsmLink = undefined;
+        changed = true;
+      }
+      if (activity.excludeFromOgsm !== undefined) {
+        activity.excludeFromOgsm = undefined;
+        changed = true;
+      }
+      // 2. actionPlans 平坦化 → planItems
+      if (
+        activity.actionPlans &&
+        activity.actionPlans.length > 0 &&
+        !activity.planItems
+      ) {
+        activity.planItems = activity.actionPlans.flatMap((ap) =>
+          ap.items.map((item) => ({ ...item, quarter: ap.quarter })),
+        );
+        changed = true;
+      }
+      if (activity.actionPlans !== undefined) {
+        activity.actionPlans = undefined;
+        changed = true;
+      }
+    }
+    // 3. 清空 strategy.measures[] （活動已遷移處）
+    if (dept.activities && dept.activities.length > 0) {
       for (const period of dept.periods) {
         for (const goal of period.ogsm.goals) {
           for (const strategy of goal.strategies) {
-            if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+            if (strategy.measures.length > 0) {
+              strategy.measures = [];
+              changed = true;
+            }
+          }
+          // 4. GoalKpiLink 欄位升級：{ strategyId, measureId, kpiId } → { activityId, kpiId }
+          for (const gk of goal.goalKpis ?? []) {
+            const updatedLinks = gk.linkedKpis.map(
+              (link: Record<string, unknown>) => {
+                if ("measureId" in link && !("activityId" in link)) {
+                  changed = true;
+                  return {
+                    activityId: link.measureId as string,
+                    kpiId: link.kpiId as string,
+                  };
+                }
+                return link;
+              },
+            );
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (gk as any).linkedKpis = updatedLinks;
           }
         }
       }
     }
-    if (migrateActionPlansFromQText(ws)) changed = true;
-    ws._migratedPhase2 = true;
-    changed = true;
   }
-  if (!ws._migratedPhase3) {
-    if (migrateOwnerToOwners(ws)) changed = true;
-    ws._migratedPhase3 = true;
-    changed = true;
+  return changed;
+}
+
+/**
+ * activity-first 遷移：將每個 Strategy.measures[] 中的活動提升為
+ * Department.activities[] 的一等公民，並在活動上附加 ogsmLink 定位資訊。
+ *
+ * 遷移規則：
+ * 1. 遇到 ID 已存在於 dept.activities 的活動 → 跳過（冪等）
+ * 2. Strategy.measures[] 保留不動（舊 UI 仍可讀）
+ * 3. 每筆 DeptActivity 帶有 ogsmLink 指回來源 Strategy
+ * 4. excludeFromOgsm 預設 false（預設全部計入 OGSM）
+ * 5. owners / notes 從 Strategy 複製給每個活動
+ * 6. actionPlans 按 item.linkedMeasureId 分配：
+ *    每個 plan group 只保留屬於該活動的 items；
+ *    若 item 無 linkedMeasureId 則分配給同 strategy 所有活動
+ */
+export function migrateToActivityFirst(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    if (!dept.activities) {
+      dept.activities = [];
+      changed = true;
+    }
+    const existingIds = new Set(dept.activities.map((a) => a.id));
+
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          // Collect measure ids in this strategy for fallback (no-link items)
+          const stratMeasureIds = new Set(strategy.measures.map((m) => m.id));
+
+          for (const measure of strategy.measures) {
+            if (existingIds.has(measure.id)) continue;
+
+            // Distribute actionPlans: keep items that link to this measure,
+            // or items with no linkedMeasureId (they belong to the whole strategy)
+            const activityPlans: ActionPlan[] = strategy.actionPlans
+              .map((plan) => {
+                const relevantItems = plan.items.filter((item) =>
+                  !item.linkedMeasureId ||
+                  !stratMeasureIds.has(item.linkedMeasureId)
+                    ? !item.linkedMeasureId // no link → include for all
+                    : item.linkedMeasureId === measure.id,
+                );
+                return relevantItems.length > 0
+                  ? { ...plan, items: relevantItems }
+                  : null;
+              })
+              .filter((p): p is ActionPlan => p !== null);
+
+            const activity: DeptActivity = {
+              ...measure,
+              dashboardLinks: [
+                {
+                  id: genId("dlink"),
+                  type: "ogsm",
+                  periodId: period.id,
+                  goalId: goal.id,
+                  strategyId: strategy.id,
+                  exclude: false,
+                },
+              ],
+              owners:
+                strategy.owners.length > 0 ? [...strategy.owners] : undefined,
+              notes: strategy.notes || undefined,
+              planItems:
+                activityPlans.length > 0
+                  ? activityPlans.flatMap((ap) =>
+                      ap.items.map((item) => ({
+                        ...item,
+                        quarter: ap.quarter,
+                      })),
+                    )
+                  : undefined,
+            };
+            dept.activities.push(activity);
+            existingIds.add(measure.id);
+            changed = true;
+          }
+        }
+      }
+    }
   }
-  // Always-run invariant: ensure owners is always an array regardless of migration state.
-  // Guards against externally-modified or imported files where owners may be missing.
+  return changed;
+}
+
+/**
+ * FrameworksV1 遷移：將 dept.activities 中尚未設定 frameworks 的活動
+ * 補設為 ["ogsm"]（歷史資料皆為 OGSM 相關活動）。
+ */
+export function migrateFrameworksV1(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      if (!activity.frameworks || activity.frameworks.length === 0) {
+        activity.frameworks = ["ogsm"];
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
+function periodSortValue(year: number, halfYear: "H1" | "H2"): number {
+  return year * 10 + (halfYear === "H1" ? 1 : 2);
+}
+
+function inferActivityPeriodId(
+  activity: DeptActivity,
+  periodById: Map<string, PeriodData>,
+): string | undefined {
+  if (
+    activity.lifecycleStartPeriodId &&
+    periodById.has(activity.lifecycleStartPeriodId)
+  ) {
+    return activity.lifecycleStartPeriodId;
+  }
+
+  const ogsmPeriodIds = Array.from(
+    new Set(
+      (activity.dashboardLinks ?? [])
+        .filter((link) => link.type === "ogsm" && !!link.periodId)
+        .map((link) => link.periodId as string)
+        .filter((periodId) => periodById.has(periodId)),
+    ),
+  );
+  if (ogsmPeriodIds.length === 1) {
+    return ogsmPeriodIds[0];
+  }
+
+  return periodById.keys().next().value;
+}
+
+/**
+ * TimelineV1：
+ * 1) 對 OGSM dashboardLinks 依 periodId+goalId+strategyId 去重
+ * 2) 補齊 lifecycleStartPeriodId（取最早歸屬期別）
+ * 3) 若有 OGSM 歸屬則自動補齊 frameworks 包含 ogsm
+ */
+export function migrateTimelineV1(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    const periodById = new Map(dept.periods.map((p) => [p.id, p]));
+    for (const activity of dept.activities ?? []) {
+      const links = activity.dashboardLinks ?? [];
+      if (links.length > 0) {
+        const nextLinks: typeof links = [];
+        const seen = new Set<string>();
+        for (const link of links) {
+          if (link.type !== "ogsm") {
+            nextLinks.push(link.id ? link : { ...link, id: genId("dlink") });
+            continue;
+          }
+          const key = `${link.periodId ?? ""}|${link.goalId ?? ""}|${link.strategyId ?? ""}`;
+          if (seen.has(key)) {
+            changed = true;
+            continue;
+          }
+          seen.add(key);
+          nextLinks.push(link.id ? link : { ...link, id: genId("dlink") });
+          if (!link.id) changed = true;
+        }
+        if (nextLinks.length !== links.length) changed = true;
+        activity.dashboardLinks = nextLinks.length > 0 ? nextLinks : undefined;
+      }
+
+      const ogsmLinks = (activity.dashboardLinks ?? []).filter(
+        (l) => l.type === "ogsm" && !!l.periodId,
+      );
+      if (ogsmLinks.length > 0) {
+        if (!(activity.frameworks ?? []).includes("ogsm")) {
+          activity.frameworks = [...(activity.frameworks ?? []), "ogsm"];
+          changed = true;
+        }
+        const sorted = [...ogsmLinks]
+          .map((l) => ({ link: l, period: periodById.get(l.periodId ?? "") }))
+          .filter((x) => !!x.period)
+          .sort(
+            (a, b) =>
+              periodSortValue(a.period!.year, a.period!.halfYear) -
+              periodSortValue(b.period!.year, b.period!.halfYear),
+          );
+        const earliestPeriodId = sorted[0]?.link.periodId;
+        if (
+          earliestPeriodId &&
+          activity.lifecycleStartPeriodId !== earliestPeriodId
+        ) {
+          activity.lifecycleStartPeriodId = earliestPeriodId;
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+/**
+ * TimelineV2：
+ * 1) 對舊 planItems 補齊 periodId
+ * 2) 優先使用 activity lifecycle，否則回退到可推導的 OGSM / 部門第一個 period
+ */
+export function migrateTimelineV2(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    const periodById = new Map(dept.periods.map((p) => [p.id, p]));
+    const firstPeriodId = dept.periods[0]?.id;
+    for (const activity of dept.activities ?? []) {
+      const fallbackPeriodId =
+        inferActivityPeriodId(activity, periodById) ?? firstPeriodId;
+      if (!fallbackPeriodId || !activity.planItems?.length) continue;
+      activity.planItems = activity.planItems.map((item) => {
+        if (item.periodId) return item;
+        changed = true;
+        return { ...item, periodId: fallbackPeriodId };
+      });
+    }
+  }
+  return changed;
+}
+
+function activityLinkKey(link: {
+  activityId: string;
+  type: string;
+  periodId?: string;
+  goalId?: string;
+  strategyId?: string;
+  exclude?: boolean;
+}): string {
+  return [
+    link.activityId,
+    link.type,
+    link.periodId ?? "",
+    link.goalId ?? "",
+    link.strategyId ?? "",
+    link.exclude ? "1" : "0",
+  ].join("|");
+}
+
+function sortById<T extends { id: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * C1: 屬性順序固定的序列化，避免 JSON.stringify 因物件 spread 順序不同
+ * 而在每次 load 都觸發無謂的 dirty → save，進而干擾 OneDrive conflict copy 偵測。
+ */
+function stableStringifyLinks(links: ActivityDashboardLink[]): string {
+  return links
+    .map((l) =>
+      JSON.stringify({
+        id: l.id,
+        activityId: l.activityId,
+        type: l.type,
+        periodId: l.periodId ?? null,
+        goalId: l.goalId ?? null,
+        strategyId: l.strategyId ?? null,
+        exclude: l.exclude ?? false,
+      }),
+    )
+    .join(",");
+}
+
+function stableStringifyDashboardLinks(links: DashboardLink[]): string {
+  return links
+    .map((l) =>
+      JSON.stringify({
+        id: l.id,
+        type: l.type,
+        periodId: l.periodId ?? null,
+        goalId: l.goalId ?? null,
+        strategyId: l.strategyId ?? null,
+        exclude: l.exclude ?? false,
+      }),
+    )
+    .join(",");
+}
+
+/**
+ * RelationalV1：
+ * - 建立並維護 departments[].activityLinks（關聯表）
+ * - 與既有 activities[].dashboardLinks 雙向同步（相容期）
+ */
+export function syncRelationalLinksV1(ws: WorkspaceData): boolean {
+  let changed = false;
+
+  for (const dept of ws.departments) {
+    const activities = dept.activities ?? [];
+    const activityIds = new Set(activities.map((a) => a.id));
+    const merged = new Map<string, ActivityDashboardLink>();
+
+    // Seed from existing relation table (drop broken foreign keys)
+    for (const rel of dept.activityLinks ?? []) {
+      if (!activityIds.has(rel.activityId)) {
+        changed = true;
+        continue;
+      }
+      const normalized: ActivityDashboardLink = {
+        ...rel,
+        id: rel.id || genId("dlink"),
+      };
+      const key = activityLinkKey(normalized);
+      if (!merged.has(key)) merged.set(key, normalized);
+      else changed = true;
+    }
+
+    // Merge links from activity records into relation table
+    for (const activity of activities) {
+      for (const link of activity.dashboardLinks ?? []) {
+        const normalized: ActivityDashboardLink = {
+          ...link,
+          id: link.id || genId("dlink"),
+          activityId: activity.id,
+        };
+        const key = activityLinkKey(normalized);
+        if (!merged.has(key)) {
+          merged.set(key, normalized);
+          changed = true;
+        }
+      }
+    }
+
+    const mergedLinks = sortById(Array.from(merged.values()));
+    const prevLinks = sortById([...(dept.activityLinks ?? [])]);
+    if (stableStringifyLinks(prevLinks) !== stableStringifyLinks(mergedLinks)) {
+      dept.activityLinks = mergedLinks.length > 0 ? mergedLinks : undefined;
+      changed = true;
+    }
+
+    // Hydrate compatibility field: activity.dashboardLinks from relation table
+    for (const activity of activities) {
+      const relForActivity = mergedLinks
+        .filter((l) => l.activityId === activity.id)
+        .map(
+          (link): DashboardLink => ({
+            id: link.id,
+            type: link.type,
+            periodId: link.periodId,
+            goalId: link.goalId,
+            strategyId: link.strategyId,
+            exclude: link.exclude,
+          }),
+        );
+      const nextDashboardLinks =
+        relForActivity.length > 0 ? sortById(relForActivity) : undefined;
+      const prevDashboardLinks = activity.dashboardLinks
+        ? sortById(activity.dashboardLinks)
+        : undefined;
+      if (
+        stableStringifyDashboardLinks(prevDashboardLinks ?? []) !==
+        stableStringifyDashboardLinks(nextDashboardLinks ?? [])
+      ) {
+        activity.dashboardLinks = nextDashboardLinks;
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+type WorkspaceMigrationFlag =
+  | "_migratedPhase2"
+  | "_migratedPhase3"
+  | "_migratedActivityFirst"
+  | "_migratedV3"
+  | "_migratedFrameworksV1"
+  | "_migratedTimelineV1"
+  | "_migratedTimelineV2"
+  | "_migratedRelationalV1";
+
+type WorkspaceFlaggedMigration = {
+  flag: WorkspaceMigrationFlag;
+  description: string;
+  sunset: string;
+  run: (ws: WorkspaceData) => boolean;
+};
+
+type WorkspaceAlwaysRunNormalizer = {
+  description: string;
+  run: (ws: WorkspaceData) => boolean;
+};
+
+function runPhase2Migrations(ws: WorkspaceData): boolean {
+  let changed = false;
+  if (migrateSyncDuplicates(ws)) changed = true;
+  if (migratePlanItemDateFields(ws)) changed = true;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        for (const strategy of goal.strategies) {
+          if (migrateMeasureDateRangeFromPlanItems(strategy)) changed = true;
+        }
+      }
+    }
+  }
+  if (migrateActionPlansFromQText(ws)) changed = true;
+  return changed;
+}
+
+function normalizeWorkspaceOwnerArraysInvariant(ws: WorkspaceData): boolean {
+  let changed = false;
   for (const dept of ws.departments) {
     for (const period of dept.periods) {
       for (const goal of period.ogsm.goals) {
@@ -363,6 +836,369 @@ function normalizeWorkspaceData(ws: WorkspaceData): boolean {
   return changed;
 }
 
+function normalizeWorkspaceGoalKpiLinksInvariant(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const period of dept.periods) {
+      for (const goal of period.ogsm.goals) {
+        if (
+          normalizeGoalKpiLinks(goal as unknown as { goalKpis?: unknown[] })
+        ) {
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+/**
+ * A2: 清除 KPI.achievementRate 計算快照，避免持久化過期值。
+ * achievementRate 應在執行期由 computeKpiAchievement() 重新計算，不應存磁碟。
+ */
+function stripAchievementRates(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      for (const kpi of activity.kpis ?? []) {
+        if (kpi.achievementRate !== null) {
+          kpi.achievementRate = null;
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+function stripCompatWriteForbiddenDeprecatedFields(ws: WorkspaceData): boolean {
+  let changed = false;
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      if (activity.ogsmLink !== undefined) {
+        activity.ogsmLink = undefined;
+        changed = true;
+      }
+      if (activity.excludeFromOgsm !== undefined) {
+        activity.excludeFromOgsm = undefined;
+        changed = true;
+      }
+      if (activity.actionPlans !== undefined) {
+        activity.actionPlans = undefined;
+        changed = true;
+      }
+    }
+    // A3: 若 dept.activities 已有資料，strategy.measures[] 是殭屍欄位，應清空
+    // 避免 migrateToActivityFirst 在下次 load 時重複觸發產生重複活動
+    if ((dept.activities?.length ?? 0) > 0) {
+      for (const period of dept.periods) {
+        for (const goal of period.ogsm.goals) {
+          for (const strategy of goal.strategies) {
+            if (strategy.measures.length > 0) {
+              strategy.measures = [];
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+function applyWorkspaceFlaggedMigration(
+  ws: WorkspaceData,
+  migration: WorkspaceFlaggedMigration,
+): boolean {
+  if (ws[migration.flag]) return false;
+
+  migration.run(ws);
+  ws[migration.flag] = true;
+  return true;
+}
+
+function normalizeTagLabel(label: string | undefined): string {
+  return (label ?? "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeWorkspaceTagDictionary(ws: WorkspaceData): boolean {
+  const byName = new Map<string, TagDictionaryItem>();
+  let changed = false;
+
+  for (const rawItem of ws.tagDictionary ?? []) {
+    const name = normalizeTagLabel(rawItem.name);
+    if (!name) {
+      changed = true;
+      continue;
+    }
+
+    const aliases = Array.from(
+      new Set(
+        (rawItem.aliases ?? [])
+          .map((alias) => normalizeTagLabel(alias))
+          .filter(Boolean),
+      ),
+    );
+    const normalized: TagDictionaryItem = {
+      ...rawItem,
+      name,
+      aliases: aliases.length > 0 ? aliases : undefined,
+      status: rawItem.status === "disabled" ? "disabled" : "active",
+    };
+    const key = name.toLocaleLowerCase("zh-TW");
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, normalized);
+      if (
+        normalized.name !== rawItem.name ||
+        JSON.stringify(normalized.aliases ?? []) !==
+          JSON.stringify(rawItem.aliases ?? []) ||
+        normalized.status !== rawItem.status
+      ) {
+        changed = true;
+      }
+      continue;
+    }
+
+    const mergedAliases = Array.from(
+      new Set([...(existing.aliases ?? []), ...(normalized.aliases ?? [])]),
+    );
+    byName.set(key, {
+      ...existing,
+      aliases: mergedAliases.length > 0 ? mergedAliases : undefined,
+      status:
+        existing.status === "active" || normalized.status === "active"
+          ? "active"
+          : "disabled",
+      updatedAt: normalized.updatedAt ?? existing.updatedAt,
+    });
+    changed = true;
+  }
+
+  for (const dept of ws.departments) {
+    for (const activity of dept.activities ?? []) {
+      const normalizedTags = Array.from(
+        new Set(
+          (activity.tags ?? [])
+            .map((tag) => normalizeTagLabel(tag))
+            .filter(Boolean),
+        ),
+      );
+      if (
+        JSON.stringify(normalizedTags) !== JSON.stringify(activity.tags ?? [])
+      ) {
+        activity.tags = normalizedTags.length > 0 ? normalizedTags : undefined;
+        changed = true;
+      }
+
+      for (const tag of normalizedTags) {
+        const key = tag.toLocaleLowerCase("zh-TW");
+        if (!byName.has(key)) {
+          byName.set(key, {
+            id: genId("tag"),
+            name: tag,
+            status: "active",
+            updatedAt: new Date().toISOString(),
+          });
+          changed = true;
+        }
+      }
+    }
+  }
+
+  const nextDictionary = Array.from(byName.values()).sort((a, b) =>
+    a.name.localeCompare(b.name, "zh-TW"),
+  );
+
+  if (nextDictionary.length === 0) {
+    if (ws.tagDictionary !== undefined) {
+      ws.tagDictionary = undefined;
+      changed = true;
+    }
+    return changed;
+  }
+
+  if (
+    JSON.stringify(ws.tagDictionary ?? []) !== JSON.stringify(nextDictionary)
+  ) {
+    ws.tagDictionary = nextDictionary;
+    changed = true;
+  }
+
+  return changed;
+}
+
+export const WORKSPACE_FLAGGED_MIGRATIONS: readonly WorkspaceFlaggedMigration[] =
+  [
+    {
+      flag: "_migratedPhase2",
+      description:
+        "Legacy plan-item/date/action-plan cleanup before modern models.",
+      sunset:
+        "Remove after all persisted workspaces are guaranteed to be post-Phase2.",
+      run: runPhase2Migrations,
+    },
+    {
+      flag: "_migratedPhase3",
+      description:
+        "Owner field migration from deprecated owner to canonical owners[]",
+      sunset:
+        "Remove after deprecated strategy.owner is no longer load-compatible.",
+      run: migrateOwnerToOwners,
+    },
+    {
+      flag: "_migratedActivityFirst",
+      description:
+        "Promote strategy.measures into canonical dept.activities records.",
+      sunset:
+        "Remove after activity-first is the only supported persisted activity shape.",
+      run: migrateToActivityFirst,
+    },
+    {
+      flag: "_migratedV3",
+      description:
+        "Upgrade OGSM links and plan structures to dashboardLinks + planItems.",
+      sunset:
+        "Remove after legacy ogsmLink/excludeFromOgsm/actionPlans are unsupported.",
+      run: migrateToV3,
+    },
+    {
+      flag: "_migratedFrameworksV1",
+      description: "Backfill frameworks for activity-first records.",
+      sunset:
+        "Remove after frameworks are always materialized by writers/importers.",
+      run: migrateFrameworksV1,
+    },
+    {
+      flag: "_migratedTimelineV1",
+      description: "Backfill timeline and OGSM link ordering metadata.",
+      sunset:
+        "Remove after timeline defaults are guaranteed in all persisted workspaces.",
+      run: migrateTimelineV1,
+    },
+    {
+      flag: "_migratedTimelineV2",
+      description:
+        "Backfill periodId onto flat plan items for cross-year timeline validation.",
+      sunset: "Remove after all persisted planItems always include periodId.",
+      run: migrateTimelineV2,
+    },
+    {
+      flag: "_migratedRelationalV1",
+      description:
+        "Record that relational activityLinks compatibility has been initialized.",
+      sunset:
+        "Remove only after activityLinks becomes canonical and dashboardLinks compatibility is retired.",
+      run: () => false,
+    },
+  ] as const;
+
+const WORKSPACE_ALWAYS_RUN_NORMALIZERS: readonly WorkspaceAlwaysRunNormalizer[] =
+  [
+    {
+      description:
+        "Strip computed achievementRate snapshots before persisting (stale values must be recomputed at runtime).",
+      run: stripAchievementRates,
+    },
+    {
+      description:
+        "Enforce compat-write forbidden policy for deprecated legacy fields.",
+      run: stripCompatWriteForbiddenDeprecatedFields,
+    },
+    {
+      description:
+        "RelationalV1 compatibility sync between dept.activityLinks and activity.dashboardLinks.",
+      run: syncRelationalLinksV1,
+    },
+    {
+      description:
+        "GoalKPI link invariant repair for imported or externally edited files.",
+      run: normalizeWorkspaceGoalKpiLinksInvariant,
+    },
+    {
+      description:
+        "owners[] invariant repair for imported or externally edited files.",
+      run: normalizeWorkspaceOwnerArraysInvariant,
+    },
+    {
+      description:
+        "Tag dictionary invariant repair for controlled activity tags.",
+      run: normalizeWorkspaceTagDictionary,
+    },
+  ] as const;
+
+export function normalizeWorkspaceData(ws: WorkspaceData): boolean {
+  let changed = false;
+
+  for (const migration of WORKSPACE_FLAGGED_MIGRATIONS) {
+    if (applyWorkspaceFlaggedMigration(ws, migration)) {
+      changed = true;
+    }
+  }
+
+  for (const normalizer of WORKSPACE_ALWAYS_RUN_NORMALIZERS) {
+    if (normalizer.run(ws)) {
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function normalizeGoalKpiLinks(
+  goalLike: { goalKpis?: unknown[] } | null | undefined,
+): boolean {
+  if (!goalLike || !Array.isArray(goalLike.goalKpis)) return false;
+  let goalChanged = false;
+  for (const gk of goalLike.goalKpis) {
+    const gkRaw = gk as Record<string, unknown>;
+    if (!Array.isArray(gkRaw.linkedKpis)) {
+      gkRaw.linkedKpis = [];
+      goalChanged = true;
+      continue;
+    }
+
+    const repairedLinks: Array<{ activityId: string; kpiId: string }> = [];
+    for (const link of gkRaw.linkedKpis as unknown[]) {
+      const raw = link as Record<string, unknown>;
+      const activityIdRaw = raw.activityId;
+      const legacyMeasureIdRaw = raw.measureId;
+      const kpiIdRaw = raw.kpiId;
+
+      const activityId =
+        typeof activityIdRaw === "string" && activityIdRaw.trim()
+          ? activityIdRaw
+          : typeof legacyMeasureIdRaw === "string" && legacyMeasureIdRaw.trim()
+            ? legacyMeasureIdRaw
+            : "";
+      const kpiId =
+        typeof kpiIdRaw === "string" && kpiIdRaw.trim() ? kpiIdRaw : "";
+
+      if (!activityId || !kpiId) {
+        goalChanged = true;
+        continue;
+      }
+      repairedLinks.push({ activityId, kpiId });
+    }
+
+    if (
+      repairedLinks.length !== (gkRaw.linkedKpis as unknown[]).length ||
+      repairedLinks.some((l, i) => {
+        const prev = (gkRaw.linkedKpis as unknown[])[i] as Record<
+          string,
+          unknown
+        >;
+        return prev.activityId !== l.activityId || prev.kpiId !== l.kpiId;
+      })
+    ) {
+      gkRaw.linkedKpis = repairedLinks;
+      goalChanged = true;
+    }
+  }
+  return goalChanged;
+}
+
 /**
  * 對單一 Strategy 物件執行所有遷移與不變量修正。
  * 供 normalizeOGSMData（匯入單一檔案）與 normalizeWorkspaceData（完整工作區）共用，
@@ -370,6 +1206,15 @@ function normalizeWorkspaceData(ws: WorkspaceData): boolean {
  */
 export function normalizeOneStrategy(strategy: Strategy): boolean {
   let changed = false;
+  // Guard against malformed data where actionPlans may be undefined
+  if (!Array.isArray(strategy.actionPlans)) {
+    strategy.actionPlans = [];
+    changed = true;
+  }
+  if (!Array.isArray(strategy.owners)) {
+    strategy.owners = [];
+    changed = true;
+  }
   // Plan item date field migration
   for (const ap of strategy.actionPlans) {
     for (const item of ap.items) {
@@ -421,6 +1266,14 @@ export function normalizeOneStrategy(strategy: Strategy): boolean {
 function normalizeOGSMData(ogsm: OGSMData): boolean {
   let changed = false;
   for (const goal of ogsm.goals) {
+    const goalRaw = goal as unknown as Record<string, unknown>;
+    if (!Array.isArray(goalRaw.goalKpis)) {
+      goalRaw.goalKpis = [];
+      changed = true;
+    }
+    if (normalizeGoalKpiLinks(goalRaw as { goalKpis?: unknown[] })) {
+      changed = true;
+    }
     for (const strategy of goal.strategies) {
       if (normalizeOneStrategy(strategy)) changed = true;
     }

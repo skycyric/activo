@@ -1,29 +1,9 @@
-import type { WorkspaceData } from "../../schemas/ogsm";
-import type { ActivityWithContext } from "../ActivityPage";
-
-export interface ActivityFilterState {
-  deptId: string;
-  teamId: string;
-  owner: string;
-  goalId: string;
-  strategyId: string;
-  status: string;
-  startFrom: string;
-  endTo: string;
-  keyword: string;
-}
-
-export const EMPTY_ACTIVITY_FILTERS: ActivityFilterState = {
-  deptId: "",
-  teamId: "",
-  owner: "",
-  goalId: "",
-  strategyId: "",
-  status: "",
-  startFrom: "",
-  endTo: "",
-  keyword: "",
-};
+import { useMemo, useState } from "react";
+import type { WorkspaceData, TagDictionaryItem } from "../../schemas/ogsm";
+import {
+  type ActivityFilterState,
+  EMPTY_ACTIVITY_FILTERS,
+} from "./activityFilterState";
 
 const STATUS_LABELS: Record<string, string> = {
   "not-started": "未開始",
@@ -32,44 +12,77 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "已完成",
 };
 
+const FRAMEWORK_OPTIONS: { value: string; label: string }[] = [
+  { value: "ogsm", label: "OGSM目標體系" },
+  { value: "standalone", label: "其他（自由節點）" },
+];
+
+const FRAMEWORK_NONE = "_none";
+
+type Option = {
+  value: string;
+  label: string;
+};
+
 interface Props {
   workspace: WorkspaceData;
-  allActivities: ActivityWithContext[];
   filters: ActivityFilterState;
+  tagDictionary?: TagDictionaryItem[];
   onChange: (f: ActivityFilterState) => void;
 }
 
 export default function ActivityFilters({
   workspace,
-  allActivities,
   filters,
+  tagDictionary,
   onChange,
 }: Props) {
-  const set = (key: keyof ActivityFilterState, value: string) => {
-    const next = { ...filters, [key]: value };
-    // Cascade reset on narrowing
-    if (key === "deptId") {
-      next.goalId = "";
-      next.strategyId = "";
-      next.teamId = "";
+  const toggleInList = (key: keyof ActivityFilterState, value: string) => {
+    const current = filters[key];
+    if (!Array.isArray(current)) return;
+
+    const nextSet = new Set(current);
+    if (nextSet.has(value)) nextSet.delete(value);
+    else nextSet.add(value);
+
+    const next: ActivityFilterState = {
+      ...filters,
+      [key]: Array.from(nextSet),
+    } as ActivityFilterState;
+
+    if (key === "deptIds") {
+      next.teamIds = [];
+      next.periodIds = [];
+      next.goalIds = [];
+      next.strategyIds = [];
     }
-    if (key === "goalId") {
-      next.strategyId = "";
+
+    if (key === "frameworks" && !next.frameworks.includes("ogsm")) {
+      next.periodIds = [];
+      next.goalIds = [];
+      next.strategyIds = [];
     }
+
     onChange(next);
   };
 
+  const setText = (key: "startFrom" | "endTo" | "keyword", value: string) => {
+    onChange({ ...filters, [key]: value });
+  };
+
   const depts = workspace.departments;
-  const activeDept = filters.deptId
-    ? depts.find((d) => d.id === filters.deptId)
-    : null;
-  const sourceDepts = activeDept ? [activeDept] : depts;
+  const selectedDeptIdSet = new Set(filters.deptIds);
+  const sourceDepts =
+    selectedDeptIdSet.size > 0
+      ? depts.filter((d) => selectedDeptIdSet.has(d.id))
+      : depts;
 
   // Teams scoped to selected dept (or all)
   const allTeams = workspace.teams ?? [];
-  const teams = activeDept
-    ? allTeams.filter((t) => !t.deptId || t.deptId === activeDept.id)
-    : allTeams;
+  const teams =
+    selectedDeptIdSet.size > 0
+      ? allTeams.filter((t) => !t.deptId || selectedDeptIdSet.has(t.deptId))
+      : allTeams;
 
   // Goals deduped by id
   const goalMap = new Map<
@@ -85,12 +98,33 @@ export default function ActivityFilters({
   }
   const goals = Array.from(goalMap.values());
 
-  // Strategies deduped by id, narrowed by goalId if set
-  const stratMap = new Map<string, { id: string; title: string }>();
+  // Periods deduped by label (e.g. "2026 H1")
+  const periodLabelSet = new Set<string>();
   for (const dept of sourceDepts) {
     for (const period of dept.periods) {
+      periodLabelSet.add(`${period.year} ${period.halfYear}`);
+    }
+  }
+  const periods = Array.from(periodLabelSet.values()).sort((a, b) =>
+    a.localeCompare(b, "zh-TW"),
+  );
+
+  // Strategies deduped by id, narrowed by goalId if set
+  const stratMap = new Map<string, { id: string; title: string }>();
+  const selectedPeriodLabelSet = new Set(filters.periodIds);
+  const selectedGoalIdSet = new Set(filters.goalIds);
+  for (const dept of sourceDepts) {
+    for (const period of dept.periods) {
+      const periodLabel = `${period.year} ${period.halfYear}`;
+      if (
+        selectedPeriodLabelSet.size > 0 &&
+        !selectedPeriodLabelSet.has(periodLabel)
+      ) {
+        continue;
+      }
       for (const g of period.ogsm.goals) {
-        if (filters.goalId && g.id !== filters.goalId) continue;
+        if (selectedGoalIdSet.size > 0 && !selectedGoalIdSet.has(g.id))
+          continue;
         for (const s of g.strategies) {
           if (!stratMap.has(s.id))
             stratMap.set(s.id, { id: s.id, title: s.title });
@@ -100,101 +134,135 @@ export default function ActivityFilters({
   }
   const strategies = Array.from(stratMap.values());
 
-  // Owners from visible activities
+  // Owners should come from team settings (single source of truth), not activity data.
+  const selectedTeamIdSet = new Set(filters.teamIds);
+  const ownerSourceTeams =
+    selectedTeamIdSet.size > 0
+      ? teams.filter((t) => selectedTeamIdSet.has(t.id))
+      : teams;
   const owners = Array.from(
-    new Set(allActivities.map((a) => a.owner ?? "").filter(Boolean)),
+    new Set(
+      ownerSourceTeams
+        .flatMap((t) => t.members ?? [])
+        .map((m) => m.name?.trim() ?? "")
+        .filter(Boolean),
+    ),
   ).sort();
 
-  const hasFilter = Object.values(filters).some((v) => v !== "");
+  const activeTagOptions: Option[] = (tagDictionary ?? [])
+    .filter((t) => t.status === "active")
+    .map((t) => ({ value: t.name, label: t.name }));
+
+  const hasFilter =
+    filters.deptIds.length > 0 ||
+    filters.teamIds.length > 0 ||
+    filters.owners.length > 0 ||
+    filters.frameworks.length > 0 ||
+    filters.periodIds.length > 0 ||
+    filters.goalIds.length > 0 ||
+    filters.strategyIds.length > 0 ||
+    filters.statuses.length > 0 ||
+    filters.tags.length > 0 ||
+    filters.startFrom !== "" ||
+    filters.endTo !== "" ||
+    filters.keyword !== "";
+
+  const deptOptions: Option[] = depts.map((d) => ({
+    value: d.id,
+    label: d.name,
+  }));
+  const teamOptions: Option[] = teams.map((t) => ({
+    value: t.id,
+    label: t.name,
+  }));
+  const ownerOptions: Option[] = owners.map((o) => ({ value: o, label: o }));
+  const frameworkOptions: Option[] = [
+    ...FRAMEWORK_OPTIONS,
+    { value: FRAMEWORK_NONE, label: "未分類" },
+  ];
+  const periodOptions: Option[] = periods.map((label) => ({
+    value: label,
+    label,
+  }));
+  const goalOptions: Option[] = goals.map((g) => ({
+    value: g.id,
+    label: `${g.label} ${g.title}`,
+  }));
+  const strategyOptions: Option[] = strategies.map((s) => ({
+    value: s.id,
+    label: s.title,
+  }));
+  const statusOptions: Option[] = Object.entries(STATUS_LABELS).map(
+    ([value, label]) => ({ value, label }),
+  );
 
   return (
     <div className="activity-filters">
       <div className="activity-filters-row">
-        {/* 部門 */}
-        <select
-          className="activity-filter-select"
-          value={filters.deptId}
-          onChange={(e) => set("deptId", e.target.value)}
-        >
-          <option value="">所有部門</option>
-          {depts.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        <MultiSelectDropdown
+          title="部門"
+          values={filters.deptIds}
+          options={deptOptions}
+          onToggle={(value) => toggleInList("deptIds", value)}
+        />
 
-        {/* 團隊 */}
-        {teams.length > 0 && (
-          <select
-            className="activity-filter-select"
-            value={filters.teamId}
-            onChange={(e) => set("teamId", e.target.value)}
-          >
-            <option value="">所有團隊</option>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+        <MultiSelectDropdown
+          title="團隊"
+          values={filters.teamIds}
+          options={teamOptions}
+          onToggle={(value) => toggleInList("teamIds", value)}
+        />
+
+        <MultiSelectDropdown
+          title="主責"
+          values={filters.owners}
+          options={ownerOptions}
+          onToggle={(value) => toggleInList("owners", value)}
+        />
+
+        <MultiSelectDropdown
+          title="模組"
+          values={filters.frameworks}
+          options={frameworkOptions}
+          onToggle={(value) => toggleInList("frameworks", value)}
+        />
+
+        <MultiSelectDropdown
+          title="期間"
+          values={filters.periodIds}
+          options={periodOptions}
+          onToggle={(value) => toggleInList("periodIds", value)}
+        />
+
+        <MultiSelectDropdown
+          title="Goal"
+          values={filters.goalIds}
+          options={goalOptions}
+          onToggle={(value) => toggleInList("goalIds", value)}
+        />
+
+        <MultiSelectDropdown
+          title="Strategy"
+          values={filters.strategyIds}
+          options={strategyOptions}
+          onToggle={(value) => toggleInList("strategyIds", value)}
+        />
+
+        <MultiSelectDropdown
+          title="狀態"
+          values={filters.statuses}
+          options={statusOptions}
+          onToggle={(value) => toggleInList("statuses", value)}
+        />
+
+        {activeTagOptions.length > 0 && (
+          <MultiSelectDropdown
+            title="標籤"
+            values={filters.tags}
+            options={activeTagOptions}
+            onToggle={(value) => toggleInList("tags", value)}
+          />
         )}
-
-        {/* 主責 */}
-        <select
-          className="activity-filter-select"
-          value={filters.owner}
-          onChange={(e) => set("owner", e.target.value)}
-        >
-          <option value="">所有主責</option>
-          {owners.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-
-        {/* 目標 */}
-        <select
-          className="activity-filter-select"
-          value={filters.goalId}
-          onChange={(e) => set("goalId", e.target.value)}
-        >
-          <option value="">所有目標</option>
-          {goals.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.label} {g.title}
-            </option>
-          ))}
-        </select>
-
-        {/* 策略 */}
-        <select
-          className="activity-filter-select"
-          value={filters.strategyId}
-          onChange={(e) => set("strategyId", e.target.value)}
-        >
-          <option value="">所有策略</option>
-          {strategies.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
-            </option>
-          ))}
-        </select>
-
-        {/* 狀態 */}
-        <select
-          className="activity-filter-select"
-          value={filters.status}
-          onChange={(e) => set("status", e.target.value)}
-        >
-          <option value="">所有狀態</option>
-          {Object.entries(STATUS_LABELS).map(([val, label]) => (
-            <option key={val} value={val}>
-              {label}
-            </option>
-          ))}
-        </select>
 
         {/* 開始日期 ≥ */}
         <div className="activity-filter-date-group">
@@ -203,7 +271,7 @@ export default function ActivityFilters({
             className="activity-filter-date"
             type="date"
             value={filters.startFrom}
-            onChange={(e) => set("startFrom", e.target.value)}
+            onChange={(e) => setText("startFrom", e.target.value)}
           />
         </div>
 
@@ -214,7 +282,7 @@ export default function ActivityFilters({
             className="activity-filter-date"
             type="date"
             value={filters.endTo}
-            onChange={(e) => set("endTo", e.target.value)}
+            onChange={(e) => setText("endTo", e.target.value)}
           />
         </div>
 
@@ -224,7 +292,7 @@ export default function ActivityFilters({
           type="text"
           placeholder="關鍵字搜尋…"
           value={filters.keyword}
-          onChange={(e) => set("keyword", e.target.value)}
+          onChange={(e) => setText("keyword", e.target.value)}
         />
 
         {hasFilter && (
@@ -238,5 +306,70 @@ export default function ActivityFilters({
         )}
       </div>
     </div>
+  );
+}
+
+function MultiSelectDropdown({
+  title,
+  values,
+  options,
+  onToggle,
+}: {
+  title: string;
+  values: string[];
+  options: Option[];
+  onToggle: (value: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const selectedText = values.length === 0 ? "全部" : `已選 ${values.length}`;
+  const normalizedSearch = search.trim().toLocaleLowerCase("zh-TW");
+
+  const sortedOptions = useMemo(() => {
+    const filtered = normalizedSearch
+      ? options.filter((option) =>
+          option.label.toLocaleLowerCase("zh-TW").includes(normalizedSearch),
+        )
+      : options;
+
+    const isSelected = (option: Option) => values.includes(option.value);
+    return [
+      ...filtered.filter(isSelected),
+      ...filtered.filter((option) => !isSelected(option)),
+    ];
+  }, [normalizedSearch, options, values]);
+
+  return (
+    <details className="activity-filter-multi">
+      <summary className="activity-filter-multi-trigger">
+        <span className="activity-filter-multi-title">{title}</span>
+        <span className="activity-filter-multi-value">{selectedText}</span>
+        <span className="activity-filter-multi-caret" aria-hidden="true">
+          ▾
+        </span>
+      </summary>
+      <div className="activity-filter-multi-menu">
+        <input
+          className="activity-filter-multi-search"
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`搜尋${title}...`}
+        />
+        {sortedOptions.length === 0 ? (
+          <div className="activity-filter-multi-empty">沒有可選項目</div>
+        ) : (
+          sortedOptions.map((option) => (
+            <label key={option.value} className="activity-filter-multi-option">
+              <input
+                type="checkbox"
+                checked={values.includes(option.value)}
+                onChange={() => onToggle(option.value)}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))
+        )}
+      </div>
+    </details>
   );
 }

@@ -1,28 +1,147 @@
-import { useState, useRef, useEffect } from "react";
-import type {
-  Goal,
-  GoalKPI,
-  GoalKpiLink,
-  Strategy,
-  Team,
-} from "../schemas/ogsm";
-import { genId } from "../utils/csvParser";
+import { useMemo, useState } from "react";
+import type { Goal, GoalKPI, DeptActivity, Strategy } from "../schemas/ogsm";
 import { countStrategyWarnings } from "../utils/planWarnings";
 import { computeGoalKpiResult } from "../utils/goalKpi";
+import { computeKpiAchievement } from "../utils/kpiCalc";
+import { useTour } from "../contexts/TourContext";
 
 interface Props {
   goal: Goal | null;
-  strategies: Strategy[];
+  allGoals?: Goal[];
+  strategies: import("../schemas/ogsm").Strategy[];
   selectedStrategyId: string | null;
   onSelectStrategy: (id: string, warnFilter?: "overdue" | "warning") => void;
-  onAddStrategy: () => void;
-  onUpdateGoal: (g: Goal) => void;
-  onDeleteGoal: (id: string) => void;
+  onAddStrategy?: () => void;
+  onUpdateGoal?: (g: Goal) => void;
+  onDeleteGoal?: (id: string) => void;
   filterOwner: string;
   onFilterOwner: (v: string) => void;
-  teams: Team[];
+  teams: import("../schemas/ogsm").Team[];
   warnDaysBefore: number;
   isReadOnly?: boolean;
+  deptActivities?: DeptActivity[];
+}
+
+function isGKpi(gk: GoalKPI): boolean {
+  return (
+    gk.goalKpiType === "aggregate" || (gk.type ?? "value") === "pct_activity"
+  );
+}
+
+function getKpiColor(rate: number | null): string {
+  if (rate === null) return "#6b7280";
+  if (rate >= 100) return "#10b981";
+  if (rate >= 70) return "#6366f1";
+  if (rate >= 40) return "#f59e0b";
+  return "#ef4444";
+}
+
+function formatMetricValue(
+  value: number | null,
+  isRateMode: boolean,
+  unit?: string,
+): string {
+  if (value === null) return "--";
+  const formatted = Number.isInteger(value)
+    ? value.toLocaleString()
+    : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (isRateMode) return `${formatted}%`;
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function getActivityId(link: { activityId?: string }): string {
+  return link.activityId || ((link as Record<string, string>).measureId ?? "");
+}
+
+function getStatusInfo(rate: number | null): {
+  label: string;
+  colorClass: string;
+  color: string;
+  bgTint: string;
+} {
+  if (rate === null)
+    return {
+      label: "未計算",
+      colorClass: "none",
+      color: "#94a3b8",
+      bgTint: "#f8fafc",
+    };
+  if (rate >= 100)
+    return {
+      label: "達標",
+      colorClass: "hit",
+      color: "#10b981",
+      bgTint: "#f0fdf4",
+    };
+  if (rate >= 70)
+    return {
+      label: "良好",
+      colorClass: "good",
+      color: "#6366f1",
+      bgTint: "#f5f3ff",
+    };
+  if (rate >= 40)
+    return {
+      label: "注意",
+      colorClass: "warn",
+      color: "#f59e0b",
+      bgTint: "#fffbeb",
+    };
+  return {
+    label: "落後",
+    colorClass: "behind",
+    color: "#ef4444",
+    bgTint: "#fef2f2",
+  };
+}
+
+function getSubKpiSources(gk: GoalKPI, deptActivities: DeptActivity[]) {
+  const groups = new Map<
+    string,
+    {
+      activityId: string;
+      activityName: string;
+      items: Array<{
+        kpiId: string;
+        name: string;
+        actual: number | null | undefined;
+        target: number | null | undefined;
+        unit?: string;
+        rate: number | null;
+      }>;
+    }
+  >();
+
+  for (const link of gk.linkedKpis) {
+    const activityId = getActivityId(link);
+    if (!activityId) continue;
+    const activity = deptActivities.find((item) => item.id === activityId);
+    const kpi = activity?.kpis.find((item) => item.id === link.kpiId);
+    const rate = kpi
+      ? (computeKpiAchievement(kpi, activity?.kpis ?? []) ??
+        kpi.achievementRate ??
+        null)
+      : null;
+    let group = groups.get(activityId);
+    if (!group) {
+      group = {
+        activityId,
+        activityName: activity?.rawText || "（未命名活動）",
+        items: [],
+      };
+      groups.set(activityId, group);
+    }
+    group.items.push({
+      kpiId: link.kpiId,
+      name: kpi?.name || kpi?.label || "(未知 KPI)",
+      actual: kpi?.actual,
+      target: kpi?.target,
+      unit: kpi?.unit,
+      rate,
+    });
+  }
+
+  return Array.from(groups.values());
 }
 
 function StrategyRow({
@@ -40,7 +159,6 @@ function StrategyRow({
   onSelectStrategy: (id: string, warnFilter?: "overdue" | "warning") => void;
   warnDaysBefore: number;
 }) {
-  // Measures-based stats: count measures and count measures considered as "???"
   const measuresTotal = s.measures.length;
   const measuresAchieved = s.measures.filter(
     (m) => m.status === "completed",
@@ -75,7 +193,6 @@ function StrategyRow({
             {kpiCount > 0 && (
               <span className="meta-tag">🎯 {kpiCount} KPI</span>
             )}
-            {/* Measures-based summary */}
             {measuresTotal > 0 && (
               <span className="meta-tag">
                 ✅ {measuresAchieved}/{measuresTotal} M
@@ -118,73 +235,30 @@ function StrategyRow({
 
 export default function StrategyList({
   goal,
+  allGoals = [],
   strategies,
   selectedStrategyId,
   onSelectStrategy,
-  onAddStrategy,
-  onUpdateGoal,
-  onDeleteGoal,
-  filterOwner,
-  onFilterOwner,
-  teams,
   warnDaysBefore,
-  isReadOnly = false,
+  deptActivities = [],
 }: Props) {
-  const [editingGoalTitle, setEditingGoalTitle] = useState(false);
-  const [titleText, setTitleText] = useState("");
-  const [showKpiPanel, setShowKpiPanel] = useState(false);
-  const [editingKpiId, setEditingKpiId] = useState<string | null>(null);
-  const [kpiForm, setKpiForm] = useState<{
-    label: string;
-    unit: string;
-    target: string;
-    aggregation: "SUM" | "AVERAGE";
-    type: "value" | "pct_activity" | "progress";
-    isHeadline: boolean;
-    thresholdGoalKpiIds: string[];
-  }>({
-    label: "",
-    unit: "%",
-    target: "",
-    aggregation: "SUM",
-    type: "value",
-    isHeadline: false,
-    thresholdGoalKpiIds: [],
-  });
-  const [showLinkPicker, setShowLinkPicker] = useState<string | null>(null); // goalKpiId
-  const [linkPickerSearch, setLinkPickerSearch] = useState("");
-  const [showThresholdPicker, setShowThresholdPicker] = useState<string | null>(
+  const { startPageTour } = useTour();
+  const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(
     null,
-  ); // goalKpiId
-  const [showActivityBreakdown, setShowActivityBreakdown] = useState<
-    string | null
-  >(null); // goalKpiId
-  const [editingPctId, setEditingPctId] = useState<string | null>(null);
-  const [pctForm, setPctForm] = useState<{
-    label: string;
-    target: string;
-  }>({
-    label: "",
-    target: "60",
-  });
-  const [topH, setTopH] = useState(260);
-  const dragState = useRef<{ startY: number; startH: number } | null>(null);
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragState.current) return;
-      const delta = e.clientY - dragState.current.startY;
-      setTopH(Math.max(80, Math.min(700, dragState.current.startH + delta)));
-    };
-    const onUp = () => {
-      dragState.current = null;
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-  }, []);
+  );
+
+  const previewGoals = useMemo(
+    () => (goal ? (allGoals.length > 0 ? allGoals : [goal]) : []),
+    [allGoals, goal],
+  );
+  const goalKpiPreviews = useMemo(() => {
+    if (!goal) return [];
+    const goalKpis = goal.goalKpis ?? [];
+    return goalKpis.map((gk) => ({
+      gk,
+      result: computeGoalKpiResult(gk, goal, deptActivities, previewGoals),
+    }));
+  }, [goal, deptActivities, previewGoals]);
 
   if (!goal) {
     return (
@@ -198,1112 +272,321 @@ export default function StrategyList({
     );
   }
 
-  const goalKpis = goal.goalKpis ?? [];
-
-  // Compute aggregated actual/target for a GoalKPI
-  // type="value"        : AVERAGE/SUM of linked KPI values (existing logic)
-  // type="pct_activity" : % of activities (across thresholdGoalKpiIds) where
-  //                       actual >= at least one threshold GoalKPI's target (OR logic)
-  // type="progress"     : average actual of linked progress-type KPIs
-  // computeGoalKpi 已抽取至 utils/goalKpi.ts（computeGoalKpiResult）
-  const computeGoalKpi = (gk: GoalKPI) => computeGoalKpiResult(gk, goal!);
-  const saveKpi = () => {
-    if (!kpiForm.label.trim()) return;
-    const targetVal =
-      kpiForm.target.trim() !== "" ? parseFloat(kpiForm.target) : null;
-    if (editingKpiId && editingKpiId !== "new") {
-      const updated = goalKpis.map((gk) =>
-        gk.id === editingKpiId
-          ? {
-              ...gk,
-              label: kpiForm.label.trim(),
-              unit: kpiForm.unit.trim(),
-              target:
-                targetVal === null || Number.isNaN(targetVal)
-                  ? null
-                  : targetVal,
-              aggregation: kpiForm.aggregation,
-              type: kpiForm.type,
-              isHeadline: kpiForm.isHeadline,
-              thresholdGoalKpiIds: kpiForm.thresholdGoalKpiIds,
-            }
-          : gk,
-      );
-      onUpdateGoal({ ...goal, goalKpis: updated });
-    } else {
-      const newKpi: GoalKPI = {
-        id: genId("gkpi"),
-        label: kpiForm.label.trim(),
-        unit: kpiForm.unit.trim(),
-        target:
-          targetVal === null || Number.isNaN(targetVal) ? null : targetVal,
-        aggregation: kpiForm.aggregation,
-        type: kpiForm.type,
-        isHeadline: kpiForm.isHeadline,
-        thresholdGoalKpiIds: kpiForm.thresholdGoalKpiIds,
-        linkedKpis: [],
-      };
-      onUpdateGoal({ ...goal, goalKpis: [...goalKpis, newKpi] });
-    }
-    setEditingKpiId(null);
-    setKpiForm({
-      label: "",
-      unit: "%",
-      target: "",
-      aggregation: "SUM",
-      type: "value",
-      isHeadline: false,
-      thresholdGoalKpiIds: [],
-    });
-  };
-
-  const savePct = () => {
-    if (!pctForm.label.trim()) return;
-    const targetVal =
-      pctForm.target.trim() !== "" ? parseFloat(pctForm.target) : null;
-    if (editingPctId && editingPctId !== "new") {
-      const updated = goalKpis.map((gk) =>
-        gk.id === editingPctId
-          ? {
-              ...gk,
-              label: pctForm.label.trim(),
-              target:
-                targetVal === null || Number.isNaN(targetVal)
-                  ? null
-                  : targetVal,
-            }
-          : gk,
-      );
-      onUpdateGoal({ ...goal, goalKpis: updated });
-    } else {
-      const newKpi: GoalKPI = {
-        id: genId("gkpi"),
-        label: pctForm.label.trim(),
-        unit: "%",
-        target:
-          targetVal === null || Number.isNaN(targetVal) ? null : targetVal,
-        aggregation: "SUM",
-        type: "pct_activity",
-        isHeadline: false,
-        thresholdGoalKpiIds: [],
-        linkedKpis: [],
-      };
-      onUpdateGoal({ ...goal, goalKpis: [...goalKpis, newKpi] });
-    }
-    setEditingPctId(null);
-    setPctForm({
-      label: "",
-      target: "60",
-    });
-  };
-
-  const deleteKpi = (id: string) => {
-    const label = goalKpis.find((gk) => gk.id === id)?.label ?? "未知 KPI";
-    if (!window.confirm(`確定要刪除 KPI「${label}」？`)) return;
-    onUpdateGoal({ ...goal, goalKpis: goalKpis.filter((gk) => gk.id !== id) });
-  };
-
-  const toggleHeadline = (id: string) => {
-    onUpdateGoal({
-      ...goal,
-      goalKpis: goalKpis.map((gk) =>
-        gk.id === id ? { ...gk, isHeadline: !gk.isHeadline } : gk,
-      ),
-    });
-  };
-
-  const toggleLink = (goalKpiId: string, link: GoalKpiLink) => {
-    const gk = goalKpis.find((g) => g.id === goalKpiId);
-    if (!gk) return;
-    const exists = gk.linkedKpis.some(
-      (l) =>
-        l.strategyId === link.strategyId &&
-        l.measureId === link.measureId &&
-        l.kpiId === link.kpiId,
-    );
-    const updated = exists
-      ? gk.linkedKpis.filter(
-          (l) =>
-            !(
-              l.strategyId === link.strategyId &&
-              l.measureId === link.measureId &&
-              l.kpiId === link.kpiId
-            ),
-        )
-      : [...gk.linkedKpis, link];
-    onUpdateGoal({
-      ...goal,
-      goalKpis: goalKpis.map((g) =>
-        g.id === goalKpiId ? { ...g, linkedKpis: updated } : g,
-      ),
-    });
-  };
-  const toggleThreshold = (goalKpiId: string, threshId: string) => {
-    const gk = goalKpis.find((g) => g.id === goalKpiId);
-    if (!gk) return;
-    const current = gk.thresholdGoalKpiIds ?? [];
-    const isRemoving = current.includes(threshId);
-    const updated = isRemoving
-      ? current.filter((id) => id !== threshId)
-      : [...current, threshId];
-    // ?????????????????????????activitySourceOverrides
-    const cleanedOverrides = isRemoving
-      ? Object.fromEntries(
-          Object.entries(gk.activitySourceOverrides ?? {}).filter(
-            ([, v]) => v !== threshId,
-          ),
-        )
-      : (gk.activitySourceOverrides ?? {});
-    onUpdateGoal({
-      ...goal,
-      goalKpis: goalKpis.map((g) =>
-        g.id === goalKpiId
-          ? {
-              ...g,
-              thresholdGoalKpiIds: updated,
-              activitySourceOverrides: cleanedOverrides,
-            }
-          : g,
-      ),
-    });
-  };
-
-  const activityKpis = goalKpis.filter(
-    (gk) => (gk.type ?? "value") === "pct_activity",
-  );
-  const otherKpis = goalKpis.filter(
-    (gk) => (gk.type ?? "value") !== "pct_activity",
-  );
-  const headlineKpis = otherKpis.filter((gk) => gk.isHeadline);
-  const detailKpis = otherKpis.filter((gk) => !gk.isHeadline);
-
-  const renderGkCard = (gk: GoalKPI) => {
+  const renderScorecardCard = (gk: GoalKPI) => {
     const {
       actual,
       target,
-      rate: kRate,
+      rate,
       isRateMode,
       metCount,
       totalCount,
       activities,
-    } = computeGoalKpi(gk);
-    const kColor =
-      kRate === null
-        ? "#6b7280"
-        : kRate >= 100
-          ? "#10b981"
-          : kRate >= 70
-            ? "#6366f1"
-            : kRate >= 40
-              ? "#f59e0b"
-              : "#ef4444";
+    } =
+      goalKpiPreviews.find((item) => item.gk.id === gk.id)?.result ??
+      computeGoalKpiResult(gk, goal, deptActivities, previewGoals);
     const gkType = gk.type ?? "value";
-    const isEditing =
-      gkType === "pct_activity"
-        ? editingPctId === gk.id
-        : editingKpiId === gk.id;
-    const isLinking = showLinkPicker === gk.id;
-    const isLinkingThreshold = showThresholdPicker === gk.id;
+    const isAgg = gk.goalKpiType === "aggregate";
+    const isPct = gkType === "pct_activity";
+    const isGKpiCard = isAgg || isPct; // G-KPI（目標成效指標）
+
+    // G-KPI 狀態色以 rate 判斷（aggregate: rate=actual；pct_activity: rate=actual/target*100）
+    // G-sub-KPI 狀態色同樣以 rate 判斷
+    const status = getStatusInfo(rate);
+    const isExpanded = expandedPreviewId === gk.id;
+    const subSources = !isGKpiCard ? getSubKpiSources(gk, deptActivities) : [];
+
+    // ── 主角數字決定 ──
+    // pct_activity：大字 = "N/M"（幾個活動達標），副字 = "活動達標"，footer = 達標率% / 目標%
+    // aggregate：大字 = actual%（加權平均達成率），footer = "來源 N 項加權平均"
+    // G-sub-KPI：大字 = rate%（真正的達成率），footer = 實際 X / 目標 Y
+
+    let bigNumber: string;
+    let bigUnit: string | null = null;
+    let footerLine: string | null = null;
+
+    if (isPct) {
+      bigNumber = metCount !== null ? `${metCount}/${totalCount}` : "--";
+      bigUnit = "活動達標";
+      footerLine =
+        actual !== null ? `達標率 ${actual}% ／ 目標 ${target ?? "--"}%` : null;
+    } else if (isAgg) {
+      bigNumber = actual !== null ? `${actual}%` : "--";
+      footerLine =
+        totalCount > 0 ? `來源 ${totalCount} 項加權平均` : "尚未連結來源";
+    } else {
+      // G-sub-KPI：rate% 才是達成率
+      bigNumber = rate !== null ? `${rate}%` : "--";
+      footerLine = `實際 ${formatMetricValue(actual, isRateMode, gk.unit)} ／ 目標 ${formatMetricValue(target, isRateMode, gk.unit)}`;
+    }
+
+    // 進度條寬度：pct_activity 用 actual/target（達標率百分比），其餘用 rate
+    const barPct = isPct
+      ? actual !== null && target
+        ? Math.min((actual / target) * 100, 100)
+        : 0
+      : Math.min(rate ?? 0, 100);
+
+    const hasExpandable =
+      (isPct &&
+        (gk.thresholdGoalKpiIds ?? []).length > 0 &&
+        activities.length > 0) ||
+      (!isGKpiCard && subSources.length > 0);
+
     return (
-      <div key={gk.id} className="g-kpi-card">
-        {isEditing && gkType === "pct_activity" ? (
-          <div className="g-kpi-form-row">
-            <input
-              className="g-kpi-input"
-              placeholder="請輸入活動名稱"
-              value={pctForm.label}
-              onChange={(e) =>
-                setPctForm({ ...pctForm, label: e.target.value })
-              }
-              autoFocus
-            />
-            <div className="g-kpi-target-wrap">
-              <input
-                className="g-kpi-input g-kpi-target"
-                type="number"
-                placeholder="目標達成率 %"
-                value={pctForm.target}
-                onChange={(e) =>
-                  setPctForm({ ...pctForm, target: e.target.value })
-                }
-              />
-              <span className="g-kpi-target-unit">%</span>
-            </div>
-            <button className="g-kpi-btn-save" onClick={savePct}>
-              儲存
-            </button>
+      <div
+        key={gk.id}
+        className={`kpi-sc-card kpi-sc-card--${status.colorClass}${isExpanded ? " kpi-sc-card--expanded" : ""}`}
+        style={{ borderLeftColor: status.color, background: status.bgTint }}
+      >
+        {/* 頂部：名稱 + 狀態 badge */}
+        <div className="kpi-sc-top">
+          <span className="kpi-sc-name">
+            {gk.isHeadline && <span className="kpi-sc-star">★ </span>}
+            {gk.label}
+          </span>
+          <span
+            className={`kpi-sc-status kpi-sc-status--${status.colorClass}`}
+            style={{ color: status.color }}
+          >
+            {status.label}
+          </span>
+        </div>
+
+        {/* 主角數字 */}
+        <div className="kpi-sc-rate-row">
+          <span className="kpi-sc-rate" style={{ color: status.color }}>
+            {bigNumber}
+          </span>
+          {bigUnit && (
+            <span className="kpi-sc-pct-sub">
+              <span className="kpi-sc-pct-unit">{bigUnit}</span>
+            </span>
+          )}
+        </div>
+
+        {/* 進度條 */}
+        <div className="kpi-sc-bar-wrap">
+          <div
+            className="kpi-sc-bar-fill"
+            style={{ width: `${barPct}%`, background: status.color }}
+          />
+        </div>
+
+        {/* 補充說明小字 */}
+        {footerLine && <div className="kpi-sc-footer">{footerLine}</div>}
+
+        {/* 展開按鈕 */}
+        {hasExpandable && (
+          <>
             <button
-              className="g-kpi-btn-cancel"
-              onClick={() => setEditingPctId(null)}
-            >
-              取消
-            </button>
-          </div>
-        ) : isEditing ? (
-          <div className="g-kpi-form-row">
-            <input
-              className="g-kpi-input"
-              placeholder="KPI 名稱"
-              value={kpiForm.label}
-              onChange={(e) =>
-                setKpiForm({ ...kpiForm, label: e.target.value })
-              }
-            />
-            <input
-              className="g-kpi-input g-kpi-target"
-              type="number"
-              placeholder="目標值"
-              value={kpiForm.target}
-              onChange={(e) =>
-                setKpiForm({ ...kpiForm, target: e.target.value })
-              }
-            />
-            <input
-              className="g-kpi-input g-kpi-unit"
-              placeholder="單位"
-              value={kpiForm.unit}
-              onChange={(e) => setKpiForm({ ...kpiForm, unit: e.target.value })}
-            />
-            <select
-              className="g-kpi-select"
-              value={kpiForm.type}
-              onChange={(e) =>
-                setKpiForm({
-                  ...kpiForm,
-                  type: e.target.value as "value" | "pct_activity" | "progress",
-                })
+              className="kpi-sc-toggle"
+              onClick={() =>
+                setExpandedPreviewId((cur) => (cur === gk.id ? null : gk.id))
               }
             >
-              <option value="value">數值</option>
-              <option value="progress">進度</option>
-            </select>
-            {kpiForm.type === "value" && (
-              <select
-                className="g-kpi-select"
-                value={kpiForm.aggregation}
-                onChange={(e) =>
-                  setKpiForm({
-                    ...kpiForm,
-                    aggregation: e.target.value as "SUM" | "AVERAGE",
-                  })
-                }
-              >
-                <option value="SUM">加總</option>
-                <option value="AVERAGE">平均</option>
-              </select>
-            )}
-            <label
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={kpiForm.isHeadline}
-                onChange={(e) =>
-                  setKpiForm({ ...kpiForm, isHeadline: e.target.checked })
-                }
-              />
-              主要 KPI
-            </label>
-            <button className="g-kpi-btn-save" onClick={saveKpi}>
-              儲存
+              {isPct
+                ? isExpanded
+                  ? "▲ 收合活動明細"
+                  : "▶ 展開活動明細"
+                : isExpanded
+                  ? "▲ 收合來源明細"
+                  : "▶ 展開來源明細"}
             </button>
-            <button
-              className="g-kpi-btn-cancel"
-              onClick={() => setEditingKpiId(null)}
-            >
-              取消
-            </button>
-          </div>
-        ) : (
-          <div className="g-kpi-card-top">
-            <div className="g-kpi-card-left">
-              <span className="g-kpi-name">{gk.label}</span>
-              <span className="g-kpi-meta">
-                {gkType === "pct_activity"
-                  ? "活動達標率"
-                  : gkType === "progress"
-                    ? "進度"
-                    : gk.aggregation === "SUM"
-                      ? "加總"
-                      : "平均"}{" "}
-                {gkType === "pct_activity"
-                  ? `🔗 ${(gk.thresholdGoalKpiIds ?? []).length} 個門檻 GoalKPI`
-                  : `🔗 ${gk.linkedKpis.length} 個連結`}
-              </span>
-            </div>
-            <div className="g-kpi-card-right">
-              <span className="g-kpi-value">
-                <span className="g-kpi-val-label">實際</span>
-                {actual !== null ? actual.toLocaleString() : "--"}
-                {isRateMode ? "%" : actual !== null ? ` ${gk.unit}` : ""}{" "}
-                {(gk.type ?? "value") === "pct_activity" &&
-                  metCount !== null && (
-                    <span style={{ fontSize: 11, color: "#6b7280" }}>
-                      {metCount}/{totalCount}{" "}
+            {isExpanded && isPct && (
+              <div className="g-kpi-activity-list">
+                {activities.map((a) => (
+                  <div
+                    key={a.measureId}
+                    className={`g-kpi-activity-row ${a.met ? "met" : "unmet"}`}
+                  >
+                    <span className="g-kpi-activity-icon">
+                      {a.met ? "✅" : "❌"}
                     </span>
-                  )}{" "}
-                <span className="g-kpi-val-sep">/</span>
-                <span className="g-kpi-val-label">目標</span>
-                {target !== null ? target.toLocaleString() : "--"}
-                {isRateMode ? "%" : ` ${gk.unit}`}
-              </span>
-              {gkType !== "pct_activity" && (
-                <span className="g-kpi-rate" style={{ color: kColor }}>
-                  {kRate !== null ? `${kRate}%` : "--"}
-                </span>
-              )}
-            </div>
-            <div className="g-kpi-card-actions">
-              {!isReadOnly &&
-                (gkType === "pct_activity" ? (
-                  <button
-                    className="g-kpi-btn-link"
-                    onClick={() => {
-                      setShowThresholdPicker(isLinkingThreshold ? null : gk.id);
-                      setShowLinkPicker(null);
-                    }}
-                  >
-                    🔗 設定門檻
-                  </button>
-                ) : (
-                  <button
-                    className="g-kpi-btn-link"
-                    onClick={() => {
-                      setShowLinkPicker(isLinking ? null : gk.id);
-                      setLinkPickerSearch("");
-                    }}
-                  >
-                    🔗 連結
-                  </button>
+                    <span className="g-kpi-activity-text">
+                      {(a.measureRawText || "").substring(0, 28)}
+                    </span>
+                    {a.isConflict && (
+                      <span className="g-pct-src-badge">
+                        {a.chosenSrcLabel}
+                      </span>
+                    )}
+                    <span className="g-kpi-activity-detail">
+                      {a.displayRate !== null
+                        ? `${a.displayRate.toFixed(1)}%`
+                        : "--"}
+                      {" / 目標 "}
+                      {a.chosenTarget !== null ? a.chosenTarget : "--"}%
+                    </span>
+                  </div>
                 ))}
-              {!isReadOnly && gkType !== "pct_activity" && (
-                <button
-                  className="g-kpi-btn-headline"
-                  onClick={() => toggleHeadline(gk.id)}
-                  title={gk.isHeadline ? "取消設為主要 KPI" : "設為主要 KPI"}
-                >
-                  {gk.isHeadline ? "⭐" : "--"}
-                </button>
-              )}
-              {!isReadOnly && (
-                <button
-                  className="g-kpi-btn-edit"
-                  onClick={() => {
-                    if (gkType === "pct_activity") {
-                      setEditingPctId(gk.id);
-                      setPctForm({
-                        label: gk.label,
-                        target:
-                          gk.target !== null && gk.target !== undefined
-                            ? String(gk.target)
-                            : "60",
-                      });
-                    } else {
-                      setEditingKpiId(gk.id);
-                      setKpiForm({
-                        label: gk.label,
-                        unit: gk.unit,
-                        target:
-                          gk.target !== null && gk.target !== undefined
-                            ? String(gk.target)
-                            : "",
-                        aggregation: gk.aggregation,
-                        type: gk.type ?? "value",
-                        isHeadline: gk.isHeadline ?? false,
-                        thresholdGoalKpiIds: gk.thresholdGoalKpiIds ?? [],
-                      });
-                    }
-                  }}
-                >
-                  編輯{" "}
-                </button>
-              )}
-              {!isReadOnly && (
-                <button
-                  className="g-kpi-btn-del"
-                  onClick={() => deleteKpi(gk.id)}
-                >
-                  刪除
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        {!isEditing && kRate !== null && (
-          <div className="g-kpi-bar-wrap">
-            <div className="g-kpi-bar">
-              <div
-                style={{
-                  width: `${Math.min(kRate, 100)}%`,
-                  height: "100%",
-                  background: kColor,
-                  borderRadius: "4px",
-                  transition: "width 0.6s ease",
-                }}
-              />
-            </div>
-          </div>
-        )}
-        {/* ?????????pct_activity ?????*/}
-        {isLinkingThreshold &&
-          (() => {
-            const selectedIds = gk.thresholdGoalKpiIds ?? [];
-            const overrides = gk.activitySourceOverrides ?? {};
-            const availableGks = goalKpis.filter(
-              (g) => g.id !== gk.id && (g.type ?? "value") !== "pct_activity",
-            );
-
-            // ??? measureId ??????????????????????????
-            const measureCoverage = new Map<
-              string,
-              {
-                threshGkId: string;
-                threshGkLabel: string;
-                measureRawText: string;
-              }[]
-            >();
-            for (const tid of selectedIds) {
-              const tGk = goalKpis.find((g) => g.id === tid);
-              if (!tGk) continue;
-              // ????????measureId ???
-              const seenMeasures = new Set<string>();
-              for (const link of tGk.linkedKpis) {
-                if (seenMeasures.has(link.measureId)) continue;
-                seenMeasures.add(link.measureId);
-                if (!measureCoverage.has(link.measureId))
-                  measureCoverage.set(link.measureId, []);
-                // ??rawText
-                const s = (goal.strategies ?? []).find(
-                  (s) => s.id === link.strategyId,
-                );
-                const m = s?.measures.find((m) => m.id === link.measureId);
-                measureCoverage.get(link.measureId)?.push({
-                  threshGkId: tid,
-                  threshGkLabel: tGk.label,
-                  measureRawText: m?.rawText ?? "未知度量指標",
-                });
-              }
-            }
-            const conflictedMeasures = Array.from(measureCoverage.entries())
-              .filter(([, srcs]) => srcs.length > 1)
-              .map(([measureId, srcs]) => ({ measureId, srcs }));
-
-            const setOverride = (measureId: string, threshGkId: string) => {
-              onUpdateGoal({
-                ...goal,
-                goalKpis: goalKpis.map((g) =>
-                  g.id === gk.id
-                    ? {
-                        ...g,
-                        activitySourceOverrides: {
-                          ...overrides,
-                          [measureId]: threshGkId,
-                        },
-                      }
-                    : g,
-                ),
-              });
-            };
-
-            return (
-              <div className="g-kpi-link-picker">
-                <div className="g-kpi-link-picker-title">選取門檻 GoalKPI </div>
-                <div className="g-kpi-link-hint">
-                  勾選哪些 GoalKPI 作為活動達標率的門檻來源{" "}
-                </div>
-                {availableGks.length === 0 ? (
-                  <div className="g-kpi-link-empty">
-                    目前沒有可選的 GoalKPI，請先建立已連結 M KPI 的 GoalKPI{" "}
-                  </div>
-                ) : (
-                  availableGks.map((g) => {
-                    const checked = selectedIds.includes(g.id);
-                    return (
-                      <label
-                        key={g.id}
-                        className={`g-kpi-link-item${checked ? " linked" : ""}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleThreshold(gk.id, g.id)}
-                        />
-                        <span className="g-kpi-link-k">{g.label}</span>
-                        <span className="g-kpi-link-val">
-                          目標{" "}
-                          {g.target !== null && g.target !== undefined
-                            ? g.target
-                            : "--"}
-                          {g.unit}
-                          {" / "}
-                          {g.linkedKpis.length} 個已連結{" "}
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-                {conflictedMeasures.length > 0 && (
-                  <div className="g-pct-conflict-section">
-                    <div className="g-pct-conflict-title">
-                      ⚠️ 衝突 {conflictedMeasures.length} 個度量指標同時被多個
-                      GoalKPI 引用，請選擇要使用的來源{" "}
-                    </div>
-                    {conflictedMeasures.map(({ measureId, srcs }) => {
-                      const chosenId =
-                        overrides[measureId] &&
-                        srcs.some((s) => s.threshGkId === overrides[measureId])
-                          ? overrides[measureId]
-                          : srcs[0].threshGkId;
-                      return (
-                        <div key={measureId} className="g-pct-conflict-measure">
-                          <div className="g-pct-conflict-measure-name">
-                            度量：{srcs[0].measureRawText}
-                          </div>
-                          <div className="g-pct-conflict-reason">
-                            被多個來源引用：{" "}
-                            {srcs
-                              .map((s) => `「${s.threshGkLabel}」`)
-                              .join("、")}
-                          </div>
-                          <div className="g-pct-conflict-radios">
-                            {srcs.map((src) => {
-                              const srcGk = goalKpis.find(
-                                (g) => g.id === src.threshGkId,
-                              );
-                              return (
-                                <label
-                                  key={src.threshGkId}
-                                  className={`g-pct-conflict-radio${chosenId === src.threshGkId ? " chosen" : ""}`}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`conflict-${gk.id}-${measureId}`}
-                                    checked={chosenId === src.threshGkId}
-                                    onChange={() =>
-                                      setOverride(measureId, src.threshGkId)
-                                    }
-                                  />
-                                  <span className="g-pct-conflict-radio-label">
-                                    {src.threshGkLabel}
-                                  </span>
-                                  <span className="g-pct-conflict-radio-hint">
-                                    目標 {srcGk?.target ?? "--"}
-                                    {srcGk?.unit ?? "%"}
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
-            );
-          })()}
-        {/* M KPI ?????????value / progress ?????*/}
-        {isLinking && (
-          <div className="g-kpi-link-picker">
-            <div className="g-kpi-link-picker-title">選擇連結的 M KPI</div>
-            <input
-              className="g-kpi-link-search"
-              placeholder="搜尋 KPI 或度量指標"
-              value={linkPickerSearch}
-              onChange={(e) => setLinkPickerSearch(e.target.value)}
-              autoFocus
-            />
-            {(() => {
-              const q = linkPickerSearch.trim().toLowerCase();
-              const rows = strategies
-                .flatMap((s, si) =>
-                  s.measures.flatMap((m) =>
-                    m.kpis.map((k) => ({ s, si, m, k })),
-                  ),
-                )
-                .filter(({ k }) => {
-                  const mKpiType = k.kpiType ?? "value";
-                  return gkType === "progress"
-                    ? mKpiType === "progress"
-                    : mKpiType !== "progress";
-                })
-                .filter(
-                  ({ s, m, k }) =>
-                    !q ||
-                    s.title.toLowerCase().includes(q) ||
-                    m.rawText.toLowerCase().includes(q) ||
-                    k.label.toLowerCase().includes(q),
-                );
-              if (rows.length === 0)
-                return (
-                  <div className="g-kpi-link-empty">
-                    {q
-                      ? "找不到符合的結果"
-                      : gkType === "progress"
-                        ? "沒有可連結的進度型 KPI 度量指標"
-                        : "沒有可連結的數值型 M KPI 度量指標"}
-                  </div>
-                );
-              return rows.map(({ s, si, m, k }) => {
-                const link: GoalKpiLink = {
-                  strategyId: s.id,
-                  measureId: m.id,
-                  kpiId: k.id,
-                };
-                const linked = gk.linkedKpis.some(
-                  (l) =>
-                    l.strategyId === s.id &&
-                    l.measureId === m.id &&
-                    l.kpiId === k.id,
-                );
-                return (
-                  <label
-                    key={`${s.id}-${m.id}-${k.id}`}
-                    className={`g-kpi-link-item${linked ? " linked" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={linked}
-                      onChange={() => toggleLink(gk.id, link)}
-                    />
-                    <span className="g-kpi-link-s">S{si + 1}</span>
-                    <span className="g-kpi-link-m">
-                      {m.rawText.substring(0, 20) || ""}
-                    </span>
-                    <span className="g-kpi-link-k">{k.label}</span>
-                    <span className="g-kpi-link-val">
-                      實際{" "}
-                      {k.actual !== null && k.actual !== undefined
-                        ? k.actual.toLocaleString()
-                        : "--"}
-                      {" / "}
-                      {k.target !== null && k.target !== undefined
-                        ? k.target.toLocaleString()
-                        : "--"}
-                    </span>
-                  </label>
-                );
-              });
-            })()}
-          </div>
-        )}
-        {/* ???????????ct_activity ??????????????? */}
-        {gkType === "pct_activity" && (
-          <div className="g-kpi-activity-breakdown">
-            {(gk.thresholdGoalKpiIds ?? []).length === 0 ? (
-              <div className="g-kpi-activity-empty">
-                尚未設定任何門檻 GoalKPI，請點擊上方「🔗 設定門檻」按鈕
-              </div>
-            ) : activities.length === 0 ? (
-              <div className="g-kpi-activity-empty">
-                所選的 GoalKPI 尚未連結任何 M KPI，請先為 GoalKPI 新增連結{" "}
-              </div>
-            ) : (
-              <>
-                <button
-                  className="g-kpi-activity-toggle"
-                  onClick={() =>
-                    setShowActivityBreakdown(
-                      showActivityBreakdown === gk.id ? null : gk.id,
-                    )
-                  }
-                >
-                  {showActivityBreakdown === gk.id ? "▲" : "▶"} 達標{" "}
-                  {activities.filter((a) => !a.met).length} 未達標
-                </button>
-                {showActivityBreakdown === gk.id && (
-                  <div className="g-kpi-activity-list">
-                    {activities
-                      .filter((a) => a.met)
-                      .map((a) => (
-                        <div
-                          key={a.measureId}
-                          className="g-kpi-activity-row met"
-                        >
-                          <span className="g-kpi-activity-icon">✅</span>
-                          <span className="g-kpi-activity-text">
-                            {(a.measureRawText || "").substring(0, 28)}
-                          </span>
-                          {a.isConflict && (
-                            <span className="g-pct-src-badge">
-                              {a.chosenSrcLabel}{" "}
-                            </span>
-                          )}
-                          <span className="g-kpi-activity-detail">
-                            {a.displayRate !== null
-                              ? `${a.displayRate.toFixed(1)}%`
-                              : "--"}
-                            {" / 目標 "}
-                            {a.chosenTarget !== null ? a.chosenTarget : "--"}%
-                          </span>
-                        </div>
-                      ))}
-                    {activities
-                      .filter((a) => !a.met)
-                      .map((a) => (
-                        <div
-                          key={a.measureId}
-                          className="g-kpi-activity-row unmet"
-                        >
-                          <span className="g-kpi-activity-icon">❌</span>
-                          <span className="g-kpi-activity-text">
-                            {(a.measureRawText || "").substring(0, 28)}
-                          </span>
-                          {a.isConflict && (
-                            <span className="g-pct-src-badge">
-                              {a.chosenSrcLabel}{" "}
-                            </span>
-                          )}
-                          <span className="g-kpi-activity-detail">
-                            {a.displayRate !== null
-                              ? `${a.displayRate.toFixed(1)}%`
-                              : "--"}
-                            {" / 目標 "}
-                            {a.chosenTarget !== null ? a.chosenTarget : "--"}%
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </>
             )}
-          </div>
+            {isExpanded && !isPct && subSources.length > 0 && (
+              <div className="g-subkpi-source-list">
+                {subSources.map((group) => (
+                  <div key={group.activityId} className="g-subkpi-source-group">
+                    <div className="g-subkpi-source-title">
+                      {group.activityName}
+                    </div>
+                    <div className="g-subkpi-source-items">
+                      {group.items.map((item) => (
+                        <div
+                          key={`${group.activityId}-${item.kpiId}`}
+                          className="g-subkpi-source-item"
+                        >
+                          <span className="g-subkpi-source-name">
+                            {item.name}
+                          </span>
+                          <span className="g-subkpi-source-metric">
+                            {formatMetricValue(
+                              item.actual ?? null,
+                              false,
+                              item.unit,
+                            )}
+                            <span className="g-kpi-val-sep">/</span>
+                            {formatMetricValue(
+                              item.target ?? null,
+                              false,
+                              item.unit,
+                            )}
+                          </span>
+                          <span
+                            className="g-subkpi-source-rate"
+                            style={{ color: getKpiColor(item.rate) }}
+                          >
+                            {item.rate !== null ? `${item.rate}%` : "--"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     );
   };
 
   return (
-    <div className="strategy-list">
-      <div
-        className="goal-header"
-        style={{ height: topH, overflowY: "auto", flexShrink: 0 }}
-      >
+    <div className="strategy-list" data-tour="ogsm-strategy-list">
+      <div className="goal-header" data-tour="ogsm-goal-header">
         <div className="goal-header-top">
           <span className="goal-label-badge">{goal.label}</span>
-          {editingGoalTitle ? (
-            <input
-              className="goal-title-input"
-              autoFocus
-              value={titleText}
-              style={{
-                flex: 1,
-                fontSize: 22,
-                fontWeight: 800,
-                padding: 4,
-                background: "rgba(99,102,241,.1)",
-                border: "none",
-                borderRadius: 6,
-                color: "var(--text)",
-                outline: "none",
-              }}
-              onChange={(e) => setTitleText(e.target.value)}
-              onBlur={() => {
-                if (titleText.trim() !== goal.title)
-                  onUpdateGoal({ ...goal, title: titleText.trim() });
-                setEditingGoalTitle(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (titleText.trim() !== goal.title)
-                    onUpdateGoal({ ...goal, title: titleText.trim() });
-                  setEditingGoalTitle(false);
-                }
-                if (e.key === "Escape") setEditingGoalTitle(false);
-              }}
-            />
-          ) : (
-            <h1
-              className="goal-header-title"
-              onDoubleClick={() => {
-                if (isReadOnly) return;
-                setTitleText(goal.title);
-                setEditingGoalTitle(true);
-              }}
-              title="雙擊可編輯目標標題"
-            >
-              {goal.title || (
-                <span style={{ color: "#6b7280", fontStyle: "italic" }}>
-                  （尚未輸入標題）{" "}
-                </span>
-              )}
-            </h1>
-          )}
-          {!isReadOnly && (
-            <button
-              className="detail-del-btn"
-              onClick={() => onDeleteGoal(goal.id)}
-              title="刪除此目標"
-              style={{ marginLeft: "auto" }}
-            >
-              🗑 刪除
-            </button>
-          )}
+          <h1 className="goal-header-title">
+            {goal.title || (
+              <span style={{ color: "#6b7280", fontStyle: "italic" }}>
+                （尚未輸入標題）
+              </span>
+            )}
+          </h1>
+        </div>
+        <div
+          style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}
+        >
+          <button
+            className="page-tour-btn"
+            onClick={() => startPageTour("ogsm")}
+          >
+            🔎 本頁導覽
+          </button>
         </div>
 
-        {/* ?????????????????pct_activity?????? KPI ????????*/}
-        <div className="g-pct-panel">
-          <div className="g-pct-panel-header">
-            <span className="g-pct-panel-title">活動達標率</span>
-          </div>
-          <div className="g-pct-panel-cards">
-            {activityKpis.length === 0 && editingPctId !== "new" && (
-              <div className="g-kpi-empty">
-                尚未建立活動達標率 KPI，點擊下方按鈕新增{" "}
-              </div>
-            )}
-            {activityKpis.map(renderGkCard)}
-            {!isReadOnly && editingPctId !== "new" && (
-              <button
-                className="g-kpi-toggle g-pct-add-btn"
-                onClick={() => {
-                  setEditingPctId("new");
-                  setPctForm({ label: "", target: "60" });
-                }}
-              >
-                ＋ 新增活動達標率 KPI{" "}
-              </button>
-            )}
-            {editingPctId === "new" && (
-              <div className="g-pct-new-form">
-                <div className="g-kpi-form-row">
-                  <input
-                    className="g-kpi-input"
-                    placeholder="請輸入活動達標率 KPI 名稱"
-                    value={pctForm.label}
-                    onChange={(e) =>
-                      setPctForm({ ...pctForm, label: e.target.value })
-                    }
-                    autoFocus
-                  />
-                  <div className="g-kpi-target-wrap">
-                    <input
-                      className="g-kpi-input g-kpi-target"
-                      type="number"
-                      placeholder="目標 %"
-                      value={pctForm.target}
-                      onChange={(e) =>
-                        setPctForm({ ...pctForm, target: e.target.value })
-                      }
-                    />
-                    <span className="g-kpi-target-unit">%</span>
+        {!selectedStrategyId &&
+          (() => {
+            const gKpiList = goalKpiPreviews.filter(({ gk }) => isGKpi(gk));
+            const subGKpiList = goalKpiPreviews.filter(({ gk }) => !isGKpi(gk));
+            return (
+              <>
+                {gKpiList.length > 0 && (
+                  <div
+                    className="kpi-scorecard-section kpi-scorecard-section--primary"
+                    data-tour="ogsm-kpi-scorecard"
+                  >
+                    <div className="kpi-scorecard-header">
+                      <div className="kpi-scorecard-header-left">
+                        <span className="kpi-sc-section-chip kpi-sc-section-chip--gkpi">
+                          G-KPI
+                        </span>
+                        <span className="kpi-scorecard-title">
+                          目標成效指標
+                        </span>
+                        <span className="kpi-scorecard-subtitle">
+                          目標是否達成的結論性數字
+                        </span>
+                      </div>
+                      <span className="kpi-scorecard-stat">
+                        {
+                          gKpiList.filter(
+                            ({ result }) => (result.rate ?? 0) >= 100,
+                          ).length
+                        }
+                        <span className="kpi-scorecard-stat-sep">/</span>
+                        {gKpiList.length}
+                        <span className="kpi-scorecard-stat-label"> 達標</span>
+                      </span>
+                    </div>
+                    <div className="kpi-scorecard-grid">
+                      {gKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                    </div>
                   </div>
-                  <button className="g-kpi-btn-save" onClick={savePct}>
-                    儲存
-                  </button>
-                  <button
-                    className="g-kpi-btn-cancel"
-                    onClick={() => setEditingPctId(null)}
+                )}
+
+                {subGKpiList.length > 0 && (
+                  <div
+                    className="kpi-scorecard-section kpi-scorecard-section--sub"
+                    data-tour="ogsm-subkpi-scorecard"
                   >
-                    取消
-                  </button>
-                </div>
-                <div className="g-pct-form-hint">
-                  此 KPI 根據設定的 GoalKPI 門檻來計算活動達標率，M KPI 度量指標
-                  需達到目標 %，活動 % 才算達標{" "}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+                    <div className="kpi-scorecard-header kpi-scorecard-header--sub">
+                      <div className="kpi-scorecard-header-left">
+                        <span className="kpi-sc-section-chip kpi-sc-section-chip--sub">
+                          G-sub-KPI
+                        </span>
+                        <span className="kpi-scorecard-title">
+                          活動執行指標
+                        </span>
+                        <span className="kpi-scorecard-subtitle">
+                          連結各活動 M-KPI，匯入上方 G-KPI
+                        </span>
+                      </div>
+                      <span className="kpi-scorecard-stat">
+                        {
+                          subGKpiList.filter(
+                            ({ result }) => (result.rate ?? 0) >= 100,
+                          ).length
+                        }
+                        <span className="kpi-scorecard-stat-sep">/</span>
+                        {subGKpiList.length}
+                        <span className="kpi-scorecard-stat-label"> 達標</span>
+                      </span>
+                    </div>
+                    <div className="kpi-scorecard-grid kpi-scorecard-grid--sub">
+                      {subGKpiList.map(({ gk }) => renderScorecardCard(gk))}
+                    </div>
+                  </div>
+                )}
 
-        {/* G KPI ??? */}
-        <div className="g-kpi-panel">
-          <div className="g-kpi-panel-header">
-            <span className="g-kpi-panel-title">目標 KPI 清單</span>
-            <button
-              className="g-kpi-toggle"
-              onClick={() => setShowKpiPanel((v) => !v)}
-            >
-              {showKpiPanel ? "▲ 收起" : "▽ 展開"}
-            </button>
-          </div>
+                {gKpiList.length === 0 && subGKpiList.length > 0 && null}
+              </>
+            );
+          })()}
 
-          {headlineKpis.length > 0 && (
-            <div
-              className={`g-kpi-headline-area${showKpiPanel ? "" : " g-kpi-headline-area--collapsed"}`}
-            >
-              <span className="g-kpi-headline-label">主要指標</span>
-              {headlineKpis.map(renderGkCard)}
-            </div>
-          )}
-
-          {showKpiPanel && (
-            <div className="g-kpi-panel-body">
-              {detailKpis.length === 0 && (
-                <div className="g-kpi-empty">
-                  {otherKpis.length === 0
-                    ? "找不到符合的進度型 KPI 度量指標"
-                    : "尚未設定 KPI，點擊「＋新增 KPI」按鈕新增"}
-                </div>
-              )}
-              {detailKpis.map(renderGkCard)}
-              {editingKpiId === "new" ? (
-                <div className="g-kpi-form-row">
-                  <input
-                    className="g-kpi-input"
-                    placeholder="KPI 名稱"
-                    value={kpiForm.label}
-                    onChange={(e) =>
-                      setKpiForm({ ...kpiForm, label: e.target.value })
-                    }
-                    autoFocus
-                  />
-                  <input
-                    className="g-kpi-input g-kpi-target"
-                    type="number"
-                    placeholder="目標值"
-                    value={kpiForm.target}
-                    onChange={(e) =>
-                      setKpiForm({ ...kpiForm, target: e.target.value })
-                    }
-                  />
-                  <input
-                    className="g-kpi-input g-kpi-unit"
-                    placeholder="單位"
-                    value={kpiForm.unit}
-                    onChange={(e) =>
-                      setKpiForm({ ...kpiForm, unit: e.target.value })
-                    }
-                  />
-                  <select
-                    className="g-kpi-select"
-                    value={kpiForm.type}
-                    onChange={(e) =>
-                      setKpiForm({
-                        ...kpiForm,
-                        type: e.target.value as
-                          | "value"
-                          | "pct_activity"
-                          | "progress",
-                      })
-                    }
-                  >
-                    <option value="value">數值</option>
-                    <option value="progress">進度</option>
-                  </select>
-                  {kpiForm.type === "value" && (
-                    <select
-                      className="g-kpi-select"
-                      value={kpiForm.aggregation}
-                      onChange={(e) =>
-                        setKpiForm({
-                          ...kpiForm,
-                          aggregation: e.target.value as "SUM" | "AVERAGE",
-                        })
-                      }
-                    >
-                      <option value="SUM">加總</option>
-                      <option value="AVERAGE">平均</option>
-                    </select>
-                  )}
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={kpiForm.isHeadline}
-                      onChange={(e) =>
-                        setKpiForm({ ...kpiForm, isHeadline: e.target.checked })
-                      }
-                    />
-                    主要 KPI
-                  </label>
-                  <button className="g-kpi-btn-save" onClick={saveKpi}>
-                    儲存
-                  </button>
-                  <button
-                    className="g-kpi-btn-cancel"
-                    onClick={() => setEditingKpiId(null)}
-                  >
-                    取消
-                  </button>
-                </div>
-              ) : (
-                !isReadOnly && (
-                  <button
-                    className="g-kpi-btn-add"
-                    onClick={() => {
-                      setEditingKpiId("new");
-                      setKpiForm({
-                        label: "",
-                        unit: "%",
-                        target: "",
-                        aggregation: "SUM",
-                        type: "value",
-                        isHeadline: false,
-                        thresholdGoalKpiIds: [],
-                      });
-                    }}
-                  >
-                    ＋ 新增 KPI
-                  </button>
-                )
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="list-toolbar">
-          <div className="list-filters">
-            <select
-              className="filter-select"
-              value={filterOwner}
-              onChange={(e) => onFilterOwner(e.target.value)}
-            >
-              <option value="all">全部負責人</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {!isReadOnly && (
-            <button className="sl-add-strategy" onClick={onAddStrategy}>
-              ＋ 新增策略{" "}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div
-        className="list-vsplitter"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          dragState.current = { startY: e.clientY, startH: topH };
-        }}
-      />
-
-      <div className="strategy-rows">
-        {strategies.length === 0 && (
-          <div className="empty-state small">
-            <p>目前此目標下沒有任何策略，請點擊「新增策略」按鈕開始。</p>
+        {selectedStrategyId && strategies.length > 0 && (
+          <div className="strategy-rows" data-tour="ogsm-strategy-rows">
+            {strategies.map((s, i) => (
+              <StrategyRow
+                key={s.id}
+                s={s}
+                index={i}
+                selected={s.id === selectedStrategyId}
+                onClick={() => onSelectStrategy(s.id)}
+                onSelectStrategy={onSelectStrategy}
+                warnDaysBefore={warnDaysBefore}
+              />
+            ))}
           </div>
         )}
-        {strategies.map((s, i) => (
-          <StrategyRow
-            key={s.id}
-            s={s}
-            index={i}
-            selected={s.id === selectedStrategyId}
-            onClick={() => onSelectStrategy(s.id)}
-            onSelectStrategy={onSelectStrategy}
-            warnDaysBefore={warnDaysBefore}
-          />
-        ))}
       </div>
     </div>
   );

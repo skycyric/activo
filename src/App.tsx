@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type {
   OGSMData,
   Strategy,
@@ -7,32 +7,39 @@ import type {
   Department,
   PeriodData,
   Team,
-  Measure,
+  DeptActivity,
+  TagDictionaryItem,
 } from "./schemas/ogsm";
 import { parseOGSM, avgRate, genId } from "./utils/csvParser";
 import {
-  saveWorkspace,
-  loadWorkspace,
-  loadLegacyData,
+  generateBizKey,
+  generateUniqueBizKey,
+  generateUniqueGoalBizKey,
+  generateUniqueStrategyBizKey,
+  getActivityScopeExistingKeys,
+  resolveActivityBizKeyScope,
+} from "./utils/bizKey";
+import {
   wrapOGSMInWorkspace,
   exportWorkspaceJSON,
   importJSON,
   readFileAsText,
+  normalizeWorkspaceData,
   validateOrWarn,
 } from "./utils/storage";
+import { getDeptActivitiesForPeriodRead } from "./utils/activityCompat";
 import { WorkspaceDataSchema } from "./schemas/ogsm";
 import {
   isFileSystemAccessSupported,
-  peekDataFile,
-  hasSavedHandle,
-  authorizeDataFile,
+  BACKUP_KEEP_LATEST,
   readDataFile,
   readDataFileMeta,
   writeDataFile,
-  clearDataFile,
-  pickDataFolder,
-  peekDataFolder,
-  clearDataFolder,
+  ensureBackupDir,
+  makeBackupTimestamp,
+  makeDeptBackupFileName,
+  makeWorkspaceBackupFileName,
+  pruneJsonBackupsByPrefix,
   scanForConflictCopies,
   pickRootFolder,
   loadRootHandle,
@@ -40,23 +47,73 @@ import {
   saveRootHandle,
   scanDeptJsons,
   probeWritable,
+  writeJsonFileInDir,
+  acquireLock,
+  releaseLock,
 } from "./utils/fileSync";
 import {
   mergeWorkspaces,
   detectConflicts,
+  trackClearedFields,
   type ConflictEntry,
   type ConflictResolutions,
 } from "./utils/merge";
+import { getDeptScopedTeams, normalizeTeamsForDept } from "./utils/teamScope";
+import {
+  evaluateSaveConflictProbe,
+  evaluateRemoteRefreshDecision,
+} from "./utils/saveConflict";
 import ConflictModal from "./components/ConflictModal";
 import Sidebar from "./components/Sidebar";
 import StrategyList from "./components/StrategyList";
 import DetailPanel from "./components/DetailPanel";
 import OverviewPage from "./components/OverviewPage";
 import DeptSettingsPage from "./components/DeptSettingsPage";
-import ActivityPage from "./components/ActivityPage";
-import csvRaw from "../營企本部OGSM - 部門看板表格.xlsx - 2026商發 H1.csv?raw";
+import TagManagementPage, {
+  type TagDeleteOp,
+  type TagRename,
+} from "./components/TagManagementPage";
+import ActivityPage, {
+  type ActivityWithContext,
+} from "./components/ActivityPage";
+import HomePage from "./components/HomePage";
+import KpiDesigner from "./components/KpiDesigner";
+import { TourOverlay } from "./components/TourOverlay";
+import { Tooltip } from "./components/ui/tooltip";
+import { useTour } from "./contexts/TourContext";
+import type { TourPage } from "./types/tour";
+import {
+  buildRouteHash,
+  parseRouteHash,
+  normalizeAppRouteState,
+  buildNavigationKey,
+  type AppRouteView,
+  type ActivityPageView,
+  type ActivityGanttSubView,
+  type ActivityRouteHint,
+  type AppRouteState,
+} from "./utils/appRoute";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
+type SaveDeptResult = "saved" | "skipped" | "conflict" | "locked" | "error";
+type InlineToastTone = "success" | "warning" | "error";
+type RemoteRefreshOptions = { confirmIfDirty?: boolean; silent?: boolean };
+
+function toDeptCode(name: string | undefined): string {
+  const base = (name ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return (base || "DEPT").slice(0, 12);
+}
+
+function parseGoalOrder(label: string | undefined, fallback: number): number {
+  const matched = (label ?? "").match(/^G(\d+)/i);
+  const parsed = matched ? Number.parseInt(matched[1], 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 /** Per-department file state for multi-file mode */
 export interface DeptFileState {
@@ -69,8 +126,26 @@ export interface DeptFileState {
   syncStatus: SyncStatus;
   version: number | null;
   lastModified: number | null;
-  hasRemoteUpdate: boolean;
   conflictCopies: { handle: FileSystemFileHandle; name: string }[];
+}
+
+function getDeptSyncBadge(entry: DeptFileState | null): {
+  label: string;
+  className: string;
+} {
+  if (!entry) {
+    return { label: "未連結", className: "sp-sync-unlinked" };
+  }
+  if (entry.syncStatus === "saving") {
+    return { label: "儲存中", className: "sp-sync-saving" };
+  }
+  if (entry.syncStatus === "error") {
+    return { label: "儲存失敗", className: "sp-sync-error" };
+  }
+  if (entry.isDirty || entry.syncStatus === "pending") {
+    return { label: "未儲存", className: "sp-sync-pending" };
+  }
+  return { label: "已儲存", className: "sp-sync-saved" };
 }
 
 function recompute(data: OGSMData): OGSMData {
@@ -101,28 +176,16 @@ function recompute(data: OGSMData): OGSMData {
 let _initialWorkspace: WorkspaceData | null = null;
 function getInitialWorkspace(): WorkspaceData {
   if (_initialWorkspace) return _initialWorkspace;
-  const ws = loadWorkspace();
-  if (ws) return (_initialWorkspace = ws);
-  const legacy = loadLegacyData();
-  if (legacy)
-    return (_initialWorkspace = wrapOGSMInWorkspace(legacy, "營企本部"));
-  try {
-    return (_initialWorkspace = wrapOGSMInWorkspace(
-      parseOGSM(csvRaw),
-      "營企本部",
-    ));
-  } catch {
-    return (_initialWorkspace = wrapOGSMInWorkspace(
-      {
-        objectives: { orgO: "", deptO: "" },
-        goals: [],
-        period: `${new Date().getFullYear()} H1`,
-        importedAt: new Date().toISOString(),
-        overallRate: 0,
-      },
-      "部門一",
-    ));
-  }
+  return (_initialWorkspace = wrapOGSMInWorkspace(
+    {
+      objectives: { orgO: "", deptO: "" },
+      goals: [],
+      period: `${new Date().getFullYear()} H1`,
+      importedAt: new Date().toISOString(),
+      overallRate: 0,
+    },
+    "部門一",
+  ));
 }
 
 export default function App() {
@@ -146,48 +209,146 @@ export default function App() {
   const [filterOwner, setFilterOwner] = useState("all");
   const [importing, setImporting] = useState(false);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
+  const [showTagManagement, setShowTagManagement] = useState(false);
   const [showActivityPage, setShowActivityPage] = useState(false);
+  const [showHomePage, setShowHomePage] = useState(true);
+  /** 從 DetailPanel 「編輯 →」跳入 ActivityPage 時要自動開啟的活動 ID */
+  const [pendingActivityDetailId, setPendingActivityDetailId] = useState<
+    string | null
+  >(null);
+  /** OGSM 右 panel 目前展開中的活動 ID（同步到 URL） */
+  const [expandedDetailActivityId, setExpandedDetailActivityId] = useState<
+    string | null
+  >(null);
+  const [showKpiDesigner, setShowKpiDesigner] = useState(false);
+  const [activityPageView, setActivityPageView] =
+    useState<ActivityPageView>("table");
+  const [activityGanttSubView, setActivityGanttSubView] =
+    useState<ActivityGanttSubView>("activity");
+  const [kpiDesignerGoalId, setKpiDesignerGoalId] = useState<string | null>(
+    null,
+  );
+  /** Tracks whether KpiDesigner has unsaved GoalKPI draft changes */
+  const kpiDesignerHasDraft = useRef(false);
+  /** Call this instead of setShowKpiDesigner(false) to respect unsaved KPI drafts */
+  const tryCloseKpiDesigner = useCallback((thenFn?: () => void) => {
+    if (
+      kpiDesignerHasDraft.current &&
+      !window.confirm("KPI 有未儲存的變更，確認離開將會遺失。確定離開？")
+    ) {
+      return;
+    }
+    setShowKpiDesigner(false);
+    setKpiDesignerGoalId(null);
+    thenFn?.();
+  }, []);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const isApplyingBrowserRouteRef = useRef(false);
 
-  // ─── File sync (File System Access API + OneDrive 資料夾) ─────────────
+  // ─── Tour integration ──────────────────────────────────────────────────
+  const {
+    registerNavigate,
+    isActive: isTourActive,
+    step: tourStep,
+  } = useTour();
+  useEffect(() => {
+    registerNavigate((page: TourPage) => {
+      if (page === "home") {
+        setShowHomePage(true);
+        setShowActivityPage(false);
+        setShowDeptSettings(false);
+        setShowTagManagement(false);
+        setShowKpiDesigner(false);
+      } else if (page === "activity") {
+        setShowActivityPage(true);
+        setShowHomePage(false);
+        setShowDeptSettings(false);
+        setShowTagManagement(false);
+        setShowKpiDesigner(false);
+      } else if (page === "ogsm") {
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowDeptSettings(false);
+        setShowTagManagement(false);
+        setShowKpiDesigner(false);
+      } else if (page === "kpi") {
+        setShowKpiDesigner(true);
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowDeptSettings(false);
+        setShowTagManagement(false);
+      } else if (page === "settings") {
+        setShowDeptSettings(true);
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowTagManagement(false);
+        setShowKpiDesigner(false);
+      } else if (page === "tags") {
+        setShowTagManagement(true);
+        setShowDeptSettings(false);
+        setShowHomePage(false);
+        setShowActivityPage(false);
+        setShowKpiDesigner(false);
+      }
+    });
+  }, [registerNavigate]);
+
+  // 當 tourStep.page 變動時，自動切換到對應頁面
+  useEffect(() => {
+    if (!isTourActive || !tourStep?.page) return;
+    if (tourStep.page === "home") {
+      setShowHomePage(true);
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowTagManagement(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "activity") {
+      setShowActivityPage(true);
+      setShowHomePage(false);
+      setShowDeptSettings(false);
+      setShowTagManagement(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "ogsm") {
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowTagManagement(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "kpi") {
+      setShowKpiDesigner(true);
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowDeptSettings(false);
+      setShowTagManagement(false);
+    } else if (tourStep.page === "settings") {
+      setShowDeptSettings(true);
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowTagManagement(false);
+      setShowKpiDesigner(false);
+    } else if (tourStep.page === "tags") {
+      setShowTagManagement(true);
+      setShowDeptSettings(false);
+      setShowHomePage(false);
+      setShowActivityPage(false);
+      setShowKpiDesigner(false);
+    }
+  }, [isTourActive, tourStep?.page]);
+
+  const lastBrowserRouteKeyRef = useRef("");
+  const lastNavigationKeyRef = useRef("");
+
+  // ─── Multi-file sync (File System Access API + OneDrive 資料夾) ───────
   const fsSupported = isFileSystemAccessSupported();
-  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>("unlinked");
-  const [syncError, setSyncError] = useState("");
-  const authInProgressRef = useRef(false);
-  const pendingClickHandlerRef = useRef<EventListener | null>(null);
 
   // ─── Multi-file mode state ────────────────────────────────────────────
-  const [deptFiles, setDeptFiles] = useState<DeptFileState[]>([]);
+  const [deptFiles, setDeptFilesState] = useState<DeptFileState[]>([]);
   const rootDirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   /** True when the app is in multi-file (per-dept) mode */
   const isMultiFileMode = deptFiles.length > 0;
   /** True when the user has write permission on the root folder (admin). */
   const [isAdmin, setIsAdmin] = useState(false);
-  const loadedFileVersionRef = useRef<number | null>(null);
-  const loadedFileLastModifiedRef = useRef<number | null>(null);
-  const [mergeToast, setMergeToast] = useState("");
-  // Remote-update banner (background polling)
-  const [remoteUpdateBanner, setRemoteUpdateBanner] = useState(false);
-  // Refs used inside polling interval (avoid stale closure)
-  const syncStatusRef = useRef<SyncStatus>("unlinked");
-  const conflictOpenRef = useRef(false);
-  // Manual save / dirty tracking
-  const [isDirty, setIsDirty] = useState(false);
-  // Conflict resolution state
-  const [conflictEntries, setConflictEntries] = useState<ConflictEntry[]>([]);
-  const [conflictResolutions, setConflictResolutions] =
-    useState<ConflictResolutions>({});
-  const conflictDiskWsRef = useRef<WorkspaceData | null>(null);
-  // Directory handle for conflict-copy scanning
-  const dirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
-  const [conflictCopies, setConflictCopies] = useState<
-    { handle: FileSystemFileHandle; name: string }[]
-  >([]);
-  // Tracks which copy triggered the current ConflictModal (for post-merge delete)
-  const conflictSourceCopyRef = useRef<{
-    handle: FileSystemFileHandle;
-    name: string;
-  } | null>(null);
 
   // ─── Multi-file conflict / remote-update state ────────────────────────
   /** deptId of the dept whose save is paused waiting for conflict resolution */
@@ -199,12 +360,58 @@ export default function App() {
     useState<ConflictResolutions>({});
   const conflictDeptDiskWsRef = useRef<WorkspaceData | null>(null);
   const [deptMergeToast, setDeptMergeToast] = useState("");
+  const [deptSaveToast, setDeptSaveToast] = useState<{
+    message: string;
+    tone: InlineToastTone;
+  } | null>(null);
   const conflictDeptSourceCopyRef = useRef<{
     handle: FileSystemFileHandle;
     name: string;
   } | null>(null);
-  /** Stable ref kept in sync with deptFiles — used by polling interval to avoid stale closure */
+  /**
+   * Stable ref kept in sync with deptFiles.
+   * IMPORTANT: Always mutate via setDeptFiles (wrapper below), never call
+   * setDeptFilesState directly.  The wrapper updates the ref synchronously
+   * so the polling loop never reads a stale isDirty value.
+   */
   const deptFilesRef = useRef<DeptFileState[]>([]);
+  /**
+   * Wrapper around the raw state setter that also keeps deptFilesRef in sync
+   * immediately (before React commits the update).  This prevents the polling
+   * loop from reading a stale ref and treating a dirty dept as clean, which
+   * would let auto-sync silently overwrite unsaved local edits.
+   */
+  const setDeptFiles = useCallback(
+    (
+      updater: DeptFileState[] | ((prev: DeptFileState[]) => DeptFileState[]),
+    ) => {
+      const next =
+        typeof updater === "function" ? updater(deptFilesRef.current) : updater;
+      deptFilesRef.current = next;
+      setDeptFilesState(next);
+    },
+    [],
+  );
+  const handleDeptRemoteRefreshRef = useRef<
+    ((deptId: string, options?: RemoteRefreshOptions) => Promise<void>) | null
+  >(null);
+
+  const deptSaveToastTimerRef = useRef<number | null>(null);
+  const deptMergeToastTimerRef = useRef<number | null>(null);
+
+  const showDeptSaveToast = useCallback(
+    (message: string, tone: InlineToastTone = "success") => {
+      setDeptSaveToast({ message, tone });
+      if (deptSaveToastTimerRef.current !== null) {
+        window.clearTimeout(deptSaveToastTimerRef.current);
+      }
+      deptSaveToastTimerRef.current = window.setTimeout(() => {
+        setDeptSaveToast(null);
+        deptSaveToastTimerRef.current = null;
+      }, 4000);
+    },
+    [],
+  );
 
   // ─── Multi-file mode: load root folder into deptFiles state ──────────
   const loadRootFolderIntoState = useCallback(
@@ -225,6 +432,8 @@ export default function App() {
             readDataFileMeta(handle),
           ]);
           ws = JSON.parse(text);
+          normalizeWorkspaceData(ws);
+          validateOrWarn(WorkspaceDataSchema, ws, "loadRoot");
           lastModified = lm;
         } catch {
           // Skip files that can't be read
@@ -248,7 +457,6 @@ export default function App() {
           syncStatus: "saved",
           version: ws.version ?? null,
           lastModified,
-          hasRemoteUpdate: false,
           conflictCopies: [],
         });
       }
@@ -269,327 +477,206 @@ export default function App() {
         setActivePeriodId(firstDept.periods[0]?.id ?? "");
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [setDeptFiles],
   );
 
-  // Shared: attach handle + read file into workspace
-  const applyHandle = useCallback(async (handle: FileSystemFileHandle) => {
-    fileHandleRef.current = handle;
-    try {
-      const [text, lastModified] = await Promise.all([
-        readDataFile(handle),
-        readDataFileMeta(handle),
-      ]);
-      let remote: WorkspaceData;
-      try {
-        remote = JSON.parse(text);
-      } catch {
-        throw new Error("檔案不是有效的 JSON");
-      }
-      if (
-        !remote ||
-        typeof remote !== "object" ||
-        !Array.isArray((remote as { departments?: unknown }).departments)
-      ) {
-        throw new Error("檔案格式不符：不是有效的工作區格式");
-      }
-      validateOrWarn(WorkspaceDataSchema, remote, "applyHandle");
-      loadedFileVersionRef.current = remote.version ?? null;
-      loadedFileLastModifiedRef.current = lastModified;
-      setWorkspace(remote);
-      saveWorkspace(remote);
-      setIsDirty(false);
-      setRemoteUpdateBanner(false);
-      setSyncStatus("saved");
-      setSyncError("");
-    } catch (e) {
-      setSyncStatus("error");
-      setSyncError("讀取檔案失敗：" + String(e));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // On mount: query-only check; if needs re-grant, listen for first user click
+  // On mount: restore multi-file root handle if permission is already granted
   useEffect(() => {
     if (!fsSupported) return;
     (async () => {
-      const handle = await peekDataFile();
-      if (handle) {
-        await applyHandle(handle);
-      } else {
-        const savedExists = await hasSavedHandle();
-        if (savedExists) {
-          // Handle saved but needs user gesture to re-grant — auto-fire on first click
-          setSyncStatus("pending");
-          const handler: EventListener = () => {
-            if (authInProgressRef.current) return;
-            authInProgressRef.current = true;
-            authorizeDataFile()
-              .then(async (h) => {
-                if (h) await applyHandle(h);
-              })
-              .finally(() => {
-                authInProgressRef.current = false;
-              });
-          };
-          pendingClickHandlerRef.current = handler;
-          document.addEventListener("click", handler, { once: true });
-        }
-      }
-      // Restore directory handle for conflict-copy scanning (permission may already be granted)
-      const dirHandle = await peekDataFolder();
-      if (dirHandle) dirHandleRef.current = dirHandle;
-
-      // Multi-file mode: restore root handle if permission already granted
       const rootHandle = await loadRootHandle();
       if (rootHandle) {
         await loadRootFolderIntoState(rootHandle);
       }
     })();
-    return () => {
-      if (pendingClickHandlerRef.current) {
-        document.removeEventListener("click", pendingClickHandlerRef.current);
-      }
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── 同步 refs 供 polling interval 讀取（避免 stale closure）────────
+  // ─── 點擊外部關閉主選單 ────────────────────────────────────────────────
   useEffect(() => {
-    syncStatusRef.current = syncStatus;
-  }, [syncStatus]);
-  useEffect(() => {
-    conflictOpenRef.current = conflictEntries.length > 0;
-  }, [conflictEntries.length]);
-  useEffect(() => {
-    deptFilesRef.current = deptFiles;
-  }, [deptFiles]);
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
 
-  // ─── 背景輪詢：每 30 秒檢查檔案是否被他人更新 ─────────────────────
-  const POLL_INTERVAL_MS = 30_000;
+  const applyBrowserRoute = useCallback((route: AppRouteState) => {
+    setActivityPageView(route.activityPageView);
+    setActivityGanttSubView(route.activityGanttSubView);
+    setActiveDeptId(route.activeDeptId);
+    setActivePeriodId(route.activePeriodId);
+    setSelectedGoalId(route.selectedGoalId);
+    setSelectedStrategyId(route.selectedStrategyId);
+    setPendingActivityDetailId(
+      route.view === "activity" ? route.pendingActivityDetailId : null,
+    );
+    setExpandedDetailActivityId(route.expandedDetailActivityId);
+    setKpiDesignerGoalId(route.kpiDesignerGoalId);
+    setShowHomePage(route.view === "home");
+    setShowActivityPage(route.view === "activity");
+    setShowDeptSettings(route.view === "settings");
+    setShowTagManagement(route.view === "tags");
+    setShowKpiDesigner(route.view === "kpi");
+  }, []);
+
   useEffect(() => {
-    if (!fsSupported) return;
-    const poll = async () => {
-      const handle = fileHandleRef.current;
-      if (!handle) return;
-      // 存檔中、待授權或衝突 modal 開著時跳過
-      if (
-        syncStatusRef.current === "saving" ||
-        syncStatusRef.current === "pending" ||
-        conflictOpenRef.current
-      )
+    if (selectedStrategyId) return;
+    setExpandedDetailActivityId(null);
+  }, [selectedStrategyId]);
+
+  const currentRouteState = useMemo<AppRouteState>(() => {
+    // Keep this priority aligned with the render branches below.
+    const view: AppRouteView = showKpiDesigner
+      ? "kpi"
+      : showHomePage
+        ? "home"
+        : showTagManagement
+          ? "tags"
+          : showDeptSettings
+            ? "settings"
+            : showActivityPage
+              ? "activity"
+              : "ogsm";
+    return {
+      __appRoute: true,
+      view,
+      activityPageView,
+      activityGanttSubView,
+      activeDeptId,
+      activePeriodId,
+      selectedGoalId,
+      selectedStrategyId,
+      kpiDesignerGoalId,
+      pendingActivityDetailId: showActivityPage
+        ? pendingActivityDetailId
+        : null,
+      expandedDetailActivityId,
+    };
+  }, [
+    activityPageView,
+    activityGanttSubView,
+    activeDeptId,
+    activePeriodId,
+    kpiDesignerGoalId,
+    pendingActivityDetailId,
+    expandedDetailActivityId,
+    selectedGoalId,
+    selectedStrategyId,
+    showActivityPage,
+    showDeptSettings,
+    showHomePage,
+    showTagManagement,
+    showKpiDesigner,
+  ]);
+
+  useEffect(() => {
+    const routeKey = JSON.stringify(currentRouteState);
+    const navigationKey = buildNavigationKey(currentRouteState);
+    if (!lastBrowserRouteKeyRef.current) {
+      const parsedHashRoute = parseRouteHash(window.location.hash);
+      if (parsedHashRoute) {
+        const mergedRoute = normalizeAppRouteState(
+          parsedHashRoute,
+          currentRouteState,
+        );
+        isApplyingBrowserRouteRef.current = true;
+        applyBrowserRoute(mergedRoute);
+        lastBrowserRouteKeyRef.current = JSON.stringify(mergedRoute);
+        lastNavigationKeyRef.current = buildNavigationKey(mergedRoute);
+        window.history.replaceState(
+          mergedRoute,
+          "",
+          `${window.location.pathname}${window.location.search}${buildRouteHash(mergedRoute)}`,
+        );
         return;
-      if (loadedFileLastModifiedRef.current === null) return;
-      try {
-        const lastMod = await readDataFileMeta(handle);
-        if (lastMod > loadedFileLastModifiedRef.current) {
-          setRemoteUpdateBanner(true);
-        }
-      } catch {
-        // best-effort：讀不到就靜默略過
       }
-      // 順便扫描目錄中是否有 OneDrive 衝突副本
-      const dir = dirHandleRef.current;
-      if (dir) {
-        try {
-          const copies = await scanForConflictCopies(dir, handle.name);
-          if (copies.length > 0) {
-            setConflictCopies((prev) => {
-              // 不重複已知的副本
-              const prevNames = new Set(prev.map((c) => c.name));
-              const newOnes = copies.filter((c) => !prevNames.has(c.name));
-              return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
-            });
-          }
-        } catch {
-          // best-effort
-        }
-      }
-    };
-    const timer = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fsSupported]);
-
-  // ─── 多檔模式背景輪詢：每 30 秒偵測遠端更新與衝突副本 ──────────────
-  useEffect(() => {
-    if (!fsSupported || !isMultiFileMode) return;
-    const poll = async () => {
-      if (conflictDeptId) return; // 衝突 modal 開著時跳過
-      for (const f of deptFilesRef.current) {
-        if (f.isReadOnly || f.syncStatus === "saving") continue;
-        const deptId = f.workspace.departments[0]?.id;
-        if (!deptId) continue;
-        // 偵測遠端更新
-        try {
-          const lm = await readDataFileMeta(f.handle);
-          if (
-            f.lastModified !== null &&
-            lm > f.lastModified &&
-            !f.hasRemoteUpdate
-          ) {
-            setDeptFiles((prev) =>
-              prev.map((d) =>
-                d.workspace.departments[0]?.id === deptId
-                  ? { ...d, hasRemoteUpdate: true }
-                  : d,
-              ),
-            );
-          }
-        } catch {
-          // best-effort
-        }
-        // 偵測 OneDrive 衝突副本
-        try {
-          const copies = await scanForConflictCopies(
-            f.subDirHandle,
-            "data.json",
-          );
-          if (copies.length > 0) {
-            setDeptFiles((prev) =>
-              prev.map((d) => {
-                if (d.workspace.departments[0]?.id !== deptId) return d;
-                const prevNames = new Set(d.conflictCopies.map((c) => c.name));
-                const newOnes = copies.filter((c) => !prevNames.has(c.name));
-                return newOnes.length > 0
-                  ? { ...d, conflictCopies: [...d.conflictCopies, ...newOnes] }
-                  : d;
-              }),
-            );
-          }
-        } catch {
-          // best-effort
-        }
-      }
-    };
-    const timer = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fsSupported, isMultiFileMode, conflictDeptId]);
-
-  const fileSaveNow = useCallback(async (ws: WorkspaceData) => {
-    const handle = fileHandleRef.current;
-    if (!handle) return;
-    setSyncStatus("saving");
-    try {
-      // ── 第一次讀檔 ───────────────────────────────────────────────
-      const firstMeta = await readDataFileMeta(handle);
-      const diskText = await readDataFile(handle);
-      const onDisk: WorkspaceData = JSON.parse(diskText);
-      let toWrite = ws;
-
-      // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
-      // 給其他使用者也在存檔的情況留出同步時間，
-      // 避免兩人幾乎同時按存檔卻互相看不到對方的寫入。
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      // ── 第二次讀檔：確認 lastModified 是否在等待期間又變動 ────────
-      const secondMeta = await readDataFileMeta(handle);
-      if (secondMeta !== firstMeta) {
-        // 等待期間檔案又被人更新，重新讀取最新內容再做衝突偵測
-        const freshText = await readDataFile(handle);
-        const freshDisk: WorkspaceData = JSON.parse(freshText);
-        // 以最新的磁碟版本取代原本的 onDisk
-        Object.assign(onDisk, freshDisk);
-      }
-
-      // 若 loadedFileVersionRef.current 為 null（舊格式無版本號），視為版本 -1，
-      // 讓任何有版本的 onDisk 都能觸發衝突偵測（而非直接跳過）。
-      const loadedVer = loadedFileVersionRef.current ?? -1;
-      if (onDisk.version !== undefined && onDisk.version !== loadedVer) {
-        // Version mismatch: check for user-visible conflicts first
-        const conflicts = detectConflicts(ws, onDisk);
-        if (conflicts.length > 0) {
-          // Suspend the save and let user resolve conflicts
-          conflictDiskWsRef.current = onDisk;
-          setConflictEntries(conflicts);
-          setConflictResolutions({});
-          setSyncStatus("saved"); // reset badge while modal is open
-          return;
-        }
-        // No conflicting edits: auto-merge additions/deletions silently
-        const { workspace: merged, autoMerged } = mergeWorkspaces(ws, onDisk);
-        toWrite = merged;
-        setWorkspace(merged);
-        saveWorkspace(merged);
-        if (autoMerged > 0) {
-          setMergeToast(`已自動合併 ${autoMerged} 項遠端新增/刪除`);
-          setTimeout(() => setMergeToast(""), 4000);
-        }
-      }
-
-      const payload: WorkspaceData = {
-        ...toWrite,
-        version: (loadedFileVersionRef.current ?? toWrite.version ?? 1) + 1,
-        savedAt: new Date().toISOString(),
-      };
-      loadedFileVersionRef.current = payload.version;
-      await writeDataFile(handle, JSON.stringify(payload, null, 2));
-      // 更新 lastModified 基準，避免存檔後的輪詢誤報
-      loadedFileLastModifiedRef.current = await readDataFileMeta(handle);
-      setSyncStatus("saved");
-      setSyncError("");
-      setIsDirty(false);
-      setRemoteUpdateBanner(false);
-    } catch (e) {
-      setSyncStatus("error");
-      setSyncError("檔案寫入失敗：" + String(e));
-    }
-  }, []);
-
-  // ─── Banner 處理函式 ──────────────────────────────────────────────
-  const handleRemoteRefresh = useCallback(async () => {
-    if (
-      isDirty &&
-      !window.confirm("你有未儲存的變更，重新整理後會遺失。確定嗎？")
-    )
+      window.history.replaceState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+      lastBrowserRouteKeyRef.current = routeKey;
+      lastNavigationKeyRef.current = navigationKey;
       return;
-    const handle = fileHandleRef.current;
-    if (handle) await applyHandle(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDirty, applyHandle]);
-
-  const handleRemoteSaveAndRefresh = useCallback(async () => {
-    await fileSaveNow(workspace);
-    // fileSaveNow 後直接重新讀檔，確保拿到最新合併結果
-    const handle = fileHandleRef.current;
-    if (handle) await applyHandle(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace, fileSaveNow, applyHandle]);
-
-  const handleUnlinkFile = useCallback(async () => {
-    fileHandleRef.current = null;
-    await clearDataFile();
-    setSyncStatus("unlinked");
-    setSyncError("");
-    if (pendingClickHandlerRef.current) {
-      document.removeEventListener("click", pendingClickHandlerRef.current);
-      pendingClickHandlerRef.current = null;
     }
-  }, []);
+    if (isApplyingBrowserRouteRef.current) {
+      window.history.replaceState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+      lastBrowserRouteKeyRef.current = routeKey;
+      lastNavigationKeyRef.current = navigationKey;
+      isApplyingBrowserRouteRef.current = false;
+      return;
+    }
+    if (routeKey === lastBrowserRouteKeyRef.current) return;
 
-  const handleLinkFolder = useCallback(async () => {
-    const dir = await pickDataFolder();
-    if (!dir) return;
-    dirHandleRef.current = dir;
-    // 立刻扫描一次
-    const handle = fileHandleRef.current;
-    if (handle) {
-      try {
-        const copies = await scanForConflictCopies(dir, handle.name);
-        setConflictCopies(copies);
-      } catch {
-        // best-effort
+    if (navigationKey === lastNavigationKeyRef.current) {
+      // In-page details changed (e.g., selection/expanded panel): don't pollute history stack.
+      window.history.replaceState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+    } else {
+      window.history.pushState(
+        currentRouteState,
+        "",
+        `${window.location.pathname}${window.location.search}${buildRouteHash(currentRouteState)}`,
+      );
+      lastNavigationKeyRef.current = navigationKey;
+    }
+    lastBrowserRouteKeyRef.current = routeKey;
+  }, [applyBrowserRoute, currentRouteState]);
+
+  useEffect(() => {
+    const applyRouteFromHash = () => {
+      const parsedHashRoute = parseRouteHash(window.location.hash);
+      if (!parsedHashRoute) return false;
+      const fallbackRoute = normalizeAppRouteState(
+        parsedHashRoute,
+        currentRouteState,
+      );
+      isApplyingBrowserRouteRef.current = true;
+      applyBrowserRoute(fallbackRoute);
+      return true;
+    };
+
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as Partial<AppRouteState> | null;
+      if (state && state.__appRoute === true) {
+        const parsedHashRoute = parseRouteHash(window.location.hash);
+        const normalizedState = normalizeAppRouteState(
+          {
+            ...(parsedHashRoute ?? {}),
+            ...state,
+          },
+          currentRouteState,
+        );
+        isApplyingBrowserRouteRef.current = true;
+        applyBrowserRoute(normalizedState);
+        return;
       }
-    }
-  }, []);
+      applyRouteFromHash();
+    };
 
-  const handleUnlinkFolder = useCallback(async () => {
-    dirHandleRef.current = null;
-    setConflictCopies([]);
-    await clearDataFolder();
-  }, []);
+    const onHashChange = () => {
+      // Hash might be changed by manual edit or external in-app link navigation.
+      applyRouteFromHash();
+    };
+
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, [applyBrowserRoute, currentRouteState]);
 
   // ─── Multi-file mode handlers ─────────────────────────────────────────
   const handleLinkRootFolder = useCallback(async () => {
@@ -600,11 +687,20 @@ export default function App() {
   }, [loadRootFolderIntoState]);
 
   const handleUnlinkRootFolder = useCallback(async () => {
+    const dirtyCount = deptFilesRef.current.filter((f) => f.isDirty).length;
+    if (
+      dirtyCount > 0 &&
+      !window.confirm(
+        `目前有 ${dirtyCount} 個部門尚未儲存，中斷連結後這些記憶體內變更將無法再寫回共享資料夾。確定要中斷嗎？`,
+      )
+    ) {
+      return;
+    }
     setDeptFiles([]);
     setIsAdmin(false);
     rootDirHandleRef.current = null;
     await clearRootHandle();
-  }, []);
+  }, [setDeptFiles]);
 
   /**
    * Update a single dept's workspace in multi-file mode.
@@ -616,11 +712,16 @@ export default function App() {
         prev.map((f) => {
           const dept = f.workspace.departments[0];
           if (!dept || dept.id !== deptId) return f;
-          return { ...f, workspace: next, isDirty: true, syncStatus: "saved" };
+          return {
+            ...f,
+            workspace: next,
+            isDirty: true,
+            syncStatus: "pending",
+          };
         }),
       );
     },
-    [],
+    [setDeptFiles],
   );
 
   /** Save a single dept file in multi-file mode (with OneDrive-safe conflict detection). */
@@ -629,7 +730,9 @@ export default function App() {
       const entry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
-      if (!entry || entry.isReadOnly || !entry.isDirty) return;
+      if (!entry || entry.isReadOnly || !entry.isDirty) {
+        return "skipped" as SaveDeptResult;
+      }
 
       // Mark saving
       setDeptFiles((prev) =>
@@ -640,36 +743,91 @@ export default function App() {
         ),
       );
 
+      // ── 嘗試取得 advisory lock ──────────────────────────────────
+      const lockResult = await acquireLock(entry.subDirHandle);
+      if (!lockResult.ok) {
+        setDeptFiles((prev) =>
+          prev.map((f) =>
+            f.workspace.departments[0]?.id === deptId
+              ? { ...f, syncStatus: "pending" as SyncStatus }
+              : f,
+          ),
+        );
+        return "locked" as SaveDeptResult;
+      }
+
       try {
-        // ── 第一次讀磁碟 ─────────────────────────────────────────────
-        const firstMeta = await readDataFileMeta(entry.handle);
-        const diskText = await readDataFile(entry.handle);
-        let onDisk: WorkspaceData = JSON.parse(diskText);
-
-        // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
-        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-
-        // ── 重新取最新本地狀態（避免等待期間的編輯遺失）──────────────
+        // ── 重新取最新本地狀態（acquireLock 等待期間可能有新編輯）───
         const freshEntry = deptFilesRef.current.find(
           (f) => f.workspace.departments[0]?.id === deptId,
         );
-        if (!freshEntry) return;
+        if (!freshEntry) {
+          return "error" as SaveDeptResult;
+        }
 
-        // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
+        // ── 讀取磁碟（兩次 meta probe 確認期間無人再寫入）────────────
+        const firstMeta = await readDataFileMeta(freshEntry.handle);
+        const diskText = await readDataFile(freshEntry.handle);
+        let onDisk: WorkspaceData = JSON.parse(diskText);
+        normalizeWorkspaceData(onDisk);
+        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
+
         const secondMeta = await readDataFileMeta(freshEntry.handle);
         if (secondMeta !== firstMeta) {
+          // 讀取期間磁碟又被改過（極罕見），重新讀一次
           const freshText = await readDataFile(freshEntry.handle);
           onDisk = JSON.parse(freshText);
+          normalizeWorkspaceData(onDisk);
+          validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
+        }
+
+        // ── 掃衝突副本（OneDrive 產生的 data - PC.json）───────────────
+        let conflictCopies: { handle: FileSystemFileHandle; name: string }[] =
+          [];
+        try {
+          conflictCopies = await scanForConflictCopies(
+            freshEntry.subDirHandle,
+            "data.json",
+          );
+          if (conflictCopies.length > 0) {
+            setDeptFiles((prev) =>
+              prev.map((f) => {
+                if (f.workspace.departments[0]?.id !== deptId) return f;
+                const prevNames = new Set(f.conflictCopies.map((c) => c.name));
+                const newOnes = conflictCopies.filter(
+                  (c) => !prevNames.has(c.name),
+                );
+                return newOnes.length > 0
+                  ? {
+                      ...f,
+                      conflictCopies: [...f.conflictCopies, ...newOnes],
+                    }
+                  : f;
+              }),
+            );
+          }
+        } catch {
+          // best-effort
         }
 
         // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
-        const loadedVer = freshEntry.version ?? -1;
+        const probe = evaluateSaveConflictProbe({
+          firstMeta,
+          secondMeta,
+          knownLastModified: freshEntry.lastModified,
+          loadedVersion: freshEntry.version ?? -1,
+          onDiskVersion: onDisk.version,
+        });
+        // 有衝突副本也視為需要衝突偵測
+        const shouldDetectConflict =
+          probe.shouldDetectConflict || conflictCopies.length > 0;
         let toWrite = freshEntry.workspace;
 
-        if (onDisk.version !== undefined && onDisk.version !== loadedVer) {
+        if (shouldDetectConflict) {
           const conflicts = detectConflicts(freshEntry.workspace, onDisk);
           if (conflicts.length > 0) {
-            // 暫停存檔，開衝突 modal
+            // 暫停存檔，開衝突 modal（lock 先釋放，避免佔用）
+            await releaseLock(freshEntry.subDirHandle);
             conflictDeptDiskWsRef.current = onDisk;
             setConflictDeptId(deptId);
             setConflictDeptEntries(conflicts);
@@ -677,11 +835,11 @@ export default function App() {
             setDeptFiles((prev) =>
               prev.map((f) =>
                 f.workspace.departments[0]?.id === deptId
-                  ? { ...f, syncStatus: "saved" as SyncStatus }
+                  ? { ...f, syncStatus: "pending" as SyncStatus }
                   : f,
               ),
             );
-            return;
+            return "conflict" as SaveDeptResult;
           }
           // 無衝突：自動合併並繼續
           const { workspace: merged, autoMerged } = mergeWorkspaces(
@@ -697,10 +855,10 @@ export default function App() {
           }
         }
 
-        // ── 寫入 ────────────────────────────────────────────────────
+        // ── 寫入（版本號取兩側最大值 + 1，避免版號倒退）──────────────
         const payload: WorkspaceData = {
           ...toWrite,
-          version: (freshEntry.version ?? 1) + 1,
+          version: Math.max(freshEntry.version ?? 0, onDisk.version ?? 0) + 1,
           savedAt: new Date().toISOString(),
         };
         await writeDataFile(
@@ -719,11 +877,11 @@ export default function App() {
                   syncStatus: "saved" as SyncStatus,
                   version: payload.version ?? null,
                   lastModified: lm,
-                  hasRemoteUpdate: false,
                 }
               : f,
           ),
         );
+        return "saved" as SaveDeptResult;
       } catch {
         setDeptFiles((prev) =>
           prev.map((f) =>
@@ -732,166 +890,52 @@ export default function App() {
               : f,
           ),
         );
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const handleMergeCopy = useCallback(
-    async (copy: { handle: FileSystemFileHandle; name: string }) => {
-      try {
-        const text = await readDataFile(copy.handle);
-        const remote: WorkspaceData = JSON.parse(text);
-        const conflicts = detectConflicts(workspace, remote);
-        conflictDiskWsRef.current = remote;
-        conflictSourceCopyRef.current = copy;
-        if (conflicts.length > 0) {
-          setConflictEntries(conflicts);
-          setConflictResolutions({});
-        } else {
-          // 無衝突：直接自動合併
-          const { workspace: merged, autoMerged } = mergeWorkspaces(
-            workspace,
-            remote,
-          );
-          const payload: WorkspaceData = {
-            ...merged,
-            version: (merged.version ?? 1) + 1,
-            savedAt: new Date().toISOString(),
-          };
-          if (fileHandleRef.current) {
-            await writeDataFile(
-              fileHandleRef.current,
-              JSON.stringify(payload, null, 2),
-            );
-            loadedFileVersionRef.current = payload.version;
-            loadedFileLastModifiedRef.current = await readDataFileMeta(
-              fileHandleRef.current,
-            );
-          }
-          setWorkspace(payload);
-          saveWorkspace(payload);
-          setIsDirty(false);
-          if (autoMerged > 0) {
-            setMergeToast(`已從副本自動合併 ${autoMerged} 項變更`);
-            setTimeout(() => setMergeToast(""), 4000);
-          }
-          // 詢問是否刪除副本
-          if (
-            dirHandleRef.current &&
-            window.confirm(`已成功合併「${copy.name}」，是否刪除此副本檔案？`)
-          ) {
-            await dirHandleRef.current.removeEntry(copy.name);
-          }
-          setConflictCopies((prev) => prev.filter((c) => c.name !== copy.name));
-          conflictSourceCopyRef.current = null;
+        return "error" as SaveDeptResult;
+      } finally {
+        // 確保 lock 一定被釋放（衝突分支已提前釋放，重複 removeEntry 是 no-op）
+        const currentEntry = deptFilesRef.current.find(
+          (f) => f.workspace.departments[0]?.id === deptId,
+        );
+        if (currentEntry) {
+          await releaseLock(currentEntry.subDirHandle);
         }
-      } catch (e) {
-        setSyncError("讀取副本失敗：" + String(e));
-        setSyncStatus("error");
       }
     },
-    [workspace],
+    [setDeptFiles],
   );
-
-  const handleDismissCopy = useCallback((name: string) => {
-    setConflictCopies((prev) => prev.filter((c) => c.name !== name));
-  }, []);
-
-  // Badge click when status is "pending": manual retry with user gesture
-  const handleReauthorize = useCallback(async () => {
-    if (authInProgressRef.current) return;
-    authInProgressRef.current = true;
-    // Remove the auto-listener to avoid double-firing
-    if (pendingClickHandlerRef.current) {
-      document.removeEventListener("click", pendingClickHandlerRef.current);
-      pendingClickHandlerRef.current = null;
-    }
-    try {
-      const handle = await authorizeDataFile();
-      if (handle) await applyHandle(handle);
-    } finally {
-      authInProgressRef.current = false;
-    }
-  }, [applyHandle]);
-
-  // Conflict resolution handlers
-  const handleConflictChange = useCallback(
-    (id: string, choice: "local" | "remote") => {
-      setConflictResolutions((prev) => ({ ...prev, [id]: choice }));
-    },
-    [],
-  );
-
-  const handleConflictConfirm = useCallback(async () => {
-    const onDisk = conflictDiskWsRef.current;
-    if (!onDisk || !fileHandleRef.current) return;
-    const { workspace: merged } = mergeWorkspaces(
-      workspace,
-      onDisk,
-      conflictResolutions,
-    );
-    setSyncStatus("saving");
-    try {
-      const payload: WorkspaceData = {
-        ...merged,
-        version: (merged.version ?? 1) + 1,
-        savedAt: new Date().toISOString(),
-      };
-      await writeDataFile(
-        fileHandleRef.current,
-        JSON.stringify(payload, null, 2),
-      );
-      loadedFileVersionRef.current = payload.version;
-      loadedFileLastModifiedRef.current = await readDataFileMeta(
-        fileHandleRef.current,
-      );
-      setWorkspace(payload);
-      saveWorkspace(payload);
-      setSyncStatus("saved");
-      setSyncError("");
-      setIsDirty(false);
-      // 若此次衝突來自副本 merge，詢問是否刪除
-      const src = conflictSourceCopyRef.current;
-      if (src && dirHandleRef.current) {
-        if (window.confirm(`衝突已解決，是否刪除副本檔案「${src.name}」？`)) {
-          await dirHandleRef.current.removeEntry(src.name);
-        }
-        setConflictCopies((prev) => prev.filter((c) => c.name !== src.name));
-      }
-    } catch (e) {
-      setSyncStatus("error");
-      setSyncError("檔案寫入失敗：" + String(e));
-    } finally {
-      setConflictEntries([]);
-      conflictDiskWsRef.current = null;
-      conflictSourceCopyRef.current = null;
-    }
-  }, [workspace, conflictResolutions]);
-
-  const handleConflictCancel = useCallback(() => {
-    setConflictEntries([]);
-    setConflictResolutions({});
-    conflictDiskWsRef.current = null;
-  }, []);
 
   // ─── Multi-file conflict resolution handlers ──────────────────────────
 
   const handleDeptConflictChange = useCallback(
-    (id: string, choice: "local" | "remote") => {
-      setConflictDeptResolutions((prev) => ({ ...prev, [id]: choice }));
+    (entityId: string, field: string, choice: "local" | "remote") => {
+      if (field === "*") {
+        // 快捷全選：呼叫方展開所有 fieldDiff 欄位
+        // 這裡直接寫 entity-level key，merge 函數會正確 fallback
+        setConflictDeptResolutions((prev) => ({ ...prev, [entityId]: choice }));
+      } else {
+        const key = `${entityId}.${field}`;
+        setConflictDeptResolutions((prev) => ({ ...prev, [key]: choice }));
+      }
     },
     [],
   );
 
   const handleDeptConflictCancel = useCallback(() => {
+    if (conflictDeptId) {
+      setDeptFiles((prev) =>
+        prev.map((f) =>
+          f.workspace.departments[0]?.id === conflictDeptId
+            ? { ...f, syncStatus: f.isDirty ? "pending" : "saved" }
+            : f,
+        ),
+      );
+    }
     setConflictDeptEntries([]);
     setConflictDeptResolutions({});
     setConflictDeptId(null);
     conflictDeptDiskWsRef.current = null;
     conflictDeptSourceCopyRef.current = null;
-  }, []);
+  }, [conflictDeptId, setDeptFiles]);
 
   const handleDeptConflictConfirm = useCallback(async () => {
     const deptId = conflictDeptId;
@@ -909,15 +953,59 @@ export default function App() {
           : f,
       ),
     );
+    let reOpenModal = false;
     try {
+      // 解衝突後重讀：使用者解決衝突期間磁碟可能已再次被他人更新
+      let freshDisk = onDisk;
+      try {
+        const freshText = await readDataFile(entry.handle);
+        freshDisk = JSON.parse(freshText);
+        normalizeWorkspaceData(freshDisk);
+        validateOrWarn(WorkspaceDataSchema, freshDisk, "conflictCopy-disk");
+      } catch {
+        // best-effort：讀不到就沿用原衝突快照
+      }
+
+      // 若磁碟在使用者解衝突期間再次被他人更新，重新偵測是否有新的未解衝突
+      const diskChangedAgain =
+        freshDisk.version !== onDisk.version ||
+        freshDisk.savedAt !== onDisk.savedAt;
+      if (diskChangedAgain) {
+        const recheck = detectConflicts(entry.workspace, freshDisk);
+        const unresolved = recheck.filter((c) =>
+          c.fieldDiffs.some((d) => {
+            const fieldKey = `${c.id}.${d.field}`;
+            const entityKey = c.id;
+            return (
+              conflictDeptResolutions[fieldKey] === undefined &&
+              conflictDeptResolutions[entityKey] === undefined
+            );
+          }),
+        );
+        if (unresolved.length > 0) {
+          // 重新開啟 modal，保留已有的決策，更新磁碟快照
+          reOpenModal = true;
+          conflictDeptDiskWsRef.current = freshDisk;
+          setConflictDeptEntries(unresolved);
+          setDeptFiles((prev) =>
+            prev.map((f) =>
+              f.workspace.departments[0]?.id === deptId
+                ? { ...f, syncStatus: "pending" as SyncStatus }
+                : f,
+            ),
+          );
+          return;
+        }
+      }
+
       const { workspace: merged } = mergeWorkspaces(
         entry.workspace,
-        onDisk,
+        freshDisk,
         conflictDeptResolutions,
       );
       const payload: WorkspaceData = {
         ...merged,
-        version: (entry.version ?? 1) + 1,
+        version: Math.max(entry.version ?? 1, freshDisk.version ?? 1) + 1,
         savedAt: new Date().toISOString(),
       };
       await writeDataFile(entry.handle, JSON.stringify(payload, null, 2));
@@ -932,7 +1020,6 @@ export default function App() {
                 syncStatus: "saved" as SyncStatus,
                 version: payload.version ?? null,
                 lastModified: lm,
-                hasRemoteUpdate: false,
               }
             : f,
         ),
@@ -966,24 +1053,32 @@ export default function App() {
       );
       alert("衝突解決後寫入失敗：" + String(e));
     } finally {
-      setConflictDeptEntries([]);
-      setConflictDeptResolutions({});
-      setConflictDeptId(null);
-      conflictDeptDiskWsRef.current = null;
-      conflictDeptSourceCopyRef.current = null;
+      if (!reOpenModal) {
+        setConflictDeptEntries([]);
+        setConflictDeptResolutions({});
+        setConflictDeptId(null);
+        conflictDeptDiskWsRef.current = null;
+        conflictDeptSourceCopyRef.current = null;
+      }
     }
-  }, [conflictDeptId, conflictDeptResolutions]);
+  }, [conflictDeptId, conflictDeptResolutions, setDeptFiles]);
 
   /** Re-read dept file from disk, discarding any in-memory changes. */
   const handleDeptRemoteRefresh = useCallback(
-    async (deptId: string, confirmIfDirty = true) => {
+    async (deptId: string, options?: RemoteRefreshOptions) => {
       const entry = deptFilesRef.current.find(
         (f) => f.workspace.departments[0]?.id === deptId,
       );
       if (!entry) return;
+      const confirmIfDirty = options?.confirmIfDirty ?? true;
+      const silent = options?.silent ?? false;
+      const refreshDecision = evaluateRemoteRefreshDecision(
+        entry.isDirty,
+        confirmIfDirty,
+      );
+      if (refreshDecision === "abort") return;
       if (
-        confirmIfDirty &&
-        entry.isDirty &&
+        refreshDecision === "confirm-needed" &&
         !window.confirm(
           `「${entry.subfolderName}」有未儲存的變更，重新整理後會遺失。確定嗎？`,
         )
@@ -995,6 +1090,8 @@ export default function App() {
           readDataFileMeta(entry.handle),
         ]);
         const remote: WorkspaceData = JSON.parse(text);
+        normalizeWorkspaceData(remote);
+        validateOrWarn(WorkspaceDataSchema, remote, "refreshDept-disk");
         setDeptFiles((prev) =>
           prev.map((f) =>
             f.workspace.departments[0]?.id === deptId
@@ -1002,19 +1099,25 @@ export default function App() {
                   ...f,
                   workspace: remote,
                   isDirty: false,
+                  syncStatus: "saved",
                   version: remote.version ?? null,
                   lastModified: lm,
-                  hasRemoteUpdate: false,
                 }
               : f,
           ),
         );
       } catch (e) {
-        alert(`重新整理「${entry.subfolderName}」失敗：${e}`);
+        if (!silent) {
+          alert(`重新整理「${entry.subfolderName}」失敗：${e}`);
+        }
       }
     },
-    [],
+    [setDeptFiles],
   );
+
+  useEffect(() => {
+    handleDeptRemoteRefreshRef.current = handleDeptRemoteRefresh;
+  }, [handleDeptRemoteRefresh]);
 
   /** Merge an OneDrive conflict copy into a dept's workspace. */
   const handleDeptMergeCopy = useCallback(
@@ -1026,9 +1129,19 @@ export default function App() {
         (f) => f.workspace.departments[0]?.id === deptId,
       );
       if (!entry) return;
+      if (
+        entry.isDirty &&
+        !window.confirm(
+          `「${entry.subfolderName}」目前有未儲存變更，現在合併副本可能覆蓋或重組本機內容。建議先儲存；仍要繼續合併嗎？`,
+        )
+      ) {
+        return;
+      }
       try {
         const text = await readDataFile(copy.handle);
         const remote: WorkspaceData = JSON.parse(text);
+        normalizeWorkspaceData(remote);
+        validateOrWarn(WorkspaceDataSchema, remote, "mergeCopy-disk");
         const conflicts = detectConflicts(entry.workspace, remote);
         conflictDeptDiskWsRef.current = remote;
         conflictDeptSourceCopyRef.current = copy;
@@ -1043,7 +1156,7 @@ export default function App() {
           );
           const payload: WorkspaceData = {
             ...merged,
-            version: (entry.version ?? 1) + 1,
+            version: Math.max(entry.version ?? 0, remote.version ?? 0) + 1,
             savedAt: new Date().toISOString(),
           };
           await writeDataFile(entry.handle, JSON.stringify(payload, null, 2));
@@ -1058,7 +1171,6 @@ export default function App() {
                     syncStatus: "saved" as SyncStatus,
                     version: payload.version ?? null,
                     lastModified: lm,
-                    hasRemoteUpdate: false,
                     conflictCopies: f.conflictCopies.filter(
                       (c) => c.name !== copy.name,
                     ),
@@ -1084,8 +1196,80 @@ export default function App() {
         alert(`合併副本失敗：${e}`);
       }
     },
-    [],
+    [setDeptFiles],
   );
+
+  const handleSaveCurrentDept = useCallback(async () => {
+    if (!activeDeptId) return;
+    const entry = deptFilesRef.current.find(
+      (f) => f.workspace.departments[0]?.id === activeDeptId,
+    );
+    const result = await saveDeptFile(activeDeptId);
+    if (!entry) return;
+    if (result === "saved") {
+      showDeptSaveToast(`「${entry.subfolderName}」已儲存。`, "success");
+    } else if (result === "conflict") {
+      showDeptSaveToast(
+        `「${entry.subfolderName}」發生衝突，請先完成衝突處理。`,
+        "warning",
+      );
+    } else if (result === "locked") {
+      showDeptSaveToast(
+        `「${entry.subfolderName}」正在被其他人儲存中，請稍後再試。`,
+        "warning",
+      );
+    } else if (result === "error") {
+      showDeptSaveToast(`「${entry.subfolderName}」儲存失敗。`, "error");
+    }
+  }, [activeDeptId, saveDeptFile, showDeptSaveToast]);
+
+  const handleSaveAllDirty = useCallback(async () => {
+    const dirtyEntries = deptFilesRef.current.filter(
+      (f) => f.isDirty && !f.isReadOnly,
+    );
+    if (dirtyEntries.length === 0) return;
+
+    const savedNames: string[] = [];
+    const errorNames: string[] = [];
+
+    for (const entry of dirtyEntries) {
+      const deptId = entry.workspace.departments[0]?.id;
+      if (!deptId) continue;
+      const result = await saveDeptFile(deptId);
+      if (result === "saved") {
+        savedNames.push(entry.subfolderName);
+      } else if (result === "error") {
+        errorNames.push(entry.subfolderName);
+      }
+      if (result === "conflict") {
+        showDeptSaveToast(
+          `已儲存 ${savedNames.length} 個部門；「${entry.subfolderName}」發生衝突，批次儲存已暫停。`,
+          "warning",
+        );
+        return;
+      }
+      if (result === "locked") {
+        showDeptSaveToast(
+          `已儲存 ${savedNames.length} 個部門；「${entry.subfolderName}」正在被其他人儲存中，批次儲存已暫停。`,
+          "warning",
+        );
+        return;
+      }
+    }
+
+    if (errorNames.length > 0) {
+      showDeptSaveToast(
+        `已儲存 ${savedNames.length} 個部門；失敗：${errorNames.join("、")}`,
+        "error",
+      );
+      return;
+    }
+
+    showDeptSaveToast(
+      `已完成批次儲存，共 ${savedNames.length} 個部門。`,
+      "success",
+    );
+  }, [saveDeptFile, showDeptSaveToast]);
 
   const handleDeptDismissCopy = useCallback(
     (deptId: string, copyName: string) => {
@@ -1102,38 +1286,27 @@ export default function App() {
         ),
       );
     },
-    [],
+    [setDeptFiles],
   );
   // ─────────────────────────────────────────────────────────────────────
 
-  const teams: Team[] = isMultiFileMode
-    ? deptFiles.flatMap((f) => f.workspace.teams ?? [])
-    : (workspace.teams ?? []);
-  const allMembers = teams.flatMap((t) => t.members);
-
-  // Stable reference: only changes when workspace.teams or activeDeptId changes
+  // Teams are department-scoped source data.
+  // In multi-file mode, read from the active dept file only (not global aggregation).
   const deptScopedTeams = useMemo(
-    () => teams.filter((t) => !t.deptId || t.deptId === activeDeptId),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isMultiFileMode ? deptFiles : workspace.teams, activeDeptId],
+    () =>
+      getDeptScopedTeams({
+        isMultiFileMode,
+        activeDeptId,
+        deptEntries: deptFiles,
+        workspaceTeams: workspace.teams ?? [],
+      }),
+    [isMultiFileMode, deptFiles, workspace.teams, activeDeptId],
   );
 
   // ─── Undo / Redo history ──────────────────────────────────────────────
-  const MAX_HISTORY = 50;
   const historyRef = useRef<string[]>([JSON.stringify(getInitialWorkspace())]);
   const historyIndexRef = useRef(0);
   const isUndoRedoRef = useRef(false);
-
-  const pushHistory = useCallback((ws: WorkspaceData) => {
-    const json = JSON.stringify(ws);
-    const idx = historyIndexRef.current;
-    // truncate any redo states beyond current position
-    const stack = historyRef.current.slice(0, idx + 1);
-    stack.push(json);
-    if (stack.length > MAX_HISTORY) stack.shift();
-    historyRef.current = stack;
-    historyIndexRef.current = stack.length - 1;
-  }, []);
 
   const undo = useCallback(() => {
     if (historyIndexRef.current <= 0) return;
@@ -1143,8 +1316,6 @@ export default function App() {
     );
     isUndoRedoRef.current = true;
     setWorkspace(ws);
-    saveWorkspace(ws);
-    setIsDirty(true);
   }, []);
 
   const redo = useCallback(() => {
@@ -1155,16 +1326,24 @@ export default function App() {
     );
     isUndoRedoRef.current = true;
     setWorkspace(ws);
-    saveWorkspace(ws);
-    setIsDirty(true);
   }, []);
 
   // Keyboard shortcut: Ctrl+Z / Ctrl+Y
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // skip when typing in inputs/textareas
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const isTypingTarget =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "s" &&
+        isMultiFileMode
+      ) {
+        e.preventDefault();
+        void handleSaveCurrentDept();
+        return;
+      }
+      if (isTypingTarget) return;
       if (
         (e.ctrlKey || e.metaKey) &&
         !e.shiftKey &&
@@ -1183,20 +1362,106 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo]);
+  }, [handleSaveCurrentDept, isMultiFileMode, undo, redo]);
   // ─────────────────────────────────────────────────────────────────────
 
   // Derive active dept/period with fallback
   // In multi-file mode, the effective workspace is the union of all dept workspaces.
-  const effectiveWorkspace: WorkspaceData = isMultiFileMode
-    ? {
-        ...deptFiles[0]!.workspace,
-        departments: deptFiles
-          .map((f) => f.workspace.departments[0]!)
-          .filter(Boolean),
-        teams: deptFiles.flatMap((f) => f.workspace.teams ?? []),
+  const effectiveWorkspace = useMemo<WorkspaceData>(() => {
+    const firstWorkspace = deptFiles[0]?.workspace;
+    if (!firstWorkspace) return workspace;
+    const tagDictionary = Array.from(
+      new Map(
+        deptFiles
+          .flatMap((f) => f.workspace.tagDictionary ?? [])
+          .map((item) => [item.name.toLocaleLowerCase("zh-TW"), item]),
+      ).values(),
+    ).sort((a, b) => a.name.localeCompare(b.name, "zh-TW"));
+    return {
+      ...firstWorkspace,
+      departments: deptFiles
+        .map((f) => f.workspace.departments[0])
+        .filter((d): d is NonNullable<typeof d> => Boolean(d)),
+      teams: deptScopedTeams,
+      tagDictionary: tagDictionary.length > 0 ? tagDictionary : undefined,
+    };
+  }, [deptFiles, workspace, deptScopedTeams]);
+
+  const handleBackup = useCallback(async () => {
+    // Fallback: no multi-file root linked -> keep existing download behavior.
+    if (!isMultiFileMode || !rootDirHandleRef.current) {
+      exportWorkspaceJSON(effectiveWorkspace);
+      return;
+    }
+
+    try {
+      const backupDir = await ensureBackupDir(rootDirHandleRef.current);
+      const stamp = makeBackupTimestamp();
+
+      const wsPayload: WorkspaceData = JSON.parse(
+        JSON.stringify(effectiveWorkspace),
+      );
+      normalizeWorkspaceData(wsPayload);
+      const wsVersion = wsPayload.version ?? 1;
+      const wsFileName = makeWorkspaceBackupFileName(stamp, wsVersion);
+
+      await writeJsonFileInDir(
+        backupDir,
+        wsFileName,
+        JSON.stringify(wsPayload, null, 2),
+      );
+      await pruneJsonBackupsByPrefix(
+        backupDir,
+        "workspace_",
+        BACKUP_KEEP_LATEST,
+      );
+
+      const failedDepts: string[] = [];
+      let deptSaved = 0;
+
+      for (const entry of deptFilesRef.current) {
+        try {
+          const deptPayload: WorkspaceData = JSON.parse(
+            JSON.stringify(entry.workspace),
+          );
+          normalizeWorkspaceData(deptPayload);
+          const deptVersion = entry.version ?? deptPayload.version ?? 1;
+          const deptFileName = makeDeptBackupFileName(
+            entry.subfolderName,
+            stamp,
+            deptVersion,
+          );
+          await writeJsonFileInDir(
+            backupDir,
+            deptFileName,
+            JSON.stringify(deptPayload, null, 2),
+          );
+          deptSaved += 1;
+        } catch {
+          failedDepts.push(entry.subfolderName);
+        }
       }
-    : workspace;
+
+      await pruneJsonBackupsByPrefix(backupDir, "dept_", BACKUP_KEEP_LATEST);
+
+      if (failedDepts.length > 0) {
+        showDeptSaveToast(
+          `備份完成：workspace 1 份、部門 ${deptSaved} 份；失敗：${failedDepts.join("、")}`,
+          "warning",
+        );
+        return;
+      }
+
+      showDeptSaveToast(
+        `備份完成：workspace 1 份、部門 ${deptSaved} 份（根目錄/備份）`,
+        "success",
+      );
+    } catch {
+      // Permission or FS failure fallback to browser download.
+      exportWorkspaceJSON(effectiveWorkspace);
+      showDeptSaveToast("無法寫入根目錄/備份，已改用下載備份檔。", "warning");
+    }
+  }, [effectiveWorkspace, isMultiFileMode, showDeptSaveToast]);
 
   const activeDept =
     effectiveWorkspace.departments.find((d) => d.id === activeDeptId) ??
@@ -1204,71 +1469,156 @@ export default function App() {
   const activePeriod =
     activeDept?.periods.find((p) => p.id === activePeriodId) ??
     activeDept?.periods[0];
-  const data: OGSMData = activePeriod?.ogsm ?? {
-    objectives: { orgO: "", deptO: "" },
-    goals: [],
-    period: `${new Date().getFullYear()} H1`,
-    importedAt: new Date().toISOString(),
-    overallRate: 0,
-  };
+  const data = useMemo<OGSMData>(
+    () =>
+      activePeriod?.ogsm ?? {
+        objectives: { orgO: "", deptO: "" },
+        goals: [],
+        period: `${new Date().getFullYear()} H1`,
+        importedAt: new Date().toISOString(),
+        overallRate: 0,
+      },
+    [activePeriod],
+  );
 
-  const updateWorkspace = useCallback(
-    (next: WorkspaceData) => {
-      if (isUndoRedoRef.current) {
-        isUndoRedoRef.current = false;
-      } else {
-        pushHistory(next);
+  useEffect(() => {
+    if (!isTourActive || tourStep?.page !== "ogsm") return;
+
+    const firstGoal = data.goals[0] ?? null;
+    const firstGoalWithStrategy =
+      data.goals.find((goal) => goal.strategies.length > 0) ?? firstGoal;
+    const targetGoal =
+      tourStep.id === "ogsm-intro" ? firstGoal : firstGoalWithStrategy;
+
+    if (!targetGoal) return;
+
+    if (selectedGoalId !== targetGoal.id) {
+      setSelectedGoalId(targetGoal.id);
+    }
+
+    if (tourStep.id === "ogsm-intro") return;
+
+    const targetStrategy = targetGoal.strategies[0] ?? null;
+    if (targetStrategy && selectedStrategyId !== targetStrategy.id) {
+      setSelectedStrategyId(targetStrategy.id);
+    }
+  }, [data.goals, isTourActive, selectedGoalId, selectedStrategyId, tourStep]);
+
+  // Compatibility contract: read old strategy.measures only when canonical
+  // dept.activities has not been materialized yet. All writes still go to
+  // dept.activities, so the legacy path remains read-only and removable.
+  const effectiveDeptActivities = useMemo((): DeptActivity[] => {
+    return getDeptActivitiesForPeriodRead(activeDept, data).activities;
+  }, [activeDept, data]);
+
+  const handleUpdateTagDictionary = useCallback(
+    (
+      nextTagDictionary: TagDictionaryItem[],
+      renames: TagRename[] = [],
+      deletes: TagDeleteOp[] = [],
+    ) => {
+      if (!isMultiFileMode) {
+        showDeptSaveToast("請先連結多檔根資料夾後再編輯標籤。", "warning");
+        return;
       }
-      setWorkspace(next);
-      saveWorkspace(next);
-      setIsDirty(true);
-    },
-    [pushHistory],
-  );
+      const stamped = nextTagDictionary.map((item) => ({
+        ...item,
+        updatedAt: item.updatedAt ?? new Date().toISOString(),
+      }));
 
-  const handleUpdateTeams = useCallback(
-    (nextTeams: Team[]) => {
-      const now = new Date().toISOString();
-      const prevById = new Map((workspace.teams ?? []).map((t) => [t.id, t]));
-      const stamped = nextTeams.map((t) => {
-        const prev = prevById.get(t.id);
-        // Stamp updatedAt only if content actually changed
-        if (!prev || JSON.stringify(prev) !== JSON.stringify(t)) {
-          return { ...t, updatedAt: now };
+      // helper: apply renames and delete/merge strategies to a tag name array
+      const applyTagMutations = (
+        tags: string[] | undefined,
+      ): string[] | undefined => {
+        if (!tags) return tags;
+
+        let next = tags.map((t) => {
+          const r = renames.find((x) => x.from === t);
+          return r ? r.to : t;
+        });
+
+        for (const op of deletes) {
+          if (op.mode === "remove") {
+            next = next.filter((t) => t !== op.tag);
+          } else if (op.mode === "merge" && op.to) {
+            const targetTag = op.to;
+            next = next.map((t) => (t === op.tag ? targetTag : t));
+          }
         }
-        return t;
-      });
-      updateWorkspace({ ...workspace, teams: stamped });
+
+        return Array.from(new Set(next.filter(Boolean)));
+      };
+
+      setDeptFiles((prev) =>
+        prev.map((entry) =>
+          entry.isReadOnly
+            ? entry
+            : {
+                ...entry,
+                workspace: {
+                  ...entry.workspace,
+                  tagDictionary: stamped,
+                  departments: entry.workspace.departments.map((dept) => ({
+                    ...dept,
+                    activities: (dept.activities ?? []).map((act) => ({
+                      ...act,
+                      tags: applyTagMutations(act.tags),
+                    })),
+                  })),
+                },
+                isDirty: true,
+                syncStatus: "pending" as const,
+              },
+        ),
+      );
+      const changedLabelParts: string[] = [];
+      if (renames.length > 0)
+        changedLabelParts.push(`改名 ${renames.length} 筆`);
+      if (deletes.length > 0)
+        changedLabelParts.push(`刪除 ${deletes.length} 筆`);
+      showDeptSaveToast(
+        changedLabelParts.length > 0
+          ? `已更新標籤字典（${changedLabelParts.join("、")}）。請儲存所有可寫部門以同步變更。`
+          : "已更新活動標籤字典，請儲存所有可寫部門以同步變更。",
+        "warning",
+      );
     },
-    [workspace, updateWorkspace],
+    [isMultiFileMode, showDeptSaveToast, setDeptFiles],
   );
 
-  // Dept-scoped version: merges updated teams back with other-dept teams
+  // Dept-scoped teams writer: normalize to active dept and keep other depts intact.
   const handleUpdateTeamsForDept = useCallback(
     (nextTeams: Team[]) => {
-      if (isMultiFileMode) {
-        // In multi-file mode, update only the active dept's workspace teams
-        const activeDeptFile = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === activeDeptId,
-        );
-        if (!activeDeptFile || activeDeptFile.isReadOnly) return;
-        updateDeptWorkspace(activeDeptId, {
-          ...activeDeptFile.workspace,
-          teams: nextTeams,
-        });
-      } else {
-        const otherDeptTeams = (workspace.teams ?? []).filter(
-          (t) => t.deptId && t.deptId !== activeDeptId,
-        );
-        handleUpdateTeams([...otherDeptTeams, ...nextTeams]);
+      if (!isMultiFileMode) {
+        showDeptSaveToast("請先連結多檔根資料夾後再編輯團隊。", "warning");
+        return;
       }
+      const now = new Date().toISOString();
+
+      const activeDeptFile = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === activeDeptId,
+      );
+      if (!activeDeptFile || activeDeptFile.isReadOnly) return;
+      const prevTeams = (activeDeptFile.workspace.teams ?? []).filter(
+        (t) => !t.deptId || t.deptId === activeDeptId,
+      );
+      const stamped = normalizeTeamsForDept({
+        inputTeams: nextTeams,
+        deptId: activeDeptId,
+        prevTeams,
+        nowIso: now,
+        trackClearedFields,
+      });
+      updateDeptWorkspace(activeDeptId, {
+        ...activeDeptFile.workspace,
+        teams: stamped,
+      });
     },
     [
       isMultiFileMode,
       deptFiles,
       activeDeptId,
-      workspace.teams,
-      handleUpdateTeams,
+      showDeptSaveToast,
       updateDeptWorkspace,
     ],
   );
@@ -1278,203 +1628,162 @@ export default function App() {
     ? (deptFiles.find((f) => f.workspace.departments[0]?.id === activeDeptId)
         ?.isReadOnly ?? false)
     : false;
+  const activeDeptFile = isMultiFileMode
+    ? (deptFiles.find((f) => f.workspace.departments[0]?.id === activeDeptId) ??
+      null)
+    : null;
+  const activeDeptSyncBadge = getDeptSyncBadge(activeDeptFile);
+  const dirtyDeptCount = deptFiles.filter(
+    (f) => f.isDirty && !f.isReadOnly,
+  ).length;
+  const canSaveCurrentDept =
+    !!activeDeptFile &&
+    !activeDeptFile.isReadOnly &&
+    activeDeptFile.isDirty &&
+    activeDeptFile.syncStatus !== "saving";
+  const canSaveAnyDept = dirtyDeptCount > 0 && !conflictDeptId;
+
+  useEffect(() => {
+    if (!isMultiFileMode) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!deptFilesRef.current.some((f) => f.isDirty)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isMultiFileMode]);
+
+  useEffect(() => {
+    const saveRef = deptSaveToastTimerRef;
+    const mergeRef = deptMergeToastTimerRef;
+    return () => {
+      if (saveRef.current !== null) {
+        window.clearTimeout(saveRef.current);
+      }
+      if (mergeRef.current !== null) {
+        window.clearTimeout(mergeRef.current);
+      }
+    };
+  }, []);
 
   const handleUpdateWarnDaysBefore = useCallback(
     (n: number) => {
-      if (isMultiFileMode) {
-        const activeDeptFile = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === activeDeptId,
-        );
-        if (!activeDeptFile || activeDeptFile.isReadOnly) return;
-        updateDeptWorkspace(activeDeptId, {
-          ...activeDeptFile.workspace,
-          warnDaysBefore: n,
-        });
-      } else {
-        updateWorkspace({ ...workspace, warnDaysBefore: n });
-      }
+      if (!isMultiFileMode) return;
+      const activeDeptFile = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === activeDeptId,
+      );
+      if (!activeDeptFile || activeDeptFile.isReadOnly) return;
+      updateDeptWorkspace(activeDeptId, {
+        ...activeDeptFile.workspace,
+        warnDaysBefore: n,
+      });
     },
-    [
-      isMultiFileMode,
-      deptFiles,
-      activeDeptId,
-      workspace,
-      updateWorkspace,
-      updateDeptWorkspace,
-    ],
+    [isMultiFileMode, deptFiles, activeDeptId, updateDeptWorkspace],
   );
 
   const updateData = useCallback(
     (nextData: OGSMData) => {
+      if (!isMultiFileMode) return;
       const computed = recompute(nextData);
       const deptId = activeDept?.id;
+      if (!deptId) return;
       const periodId = activePeriod?.id;
-      if (isMultiFileMode && deptId) {
-        const activeDeptFile = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === deptId,
-        );
-        if (!activeDeptFile || activeDeptFile.isReadOnly) return;
-        const next: WorkspaceData = {
-          ...activeDeptFile.workspace,
-          departments: activeDeptFile.workspace.departments.map((d) =>
-            d.id !== deptId
-              ? d
-              : {
-                  ...d,
-                  periods: d.periods.map((p) =>
-                    p.id !== periodId ? p : { ...p, ogsm: computed },
-                  ),
-                },
-          ),
-        };
-        updateDeptWorkspace(deptId, next);
-      } else {
-        const next: WorkspaceData = {
-          ...workspace,
-          departments: workspace.departments.map((d) =>
-            d.id !== deptId
-              ? d
-              : {
-                  ...d,
-                  periods: d.periods.map((p) =>
-                    p.id !== periodId ? p : { ...p, ogsm: computed },
-                  ),
-                },
-          ),
-        };
-        updateWorkspace(next);
-      }
+      const activeDeptFile = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      );
+      if (!activeDeptFile || activeDeptFile.isReadOnly) return;
+      const next: WorkspaceData = {
+        ...activeDeptFile.workspace,
+        departments: activeDeptFile.workspace.departments.map((d) =>
+          d.id !== deptId
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== periodId ? p : { ...p, ogsm: computed },
+                ),
+              },
+        ),
+      };
+      updateDeptWorkspace(deptId, next);
     },
-    [
-      workspace,
-      activeDept,
-      activePeriod,
-      isMultiFileMode,
-      deptFiles,
-      updateWorkspace,
-      updateDeptWorkspace,
-    ],
+    [activeDept, activePeriod, isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
   // --- Department handlers ---
 
   const handleAddDept = useCallback(async () => {
-    if (isMultiFileMode) {
-      if (!isAdmin) {
-        alert("您沒有管理員權限，無法新增部門。");
-        return;
-      }
-      const deptName = prompt("請輸入新部門名稱")?.trim();
-      if (!deptName) return;
-      if (!rootDirHandleRef.current) return;
-      try {
-        const subDir = await rootDirHandleRef.current.getDirectoryHandle(
-          deptName,
-          { create: true },
-        );
-        const year = new Date().getFullYear();
-        const halfYear: "H1" | "H2" = new Date().getMonth() >= 6 ? "H2" : "H1";
-        const emptyOgsm: OGSMData = {
-          objectives: { orgO: "", deptO: "" },
-          goals: [],
-          period: `${year} ${halfYear}`,
-          importedAt: new Date().toISOString(),
-          overallRate: 0,
-        };
-        const period: PeriodData = {
-          id: genId("period"),
-          halfYear,
-          year,
-          ogsm: emptyOgsm,
-        };
-        const dept: Department = {
-          id: genId("dept"),
-          name: deptName,
-          periods: [period],
-        };
-        const emptyWs: WorkspaceData = {
-          departments: [dept],
-          teams: [],
-          version: 1,
-          savedAt: new Date().toISOString(),
-        };
-        const fileHandle = await subDir.getFileHandle("data.json", {
-          create: true,
-        });
-        await writeDataFile(fileHandle, JSON.stringify(emptyWs, null, 2));
-        await loadRootFolderIntoState(rootDirHandleRef.current);
-      } catch (e) {
-        alert(`新增部門失敗：${e}`);
-      }
+    if (!isMultiFileMode) {
+      showDeptSaveToast("請先連結多檔根資料夾。", "warning");
       return;
     }
-    const year = new Date().getFullYear();
-    const halfYear: "H1" | "H2" = new Date().getMonth() >= 6 ? "H2" : "H1";
-    const emptyOgsm: OGSMData = {
-      objectives: { orgO: "", deptO: "" },
-      goals: [],
-      period: `${year} ${halfYear}`,
-      importedAt: new Date().toISOString(),
-      overallRate: 0,
-    };
-    const period: PeriodData = {
-      id: genId("period"),
-      halfYear,
-      year,
-      ogsm: emptyOgsm,
-    };
-    const dept: Department = {
-      id: genId("dept"),
-      name: "新部門",
-      periods: [period],
-    };
-    const next = {
-      ...workspace,
-      departments: [...workspace.departments, dept],
-    };
-    updateWorkspace(next);
-    setActiveDeptId(dept.id);
-    setActivePeriodId(period.id);
-    setSelectedGoalId(null);
-    setSelectedStrategyId(null);
-  }, [
-    workspace,
-    updateWorkspace,
-    isMultiFileMode,
-    isAdmin,
-    loadRootFolderIntoState,
-  ]);
+    if (!isAdmin) {
+      alert("您沒有管理員權限，無法新增部門。");
+      return;
+    }
+    const deptName = prompt("請輸入新部門名稱")?.trim();
+    if (!deptName) return;
+    if (!rootDirHandleRef.current) return;
+    try {
+      const subDir = await rootDirHandleRef.current.getDirectoryHandle(
+        deptName,
+        {
+          create: true,
+        },
+      );
+      const year = new Date().getFullYear();
+      const halfYear: "H1" | "H2" = new Date().getMonth() >= 6 ? "H2" : "H1";
+      const emptyOgsm: OGSMData = {
+        objectives: { orgO: "", deptO: "" },
+        goals: [],
+        period: `${year} ${halfYear}`,
+        importedAt: new Date().toISOString(),
+        overallRate: 0,
+      };
+      const period: PeriodData = {
+        id: genId("period"),
+        halfYear,
+        year,
+        ogsm: emptyOgsm,
+      };
+      const dept: Department = {
+        id: genId("dept"),
+        name: deptName,
+        periods: [period],
+      };
+      const emptyWs: WorkspaceData = {
+        departments: [dept],
+        teams: [],
+        version: 1,
+        savedAt: new Date().toISOString(),
+      };
+      const fileHandle = await subDir.getFileHandle("data.json", {
+        create: true,
+      });
+      await writeDataFile(fileHandle, JSON.stringify(emptyWs, null, 2));
+      await loadRootFolderIntoState(rootDirHandleRef.current);
+    } catch (e) {
+      alert(`新增部門失敗：${e}`);
+    }
+  }, [isMultiFileMode, isAdmin, showDeptSaveToast, loadRootFolderIntoState]);
 
   const handleRenameDept = useCallback(
     (deptId: string, name: string) => {
       if (!name.trim()) return;
-      if (isMultiFileMode) {
-        const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === deptId,
-        );
-        if (!entry || entry.isReadOnly) return;
-        updateDeptWorkspace(deptId, {
-          ...entry.workspace,
-          departments: entry.workspace.departments.map((d) =>
-            d.id === deptId ? { ...d, name: name.trim() } : d,
-          ),
-        });
-      } else {
-        updateWorkspace({
-          ...workspace,
-          departments: workspace.departments.map((d) =>
-            d.id === deptId ? { ...d, name: name.trim() } : d,
-          ),
-        });
-      }
+      if (!isMultiFileMode) return;
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(deptId, {
+        ...entry.workspace,
+        departments: entry.workspace.departments.map((d) =>
+          d.id === deptId ? { ...d, name: name.trim() } : d,
+        ),
+      });
     },
-    [
-      isMultiFileMode,
-      deptFiles,
-      workspace,
-      updateWorkspace,
-      updateDeptWorkspace,
-    ],
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
   const handleDeleteDept = useCallback(
@@ -1485,28 +1794,21 @@ export default function App() {
         );
         return;
       }
-      if (workspace.departments.length <= 1) {
-        alert("至少需要保留一個部門");
-        return;
-      }
-      if (!window.confirm("確定要刪除此部門及所有資料嗎？此操作無法復原。"))
-        return;
-      const next = {
-        ...workspace,
-        departments: workspace.departments.filter((d) => d.id !== deptId),
-      };
-      updateWorkspace(next);
-      const remaining = next.departments[0];
-      setActiveDeptId(remaining.id);
-      setActivePeriodId(remaining.periods[0]?.id ?? "");
-      setSelectedGoalId(null);
-      setSelectedStrategyId(null);
+      void deptId;
+      showDeptSaveToast("請先連結多檔根資料夾。", "warning");
     },
-    [isMultiFileMode, workspace, updateWorkspace],
+    [isMultiFileMode, showDeptSaveToast],
   );
 
   const handleSwitchDept = useCallback(
     (deptId: string) => {
+      if (
+        showKpiDesigner &&
+        kpiDesignerHasDraft.current &&
+        !window.confirm("KPI 有未儲存的變更，切換部門將會遺失。確定切換？")
+      ) {
+        return;
+      }
       const dept = effectiveWorkspace.departments.find((d) => d.id === deptId);
       if (!dept) return;
       setActiveDeptId(deptId);
@@ -1514,18 +1816,23 @@ export default function App() {
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
       setFilterOwner("all");
+      if (showKpiDesigner) {
+        // 切部門後回到目標編輯器的目標樹起點
+        setKpiDesignerGoalId(null);
+      }
     },
-    [effectiveWorkspace],
+    [effectiveWorkspace, showKpiDesigner],
   );
 
   // --- Period handlers ---
 
   const handleAddPeriod = useCallback(
     (deptId: string, halfYear: "H1" | "H2", year: number) => {
-      const sourceWs = isMultiFileMode
-        ? (deptFiles.find((f) => f.workspace.departments[0]?.id === deptId)
-            ?.workspace ?? workspace)
-        : workspace;
+      if (!isMultiFileMode) return;
+      const sourceWs = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      )?.workspace;
+      if (!sourceWs) return;
       const dept = sourceWs.departments.find((d) => d.id === deptId);
       if (!dept) return;
       if (
@@ -1565,30 +1872,21 @@ export default function App() {
               },
         ),
       };
-      if (isMultiFileMode) {
-        updateDeptWorkspace(deptId, next);
-      } else {
-        updateWorkspace(next);
-      }
+      updateDeptWorkspace(deptId, next);
       setActivePeriodId(period.id);
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
     },
-    [
-      isMultiFileMode,
-      deptFiles,
-      workspace,
-      updateWorkspace,
-      updateDeptWorkspace,
-    ],
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
   const handleDeletePeriod = useCallback(
     (deptId: string, periodId: string) => {
-      const sourceWs = isMultiFileMode
-        ? (deptFiles.find((f) => f.workspace.departments[0]?.id === deptId)
-            ?.workspace ?? workspace)
-        : workspace;
+      if (!isMultiFileMode) return;
+      const sourceWs = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      )?.workspace;
+      if (!sourceWs) return;
       const dept = sourceWs.departments.find((d) => d.id === deptId);
       if (!dept || dept.periods.length <= 1) {
         alert("至少需要保留一個期間");
@@ -1606,11 +1904,7 @@ export default function App() {
               },
         ),
       };
-      if (isMultiFileMode) {
-        updateDeptWorkspace(deptId, next);
-      } else {
-        updateWorkspace(next);
-      }
+      updateDeptWorkspace(deptId, next);
       const remaining = next.departments.find((d) => d.id === deptId)
         ?.periods[0];
       if (!remaining) return;
@@ -1618,7 +1912,7 @@ export default function App() {
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
     },
-    [workspace, updateWorkspace],
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
   const handleCopyPeriod = useCallback(
@@ -1628,10 +1922,11 @@ export default function App() {
       halfYear: "H1" | "H2",
       year: number,
     ) => {
-      const sourceWs = isMultiFileMode
-        ? (deptFiles.find((f) => f.workspace.departments[0]?.id === deptId)
-            ?.workspace ?? workspace)
-        : workspace;
+      if (!isMultiFileMode) return;
+      const sourceWs = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      )?.workspace;
+      if (!sourceWs) return;
       const dept = sourceWs.departments.find((d) => d.id === deptId);
       if (!dept) return;
       if (
@@ -1642,6 +1937,7 @@ export default function App() {
       }
       const src = dept.periods.find((p) => p.id === sourcePeriodId);
       if (!src) return;
+      const deptCode = toDeptCode(dept.name);
 
       // 深拷貝 OGSM，重發所有 ID（避免 merge 衝突），重設實際御完成狀態
       const now = new Date().toISOString();
@@ -1650,20 +1946,44 @@ export default function App() {
         period: `${year} ${halfYear}`,
         importedAt: now,
         overallRate: 0,
-        goals: src.ogsm.goals.map((g) => ({
+        goals: src.ogsm.goals.map((g, goalIndex) => ({
           ...g,
           id: genId("goal"),
+          bizKey: generateUniqueGoalBizKey({
+            year,
+            halfYear,
+            deptCode,
+            goalOrder: goalIndex + 1,
+            goals: src.ogsm.goals.slice(0, goalIndex),
+          }),
           completionRate: 0,
           updatedAt: now,
-          strategies: g.strategies.map((s) => ({
+          strategies: g.strategies.map((s, strategyIndex) => ({
             ...s,
             id: genId("str"),
+            bizKey: generateUniqueStrategyBizKey({
+              year,
+              halfYear,
+              deptCode,
+              goalOrder: goalIndex + 1,
+              strategyOrder: strategyIndex + 1,
+              strategies: g.strategies.slice(0, strategyIndex),
+            }),
             completionRate: 0,
             manualRate: null,
             updatedAt: now,
-            measures: s.measures.map((m) => ({
+            measures: s.measures.map((m, activityIndex) => ({
               ...m,
               id: genId("msr"),
+              bizKey: generateBizKey({
+                entityType: "activity",
+                year,
+                halfYear,
+                deptCode,
+                goalOrder: goalIndex + 1,
+                strategyOrder: strategyIndex + 1,
+                activityOrder: activityIndex + 1,
+              }),
               kpis: m.kpis.map((k) => ({
                 ...k,
                 id: genId("kpi"),
@@ -1707,22 +2027,12 @@ export default function App() {
               },
         ),
       };
-      if (isMultiFileMode) {
-        updateDeptWorkspace(deptId, next);
-      } else {
-        updateWorkspace(next);
-      }
+      updateDeptWorkspace(deptId, next);
       setActivePeriodId(period.id);
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
     },
-    [
-      isMultiFileMode,
-      deptFiles,
-      workspace,
-      updateWorkspace,
-      updateDeptWorkspace,
-    ],
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
   const handleSwitchPeriod = useCallback((periodId: string) => {
@@ -1731,6 +2041,11 @@ export default function App() {
     setSelectedStrategyId(null);
     setFilterOwner("all");
   }, []);
+
+  // Sidebar is now navigation-only; keep these handlers available for future admin entry points.
+  void handleAddDept;
+  void handleRenameDept;
+  void handleDeleteDept;
 
   // --- OGSM Data handlers ---
 
@@ -1749,10 +2064,30 @@ export default function App() {
     });
   }, [selectedGoal, filterOwner]);
 
+  const linkedDeptActivities = useMemo((): DeptActivity[] => {
+    if (!selectedStrategyId) return [];
+    return effectiveDeptActivities.filter(
+      (a) =>
+        a.dashboardLinks?.some(
+          (l) => l.type === "ogsm" && l.strategyId === selectedStrategyId,
+        ) ?? false,
+    );
+  }, [effectiveDeptActivities, selectedStrategyId]);
+
   const handleUpdateStrategy = useCallback(
     (updated: Strategy) => {
+      const prevGoal = data.goals.find((g) => g.id === selectedGoalId);
+      const prev = prevGoal?.strategies.find((s) => s.id === updated.id);
+      const tracked = prev
+        ? trackClearedFields(prev, updated, [
+            "title",
+            "notes",
+            "owners",
+            "actionPlans",
+          ])
+        : updated;
       const stamped: Strategy = {
-        ...updated,
+        ...tracked,
         updatedAt: new Date().toISOString(),
       };
       updateData({
@@ -1774,16 +2109,34 @@ export default function App() {
 
   // ── Activity CRUD（跨部門直接操作）────────────────────────────────────────
 
-  const handleUpdateMeasureDirect = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measure: Measure,
-    ) => {
-      const stamped: Measure = {
-        ...measure,
+  /** V3 flat handler：直接 patch dept.activities[]，無需 periodId/goalId/stratId */
+  const handleUpdateDeptActivity = useCallback(
+    (deptId: string, activity: DeptActivity) => {
+      if (!isMultiFileMode) return;
+      const prevActivity = (() => {
+        const entry = deptFiles.find(
+          (f) => f.workspace.departments[0]?.id === deptId,
+        );
+        return entry?.workspace.departments
+          .flatMap((d) => d.activities ?? [])
+          .find((a) => a.id === activity.id);
+      })();
+      const tracked = prevActivity
+        ? trackClearedFields(prevActivity, activity, [
+            "notes",
+            "description",
+            "budget",
+            "personDays",
+            "owners",
+            "tags",
+            "planItems",
+            "assistUnits",
+            "prerequisites",
+            "relatedActivities",
+          ])
+        : activity;
+      const stamped: DeptActivity = {
+        ...tracked,
         updatedAt: new Date().toISOString(),
       };
       const patchDepts = (deps: typeof workspace.departments) =>
@@ -1792,69 +2145,28 @@ export default function App() {
             ? d
             : {
                 ...d,
-                periods: d.periods.map((p) =>
-                  p.id !== periodId
-                    ? p
-                    : {
-                        ...p,
-                        ogsm: recompute({
-                          ...p.ogsm,
-                          goals: p.ogsm.goals.map((g) =>
-                            g.id !== goalId
-                              ? g
-                              : {
-                                  ...g,
-                                  strategies: g.strategies.map((s) =>
-                                    s.id !== stratId
-                                      ? s
-                                      : {
-                                          ...s,
-                                          measures: s.measures.map((m) =>
-                                            m.id !== stamped.id ? m : stamped,
-                                          ),
-                                          updatedAt: new Date().toISOString(),
-                                        },
-                                  ),
-                                },
-                          ),
-                        }),
-                      },
+                activities: (d.activities ?? []).map((a) =>
+                  a.id !== stamped.id ? a : stamped,
                 ),
               },
         );
-      if (isMultiFileMode) {
-        const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === deptId,
-        );
-        if (!entry || entry.isReadOnly) return;
-        updateDeptWorkspace(deptId, {
-          ...entry.workspace,
-          departments: patchDepts(entry.workspace.departments),
-        });
-      } else {
-        updateWorkspace({
-          ...workspace,
-          departments: patchDepts(workspace.departments),
-        });
-      }
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(deptId, {
+        ...entry.workspace,
+        departments: patchDepts(entry.workspace.departments),
+      });
     },
-    [
-      workspace,
-      updateWorkspace,
-      isMultiFileMode,
-      deptFiles,
-      updateDeptWorkspace,
-    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `workspace` is referenced only as a TypeScript type annotation (typeof), not at runtime
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
-  const handleDeleteMeasureDirect = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measureId: string,
-    ) => {
+  /** V3 flat handler：從 dept.activities[] 刪除並 tombstone */
+  const handleDeleteDeptActivity = useCallback(
+    (deptId: string, activityId: string) => {
+      if (!isMultiFileMode) return;
       if (!window.confirm("確定要刪除這個活動嗎？")) return;
       const patchDepts = (deps: typeof workspace.departments) =>
         deps.map((d) =>
@@ -1862,171 +2174,205 @@ export default function App() {
             ? d
             : {
                 ...d,
-                periods: d.periods.map((p) =>
-                  p.id !== periodId
-                    ? p
-                    : {
-                        ...p,
-                        ogsm: recompute({
-                          ...p.ogsm,
-                          goals: p.ogsm.goals.map((g) =>
-                            g.id !== goalId
-                              ? g
-                              : {
-                                  ...g,
-                                  strategies: g.strategies.map((s) =>
-                                    s.id !== stratId
-                                      ? s
-                                      : {
-                                          ...s,
-                                          measures: s.measures.filter(
-                                            (m) => m.id !== measureId,
-                                          ),
-                                          actionPlans: s.actionPlans.map(
-                                            (ap) => ({
-                                              ...ap,
-                                              items: ap.items.map((item) =>
-                                                item.linkedMeasureId ===
-                                                measureId
-                                                  ? {
-                                                      ...item,
-                                                      linkedMeasureId: null,
-                                                    }
-                                                  : item,
-                                              ),
-                                            }),
-                                          ),
-                                          updatedAt: new Date().toISOString(),
-                                        },
-                                  ),
-                                },
-                          ),
-                        }),
-                      },
+                activities: (d.activities ?? []).filter(
+                  (a) => a.id !== activityId,
                 ),
               },
         );
-      if (isMultiFileMode) {
-        const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === deptId,
-        );
-        if (!entry || entry.isReadOnly) return;
-        const existingDeleted = entry.workspace.deletedIds ?? [];
-        updateDeptWorkspace(deptId, {
-          ...entry.workspace,
-          deletedIds: [...existingDeleted, measureId],
-          departments: patchDepts(entry.workspace.departments),
-        });
-      } else {
-        updateWorkspace({
-          ...workspace,
-          deletedIds: [...(workspace.deletedIds ?? []), measureId],
-          departments: patchDepts(workspace.departments),
-        });
-      }
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(deptId, {
+        ...entry.workspace,
+        deletedIds: [...(entry.workspace.deletedIds ?? []), activityId],
+        departments: patchDepts(entry.workspace.departments),
+      });
     },
-    [
-      workspace,
-      updateWorkspace,
-      isMultiFileMode,
-      deptFiles,
-      updateDeptWorkspace,
-    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `workspace` is referenced only as a TypeScript type annotation (typeof), not at runtime
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
   );
 
-  const handleAddMeasureDirect = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measure: Measure,
-    ) => {
+  /** V3 flat handler：push 新活動到 dept.activities[] */
+  const handleAddDeptActivity = useCallback(
+    (deptId: string, activity: DeptActivity) => {
+      if (!isMultiFileMode) return;
       const patchDepts = (deps: typeof workspace.departments) =>
         deps.map((d) =>
           d.id !== deptId
             ? d
             : {
                 ...d,
-                periods: d.periods.map((p) =>
-                  p.id !== periodId
-                    ? p
+                activities: [
+                  ...(d.activities ?? []),
+                  activity.bizKey
+                    ? activity
                     : {
-                        ...p,
-                        ogsm: recompute({
-                          ...p.ogsm,
-                          goals: p.ogsm.goals.map((g) =>
-                            g.id !== goalId
-                              ? g
-                              : {
-                                  ...g,
-                                  strategies: g.strategies.map((s) =>
-                                    s.id !== stratId
-                                      ? s
-                                      : {
-                                          ...s,
-                                          measures: [...s.measures, measure],
-                                          updatedAt: new Date().toISOString(),
-                                        },
-                                  ),
-                                },
+                        ...activity,
+                        bizKey: generateUniqueBizKey({
+                          input: {
+                            entityType: "activity",
+                            year: activePeriod?.year,
+                            halfYear: activePeriod?.halfYear,
+                            deptCode: toDeptCode(d.name),
+                            activityOrder: (d.activities?.length ?? 0) + 1,
+                          },
+                          existingKeys: getActivityScopeExistingKeys(
+                            d.activities ?? [],
+                            resolveActivityBizKeyScope(
+                              activity.dashboardLinks ?? [],
+                            ),
                           ),
                         }),
                       },
-                ),
+                ],
               },
         );
-      if (isMultiFileMode) {
-        const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === deptId,
-        );
-        if (!entry || entry.isReadOnly) return;
-        updateDeptWorkspace(deptId, {
-          ...entry.workspace,
-          departments: patchDepts(entry.workspace.departments),
-        });
-      } else {
-        updateWorkspace({
-          ...workspace,
-          departments: patchDepts(workspace.departments),
-        });
-      }
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(deptId, {
+        ...entry.workspace,
+        departments: patchDepts(entry.workspace.departments),
+      });
+      showDeptSaveToast(
+        `已新增活動到「${entry.subfolderName}」，尚未寫入檔案；請按「儲存目前部門」或 Ctrl+S。`,
+        "warning",
+      );
     },
     [
       workspace,
-      updateWorkspace,
       isMultiFileMode,
       deptFiles,
       updateDeptWorkspace,
+      showDeptSaveToast,
+      activePeriod,
     ],
   );
 
-  const handleJumpToMeasure = useCallback(
-    (
-      deptId: string,
-      periodId: string,
-      goalId: string,
-      stratId: string,
-      measureId: string,
-    ) => {
+  /** 活動入口統一：在活動總覽開啟右側 ActivityDetailPanel，不跳 OGSM */
+  const handleJumpToActivity = useCallback(
+    (deptId: string, activityId: string, routeHint?: ActivityRouteHint) => {
+      // Keep route anchors of source view (kanban/gantt/cards/calendar),
+      // then open the activity detail panel inside Activity page.
+      setActivityPageView(
+        routeHint?.activityPageView ?? currentRouteState.activityPageView,
+      );
+      setActivityGanttSubView(
+        routeHint?.activityGanttSubView ??
+          currentRouteState.activityGanttSubView,
+      );
+      setShowActivityPage(true);
+      setShowDeptSettings(false);
+      setShowTagManagement(false);
+      setShowHomePage(false);
+      setShowKpiDesigner(false);
+      setActiveDeptId(deptId);
+      setPendingActivityDetailId(activityId);
+      setPendingDetailNav(null);
+    },
+    [currentRouteState],
+  );
+
+  /** 活動入口：從活動總覽跳回 OGSM 並定位到對應策略/計畫 */
+  const handleJumpToOgsmFromActivity = useCallback(
+    (activity: ActivityWithContext) => {
+      if (!activity.goalId || !activity.strategyId) return;
       setShowActivityPage(false);
       setShowDeptSettings(false);
-      setActiveDeptId(deptId);
-      setActivePeriodId(periodId);
-      setSelectedGoalId(goalId);
-      setSelectedStrategyId(stratId);
-      setPendingDetailNav({ tab: "plans", measureId });
+      setShowTagManagement(false);
+      setShowHomePage(false);
+      setShowKpiDesigner(false);
+      setActiveDeptId(activity.deptId);
+      setSelectedGoalId(activity.goalId);
+      setSelectedStrategyId(activity.strategyId);
+      setPendingDetailNav({ tab: "plans", measureId: activity.id });
+      setPendingActivityDetailId(null);
     },
     [],
   );
 
+  const handleToggleExcludeFromOgsm = useCallback(
+    (
+      deptId: string,
+      activityId: string,
+      exclude: boolean,
+      strategyId: string,
+    ) => {
+      if (!isMultiFileMode) return;
+      const patchDepts = (deps: typeof workspace.departments) =>
+        deps.map((d) =>
+          d.id !== deptId
+            ? d
+            : {
+                ...d,
+                activities: (d.activities ?? []).map((a) =>
+                  a.id !== activityId
+                    ? a
+                    : {
+                        ...a,
+                        dashboardLinks: (a.dashboardLinks ?? []).map((l) =>
+                          l.type === "ogsm" && l.strategyId === strategyId
+                            ? { ...l, exclude }
+                            : l,
+                        ),
+                      },
+                ),
+              },
+        );
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === deptId,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(deptId, {
+        ...entry.workspace,
+        departments: patchDepts(entry.workspace.departments),
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `workspace` is referenced only as a TypeScript type annotation (typeof), not at runtime
+    [isMultiFileMode, deptFiles, updateDeptWorkspace],
+  );
+
   const handleAddStrategy = useCallback(() => {
     if (!selectedGoalId) return;
+    const goalIndex = data.goals.findIndex((g) => g.id === selectedGoalId);
+    if (goalIndex < 0) return;
+    const goal = data.goals[goalIndex];
+    const goalOrder = parseGoalOrder(goal.label, goalIndex + 1);
+    const strategyOrder = goal.strategies.length + 1;
+    const deptCode = toDeptCode(activeDept?.name);
     const s: Strategy = {
       id: genId("str"),
+      bizKey: generateUniqueStrategyBizKey({
+        year: activePeriod?.year,
+        halfYear: activePeriod?.halfYear,
+        deptCode,
+        goalOrder,
+        strategyOrder,
+        strategies: goal.strategies,
+      }),
       title: "新策略（點擊編輯名稱）",
       rawText: "",
-      measures: [{ id: genId("msr"), rawText: "", kpis: [] }],
+      measures: [
+        {
+          id: genId("msr"),
+          bizKey: generateUniqueBizKey({
+            input: {
+              entityType: "activity",
+              year: activePeriod?.year,
+              halfYear: activePeriod?.halfYear,
+              deptCode,
+              goalOrder,
+              strategyOrder,
+              activityOrder: 1,
+            },
+            existingKeys: [],
+          }),
+          rawText: "",
+          kpis: [],
+        },
+      ],
       actionPlans: [],
       owners: [],
       notes: "",
@@ -2044,10 +2390,11 @@ export default function App() {
     };
     updateData(next);
     setSelectedStrategyId(s.id);
-  }, [data, selectedGoalId, updateData]);
+  }, [data, selectedGoalId, updateData, activeDept, activePeriod]);
 
   const handleDeleteStrategy = useCallback(
     (strategyId: string) => {
+      if (!isMultiFileMode) return;
       if (!window.confirm("確定要刪除這個策略嗎？")) return;
       const next = recompute({
         ...data,
@@ -2061,54 +2408,33 @@ export default function App() {
         ),
       });
       // Tombstone the deleted strategy so merge won't resurrect it
-      if (isMultiFileMode && activeDept) {
-        const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === activeDept.id,
-        );
-        if (!entry || entry.isReadOnly) return;
-        updateDeptWorkspace(activeDept.id, {
-          ...entry.workspace,
-          deletedIds: [...(entry.workspace.deletedIds ?? []), strategyId],
-          departments: entry.workspace.departments.map((d) =>
-            d.id !== activeDept.id
-              ? d
-              : {
-                  ...d,
-                  periods: d.periods.map((p) =>
-                    p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
-                  ),
-                },
-          ),
-        });
-      } else {
-        const wsNext: WorkspaceData = {
-          ...workspace,
-          deletedIds: [...(workspace.deletedIds ?? []), strategyId],
-        };
-        updateWorkspace({
-          ...wsNext,
-          departments: workspace.departments.map((d) =>
-            d.id !== activeDept?.id
-              ? d
-              : {
-                  ...d,
-                  periods: d.periods.map((p) =>
-                    p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
-                  ),
-                },
-          ),
-        });
-      }
+      if (!activeDept) return;
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === activeDept.id,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(activeDept.id, {
+        ...entry.workspace,
+        deletedIds: [...(entry.workspace.deletedIds ?? []), strategyId],
+        departments: entry.workspace.departments.map((d) =>
+          d.id !== activeDept.id
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                ),
+              },
+        ),
+      });
       if (selectedStrategyId === strategyId) setSelectedStrategyId(null);
     },
     [
       data,
       selectedGoalId,
       selectedStrategyId,
-      workspace,
       activeDept,
       activePeriod,
-      updateWorkspace,
       isMultiFileMode,
       deptFiles,
       updateDeptWorkspace,
@@ -2116,8 +2442,16 @@ export default function App() {
   );
 
   const handleAddGoal = useCallback(() => {
+    const goalOrder = data.goals.length + 1;
     const g: Goal = {
       id: genId("goal"),
+      bizKey: generateUniqueGoalBizKey({
+        year: activePeriod?.year,
+        halfYear: activePeriod?.halfYear,
+        deptCode: toDeptCode(activeDept?.name),
+        goalOrder,
+        goals: data.goals,
+      }),
       label: `G${data.goals.length + 1}`,
       title: "新目標",
       fullText: "點擊右側編輯目標描述",
@@ -2129,15 +2463,19 @@ export default function App() {
     updateData(next);
     setSelectedGoalId(g.id);
     setSelectedStrategyId(null);
-  }, [data, updateData]);
+  }, [data, updateData, activeDept, activePeriod]);
 
   const handleUpdateGoal = useCallback(
     (updated: Goal) => {
+      const prev = data.goals.find((g) => g.id === updated.id);
+      const tracked = prev
+        ? trackClearedFields(prev, updated, ["title", "fullText", "goalKpis"])
+        : updated;
       updateData({
         ...data,
         goals: data.goals.map((g) =>
           g.id === updated.id
-            ? { ...updated, updatedAt: new Date().toISOString() }
+            ? { ...tracked, updatedAt: new Date().toISOString() }
             : g,
         ),
       });
@@ -2154,6 +2492,7 @@ export default function App() {
 
   const handleDeleteGoal = useCallback(
     (goalId: string) => {
+      if (!isMultiFileMode) return;
       if (!window.confirm("確定要刪除這個目標（G）及其所有策略嗎？")) return;
       const goal = data.goals.find((g) => g.id === goalId);
       const strategyIds = goal?.strategies.map((s) => s.id) ?? [];
@@ -2163,44 +2502,25 @@ export default function App() {
       });
       // Tombstone the deleted goal and all its strategies
       const tombstones = [goalId, ...strategyIds];
-      if (isMultiFileMode && activeDept) {
-        const entry = deptFiles.find(
-          (f) => f.workspace.departments[0]?.id === activeDept.id,
-        );
-        if (!entry || entry.isReadOnly) return;
-        updateDeptWorkspace(activeDept.id, {
-          ...entry.workspace,
-          deletedIds: [...(entry.workspace.deletedIds ?? []), ...tombstones],
-          departments: entry.workspace.departments.map((d) =>
-            d.id !== activeDept.id
-              ? d
-              : {
-                  ...d,
-                  periods: d.periods.map((p) =>
-                    p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
-                  ),
-                },
-          ),
-        });
-      } else {
-        const wsNext: WorkspaceData = {
-          ...workspace,
-          deletedIds: [...(workspace.deletedIds ?? []), ...tombstones],
-        };
-        updateWorkspace({
-          ...wsNext,
-          departments: workspace.departments.map((d) =>
-            d.id !== activeDept?.id
-              ? d
-              : {
-                  ...d,
-                  periods: d.periods.map((p) =>
-                    p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
-                  ),
-                },
-          ),
-        });
-      }
+      if (!activeDept) return;
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === activeDept.id,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(activeDept.id, {
+        ...entry.workspace,
+        deletedIds: [...(entry.workspace.deletedIds ?? []), ...tombstones],
+        departments: entry.workspace.departments.map((d) =>
+          d.id !== activeDept.id
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                ),
+              },
+        ),
+      });
       if (selectedGoalId === goalId) {
         setSelectedGoalId(next.goals[0]?.id ?? null);
         setSelectedStrategyId(null);
@@ -2209,70 +2529,156 @@ export default function App() {
     [
       data,
       selectedGoalId,
-      workspace,
       activeDept,
       activePeriod,
-      updateWorkspace,
       isMultiFileMode,
       deptFiles,
       updateDeptWorkspace,
     ],
   );
 
-  // ── Phase 0: Split current workspace into per-dept JSON downloads ────────
-  const handleSplitDepts = useCallback(() => {
-    if (workspace.departments.length < 2) {
-      alert("目前只有一個部門，不需要拆分。");
-      return;
-    }
-    if (
-      !window.confirm(
-        `確定要將 ${workspace.departments.length} 個部門拆分為獨立 JSON 並下載嗎？\n請將每個檔案放到對應的子資料夾（OGSM/[部門名稱]/）。`,
-      )
-    )
-      return;
-    const allTeams = workspace.teams ?? [];
-    workspace.departments.forEach((dept) => {
-      const deptTeams = allTeams.filter(
-        (t) => !t.deptId || t.deptId === dept.id,
-      );
-      const deptWs: WorkspaceData = {
-        departments: [dept],
-        version: 1,
-        savedAt: new Date().toISOString(),
-        teams: deptTeams.length > 0 ? deptTeams : undefined,
-        warnDaysBefore: workspace.warnDaysBefore,
+  /** 目標編輯器用：直接以 goalId 新增策略（不依賴 selectedGoalId state） */
+  const handleAddStrategyToGoal = useCallback(
+    (goalId: string) => {
+      const goalIndex = data.goals.findIndex((g) => g.id === goalId);
+      if (goalIndex < 0) return;
+      const goal = data.goals[goalIndex];
+      const goalOrder = parseGoalOrder(goal.label, goalIndex + 1);
+      const strategyOrder = goal.strategies.length + 1;
+      const deptCode = toDeptCode(activeDept?.name);
+      const s: Strategy = {
+        id: genId("str"),
+        bizKey: generateUniqueStrategyBizKey({
+          year: activePeriod?.year,
+          halfYear: activePeriod?.halfYear,
+          deptCode,
+          goalOrder,
+          strategyOrder,
+          strategies: goal.strategies,
+        }),
+        title: "新策略（點擊編輯名稱）",
+        rawText: "",
+        measures: [
+          {
+            id: genId("msr"),
+            bizKey: generateUniqueBizKey({
+              input: {
+                entityType: "activity",
+                year: activePeriod?.year,
+                halfYear: activePeriod?.halfYear,
+                deptCode,
+                goalOrder,
+                strategyOrder,
+                activityOrder: 1,
+              },
+              existingKeys: [],
+            }),
+            rawText: "",
+            kpis: [],
+          },
+        ],
+        actionPlans: [],
+        owners: [],
+        notes: "",
+        completionRate: 0,
+        manualRate: null,
+        updatedAt: new Date().toISOString(),
       };
-      const blob = new Blob([JSON.stringify(deptWs, null, 2)], {
-        type: "application/json",
+      updateData({
+        ...data,
+        goals: data.goals.map((g) =>
+          g.id !== goalId ? g : { ...g, strategies: [...g.strategies, s] },
+        ),
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${dept.name}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-  }, [workspace]);
+    },
+    [data, updateData, activeDept, activePeriod],
+  );
+
+  /** 目標編輯器用：以 stratId 掃描所有目標刪除（不依賴 selectedGoalId state） */
+  const handleDeleteStrategyById = useCallback(
+    (stratId: string) => {
+      if (!window.confirm("確定要刪除這個策略嗎？")) return;
+      const goalId = data.goals.find((g) =>
+        g.strategies.some((s) => s.id === stratId),
+      )?.id;
+      if (!goalId) return;
+      const next = recompute({
+        ...data,
+        goals: data.goals.map((g) => ({
+          ...g,
+          strategies: g.strategies.filter((s) => s.id !== stratId),
+        })),
+      });
+      const tombstones = [stratId];
+      if (!activeDept) return;
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === activeDept.id,
+      );
+      if (!entry || entry.isReadOnly) return;
+      updateDeptWorkspace(activeDept.id, {
+        ...entry.workspace,
+        deletedIds: [...(entry.workspace.deletedIds ?? []), ...tombstones],
+        departments: entry.workspace.departments.map((d) =>
+          d.id !== activeDept.id
+            ? d
+            : {
+                ...d,
+                periods: d.periods.map((p) =>
+                  p.id !== activePeriod?.id ? p : { ...p, ogsm: next },
+                ),
+              },
+        ),
+      });
+      if (selectedStrategyId === stratId) setSelectedStrategyId(null);
+    },
+    [
+      data,
+      selectedStrategyId,
+      activeDept,
+      activePeriod,
+      deptFiles,
+      updateDeptWorkspace,
+    ],
+  );
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
+
+    /** 將新 period 寫入目前 activeDept 的 deptFile */
+    const importPeriodToActiveDept = (period: PeriodData) => {
+      if (!activeDept) {
+        alert("請先選擇部門");
+        return false;
+      }
+      const entry = deptFiles.find(
+        (f) => f.workspace.departments[0]?.id === activeDept.id,
+      );
+      if (!entry || entry.isReadOnly) {
+        alert("目前部門為唯讀，無法匯入");
+        return false;
+      }
+      updateDeptWorkspace(activeDept.id, {
+        ...entry.workspace,
+        departments: entry.workspace.departments.map((d) =>
+          d.id !== activeDept.id
+            ? d
+            : { ...d, periods: [...d.periods, period] },
+        ),
+      });
+      setActivePeriodId(period.id);
+      return true;
+    };
+
     try {
       if (file.name.endsWith(".json")) {
         const parsed = await importJSON(file);
         if ("departments" in parsed) {
-          if (
-            !window.confirm(
-              "此 JSON 包含完整工作區資料，確定要取代目前的所有部門資料嗎？",
-            )
-          )
-            return;
-          const ws = parsed as WorkspaceData;
-          updateWorkspace(ws);
-          setActiveDeptId(ws.departments[0]?.id ?? "");
-          setActivePeriodId(ws.departments[0]?.periods[0]?.id ?? "");
+          alert(
+            "多檔模式不支援直接匯入完整工作區 JSON。\n請改用「開啟資料夾」逐一載入各部門檔案。",
+          );
+          return;
         } else {
           const ogsm = parsed as OGSMData;
           const halfYear: "H1" | "H2" = ogsm.period.includes("H2")
@@ -2288,19 +2694,7 @@ export default function App() {
             year,
             ogsm,
           };
-          const next = {
-            ...workspace,
-            departments: workspace.departments.map((d) =>
-              d.id !== activeDept?.id
-                ? d
-                : {
-                    ...d,
-                    periods: [...d.periods, period],
-                  },
-            ),
-          };
-          updateWorkspace(next);
-          setActivePeriodId(period.id);
+          importPeriodToActiveDept(period);
         }
       } else {
         const text = await readFileAsText(file);
@@ -2316,19 +2710,7 @@ export default function App() {
           year,
           ogsm,
         };
-        const next = {
-          ...workspace,
-          departments: workspace.departments.map((d) =>
-            d.id !== activeDept?.id
-              ? d
-              : {
-                  ...d,
-                  periods: [...d.periods, period],
-                },
-          ),
-        };
-        updateWorkspace(next);
-        setActivePeriodId(period.id);
+        importPeriodToActiveDept(period);
       }
       setSelectedGoalId(null);
       setSelectedStrategyId(null);
@@ -2340,163 +2722,403 @@ export default function App() {
     }
   };
 
+  // ─── 目標編輯器「目標設定」模式的內容（供 KpiDesigner settingContent 和一般 OGSM 路由共用）───
+  const ogsmSettingContent =
+    selectedGoalId === null ? (
+      <OverviewPage
+        data={data}
+        warnDaysBefore={workspace.warnDaysBefore ?? 7}
+        onSelectGoal={(id) => {
+          setSelectedGoalId(id);
+          setSelectedStrategyId(null);
+        }}
+        onSelectStrategy={(goalId, strategyId, warnFilter) => {
+          setSelectedGoalId(goalId);
+          setSelectedStrategyId(strategyId);
+          setPendingDetailNav(warnFilter ? { tab: "plans", warnFilter } : null);
+        }}
+        onSelectMeasure={(goalId, stratId, measureId) => {
+          setSelectedGoalId(goalId);
+          setSelectedStrategyId(stratId);
+          setPendingDetailNav({ tab: "plans", measureId });
+        }}
+        onEditObjective={handleEditObjective}
+        onAddGoal={handleAddGoal}
+        onGoToKpiDesigner={() => {
+          setShowKpiDesigner(true);
+          setKpiDesignerGoalId(null);
+          setShowHomePage(false);
+          setShowActivityPage(false);
+          setShowDeptSettings(false);
+          setShowTagManagement(false);
+        }}
+        isReadOnly={true}
+        deptActivities={effectiveDeptActivities}
+      />
+    ) : (
+      <>
+        <StrategyList
+          goal={selectedGoal}
+          allGoals={data.goals}
+          strategies={filteredStrategies}
+          selectedStrategyId={selectedStrategyId}
+          onSelectStrategy={(id, warnFilter) => {
+            setSelectedStrategyId(id);
+            setPendingDetailNav(
+              warnFilter ? { tab: "plans", warnFilter } : null,
+            );
+          }}
+          onAddStrategy={handleAddStrategy}
+          onUpdateGoal={handleUpdateGoal}
+          onDeleteGoal={handleDeleteGoal}
+          filterOwner={filterOwner}
+          onFilterOwner={setFilterOwner}
+          teams={deptScopedTeams}
+          warnDaysBefore={workspace.warnDaysBefore ?? 7}
+          isReadOnly={true}
+          deptActivities={effectiveDeptActivities}
+        />
+        {selectedStrategy && (
+          <DetailPanel
+            key={
+              selectedStrategy.id +
+              (pendingDetailNav?.warnFilter ?? "") +
+              (pendingDetailNav?.measureId ?? "")
+            }
+            strategy={selectedStrategy}
+            onClose={() => {
+              setSelectedStrategyId(null);
+              setExpandedDetailActivityId(null);
+            }}
+            onUpdate={handleUpdateStrategy}
+            onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
+            teams={deptScopedTeams}
+            warnDaysBefore={workspace.warnDaysBefore ?? 7}
+            onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
+            initialTab={pendingDetailNav?.tab}
+            initialWarnFilter={pendingDetailNav?.warnFilter}
+            initialMeasureId={pendingDetailNav?.measureId}
+            isReadOnly={true}
+            linkedDeptActivities={linkedDeptActivities}
+            onToggleExcludeFromOgsm={(actId, exc, stratId) =>
+              handleToggleExcludeFromOgsm(activeDeptId, actId, exc, stratId)
+            }
+            onNavigateToActivityPage={() => {
+              setShowActivityPage(true);
+              setShowDeptSettings(false);
+              setShowTagManagement(false);
+              setShowHomePage(false);
+            }}
+            expandedActivityId={expandedDetailActivityId}
+            onExpandedActivityChange={setExpandedDetailActivityId}
+            onOpenActivityDetail={(actId) => {
+              setPendingActivityDetailId(actId);
+              setShowActivityPage(true);
+              setShowDeptSettings(false);
+              setShowTagManagement(false);
+              setShowHomePage(false);
+            }}
+          />
+        )}
+      </>
+    );
+
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-brand">
-          <span className="header-logo">○</span>
-          <span className="header-title">OGSM Power Tool</span>
-          <span className="header-period">
-            {activeDept?.name ?? ""} · {data.period}
-          </span>
-        </div>
-        {fsSupported && !isMultiFileMode && (
-          <div
-            className={`sp-sync-badge sp-sync-${syncStatus}`}
-            onClick={syncStatus === "pending" ? handleReauthorize : undefined}
-            style={syncStatus === "pending" ? { cursor: "pointer" } : undefined}
-            title={
-              syncStatus === "pending" ? "點此授權讀取資料檔案" : undefined
-            }
-          >
-            {syncStatus === "saving" && (
-              <>
-                <span className="sp-spin">⟳</span> 儲存中
-              </>
+        <div className="header-left">
+          <div className="header-menu-wrap" ref={menuRef}>
+            <Tooltip content="主選單" side="bottom">
+              <button
+                className="header-menu-btn"
+                title="主選單"
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                ☰
+              </button>
+            </Tooltip>
+            {menuOpen && (
+              <div className="header-menu-dropdown">
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    tryCloseKpiDesigner(() => {
+                      setShowHomePage(true);
+                      setShowActivityPage(false);
+                      setShowDeptSettings(false);
+                      setShowTagManagement(false);
+                    });
+                    setMenuOpen(false);
+                  }}
+                >
+                  🏠 首頁
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    tryCloseKpiDesigner(() => {
+                      setShowActivityPage(true);
+                      setShowHomePage(false);
+                      setShowDeptSettings(false);
+                      setShowTagManagement(false);
+                    });
+                    setMenuOpen(false);
+                  }}
+                >
+                  📋 活動總覽
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    tryCloseKpiDesigner(() => {
+                      setShowHomePage(false);
+                      setShowActivityPage(false);
+                      setShowDeptSettings(false);
+                      setShowTagManagement(false);
+                    });
+                    setMenuOpen(false);
+                  }}
+                >
+                  📊 OGSM 儀表板
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    tryCloseKpiDesigner(() => {
+                      setShowDeptSettings(true);
+                      setShowHomePage(false);
+                      setShowActivityPage(false);
+                      setShowTagManagement(false);
+                      setSelectedGoalId(null);
+                      setSelectedStrategyId(null);
+                    });
+                    setMenuOpen(false);
+                  }}
+                >
+                  ⚙️ 部門設定
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    tryCloseKpiDesigner(() => {
+                      setShowTagManagement(true);
+                      setShowDeptSettings(false);
+                      setShowHomePage(false);
+                      setShowActivityPage(false);
+                      setSelectedGoalId(null);
+                      setSelectedStrategyId(null);
+                    });
+                    setMenuOpen(false);
+                  }}
+                >
+                  🏷️ 標籤管理
+                </button>
+                <button
+                  className="header-menu-item"
+                  onClick={() => {
+                    setShowKpiDesigner(true);
+                    setKpiDesignerGoalId(null);
+                    setShowHomePage(false);
+                    setShowActivityPage(false);
+                    setShowDeptSettings(false);
+                    setShowTagManagement(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  🎯 目標編輯器
+                </button>
+              </div>
             )}
-            {syncStatus === "saved" && "✓ 已儲存"}
-            {syncStatus === "unlinked" && "◌ 未連結"}
-            {syncStatus === "pending" && "🔐 點任意處啟用同步"}
-            {syncStatus === "error" && "✕ 寫入失敗"}
           </div>
-        )}
-        <div className="header-actions">
-          {isActiveDeptReadOnly && (
-            <span
-              className="readonly-badge"
-              title="此部門為唯讀（OneDrive 權限不足）"
+          <span className="header-logo">A</span>
+          <span className="header-title">Activo</span>
+          <nav className="header-nav-tabs" data-tour="nav-tabs">
+            <button
+              className={`header-nav-tab${showHomePage ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowHomePage(true);
+                  setShowActivityPage(false);
+                  setShowDeptSettings(false);
+                  setShowTagManagement(false);
+                })
+              }
             >
-              👁 檢視模式
-            </span>
-          )}
-          {isMultiFileMode ? (
-            <>
+              首頁
+            </button>
+            <button
+              className={`header-nav-tab${showActivityPage ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowActivityPage(true);
+                  setShowHomePage(false);
+                  setShowDeptSettings(false);
+                  setShowTagManagement(false);
+                })
+              }
+            >
+              活動總覽
+            </button>
+            <button
+              className={`header-nav-tab${showKpiDesigner ? " active" : ""}`}
+              onClick={() => {
+                setShowKpiDesigner(true);
+                setKpiDesignerGoalId(null);
+                setShowHomePage(false);
+                setShowActivityPage(false);
+                setShowDeptSettings(false);
+                setShowTagManagement(false);
+              }}
+            >
+              目標編輯器
+            </button>
+            <button
+              className={`header-nav-tab${
+                !showHomePage &&
+                !showActivityPage &&
+                !showDeptSettings &&
+                !showTagManagement &&
+                !showKpiDesigner
+                  ? " active"
+                  : ""
+              }`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setShowDeptSettings(false);
+                  setShowTagManagement(false);
+                })
+              }
+            >
+              OGSM
+            </button>
+            <button
+              className={`header-nav-tab${showDeptSettings ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowDeptSettings(true);
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setShowTagManagement(false);
+                  setSelectedGoalId(null);
+                  setSelectedStrategyId(null);
+                })
+              }
+            >
+              部門設定
+            </button>
+            <button
+              className={`header-nav-tab${showTagManagement ? " active" : ""}`}
+              onClick={() =>
+                tryCloseKpiDesigner(() => {
+                  setShowTagManagement(true);
+                  setShowDeptSettings(false);
+                  setShowHomePage(false);
+                  setShowActivityPage(false);
+                  setSelectedGoalId(null);
+                  setSelectedStrategyId(null);
+                })
+              }
+            >
+              標籤管理
+            </button>
+          </nav>
+        </div>
+
+        <div className="header-toolbar" data-tour="header-toolbar">
+          <select
+            className="header-dept-select"
+            data-tour="dept-select"
+            value={activeDeptId}
+            onChange={(e) => handleSwitchDept(e.target.value)}
+          >
+            {effectiveWorkspace.departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <div className="header-section-sep" />
+
+          {isMultiFileMode && (
+            <div className="header-sync-group" data-tour="sync-mechanism">
+              <span
+                className={`sp-sync-badge ${activeDeptSyncBadge.className}`}
+              >
+                {activeDeptSyncBadge.label}
+              </span>
               <button
                 className={
-                  deptFiles.some((f) => f.isDirty && !f.isReadOnly)
+                  canSaveCurrentDept
                     ? "btn-save-dirty"
-                    : "btn-secondary"
+                    : "btn-secondary btn-disabled"
                 }
-                onClick={() => saveDeptFile(activeDeptId)}
-                disabled={
-                  isActiveDeptReadOnly ||
-                  !(
-                    deptFiles.find(
-                      (f) => f.workspace.departments[0]?.id === activeDeptId,
-                    )?.isDirty ?? false
-                  )
-                }
+                data-tour="save-dirty"
+                onClick={handleSaveCurrentDept}
+                disabled={!canSaveCurrentDept}
                 title={
-                  isActiveDeptReadOnly ? "唯讀部門無法存檔" : "儲存目前部門"
+                  isActiveDeptReadOnly
+                    ? "目前部門為唯讀，無法存檔"
+                    : canSaveCurrentDept
+                      ? "儲存目前部門"
+                      : "目前部門沒有待儲存變更"
                 }
               >
-                {isActiveDeptReadOnly
-                  ? "👁 唯讀"
-                  : deptFiles.find(
-                        (f) => f.workspace.departments[0]?.id === activeDeptId,
-                      )?.isDirty
-                    ? "💾 存檔"
-                    : "✓ 已儲存"}
+                儲存目前部門
               </button>
               <button
                 className="btn-secondary"
+                data-tour="save-all-dirty"
+                onClick={handleSaveAllDirty}
+                disabled={!canSaveAnyDept}
+                title={
+                  canSaveAnyDept
+                    ? `依序儲存 ${dirtyDeptCount} 個尚未儲存的部門`
+                    : "目前沒有可儲存的部門"
+                }
+              >
+                儲存全部部門
+                {dirtyDeptCount > 0 ? ` (${dirtyDeptCount})` : ""}
+              </button>
+            </div>
+          )}
+
+          {fsSupported &&
+            (isMultiFileMode ? (
+              <button
+                className="btn-secondary"
+                data-tour="link-folder"
                 onClick={handleUnlinkRootFolder}
                 title="中斷根資料夾連結"
               >
-                🗂 {deptFiles.length} 個部門已連結
+                🗂 {deptFiles.length} 個部門
               </button>
+            ) : (
               <button
                 className="btn-secondary"
-                onClick={() =>
-                  rootDirHandleRef.current &&
-                  loadRootFolderIntoState(rootDirHandleRef.current)
-                }
-                title="重新掃描根資料夾"
+                data-tour="link-folder"
+                onClick={handleLinkRootFolder}
+                title="選擇 OGSM 根資料夾，自動載入每個子資料夾的部門 JSON"
               >
-                🔄 重新載入
+                🗂 連結根目錄
               </button>
-            </>
-          ) : (
-            fsSupported &&
-            (fileHandleRef.current ? (
-              <>
-                <button
-                  className={isDirty ? "btn-save-dirty" : "btn-secondary"}
-                  onClick={() => fileSaveNow(workspace)}
-                  disabled={syncStatus === "saving" || !isDirty}
-                  title={
-                    isDirty ? "有未儲存的變更，點擊儲檔" : "無變更需要儲存"
-                  }
-                >
-                  {syncStatus === "saving"
-                    ? "儲存中…"
-                    : isDirty
-                      ? "💾 存檔"
-                      : "✓ 已儲存"}
-                </button>
-                <button className="btn-secondary" onClick={handleUnlinkFile}>
-                  🔗 已連結檔案
-                </button>
-                {dirHandleRef.current ? (
-                  <button
-                    className="btn-secondary"
-                    onClick={handleUnlinkFolder}
-                    title="進行中：每 30 秒自動扫描 OneDrive 副本"
-                  >
-                    🔍 副本掃描中
-                  </button>
-                ) : (
-                  <button
-                    className="btn-secondary"
-                    onClick={handleLinkFolder}
-                    title="選擇資料檔剀在的資料夾，啟用 OneDrive 副本自動偵測"
-                  >
-                    🔍 啟用副本偵測
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                <button
-                  className="btn-secondary"
-                  onClick={handleLinkRootFolder}
-                  title="選擇 OGSM 根資料夾，自動載入每個子資料夾的部門 JSON"
-                >
-                  🗂 連結根資料夾
-                </button>
-              </>
-            ))
-          )}
+            ))}
+
           <button
             className="btn-secondary"
-            onClick={() => exportWorkspaceJSON(effectiveWorkspace)}
+            data-tour="backup-btn"
+            onClick={() => void handleBackup()}
           >
             💾 備份
           </button>
-          {!isMultiFileMode && effectiveWorkspace.departments.length > 1 && (
-            <button
-              className="btn-secondary"
-              onClick={handleSplitDepts}
-              title="將每個部門拆分為獨立 JSON 檔案下載（多部門分檔模式前置作業）"
-            >
-              📤 拆分部門
-            </button>
-          )}
+
           <label
             className="btn-secondary"
+            data-tour="restore-btn"
             style={{ cursor: importing ? "wait" : "pointer" }}
           >
-            {importing ? "匯入中…" : "📂 還原/匯入"}
+            {importing ? "匯入中…" : "📂 還原"}
             <input
               type="file"
               accept=".csv,.json"
@@ -2504,151 +3126,17 @@ export default function App() {
               onChange={handleImport}
             />
           </label>
-          <button
-            className={`btn-secondary${showDeptSettings ? " active" : ""}`}
-            onClick={() => {
-              setShowDeptSettings((v) => !v);
-              setSelectedGoalId(null);
-              setSelectedStrategyId(null);
-            }}
-          >
-            ⚙️ 部門設定
-          </button>
         </div>
       </header>
-
-      {syncStatus === "error" && syncError && (
-        <div className="sp-error-banner">⚠️ {syncError}</div>
-      )}
-      {remoteUpdateBanner && (
-        <div className="remote-update-banner">
-          <span>⚡ 偵測到共用檔案已被他人更新</span>
-          <div className="remote-update-actions">
-            {isDirty && (
-              <button
-                className="btn-secondary remote-update-btn"
-                onClick={handleRemoteSaveAndRefresh}
-              >
-                先存檔再重新整理
-              </button>
-            )}
-            <button
-              className="btn-secondary remote-update-btn"
-              onClick={handleRemoteRefresh}
-            >
-              {isDirty ? "捨棄變更並重新整理" : "重新整理"}
-            </button>
-            <button
-              className="remote-update-dismiss"
-              onClick={() => {
-                // 將基準推進到現在，避免下次輪詢重複顯示同一個更新
-                readDataFileMeta(fileHandleRef.current!).then((t) => {
-                  loadedFileLastModifiedRef.current = t;
-                });
-                setRemoteUpdateBanner(false);
-              }}
-            >
-              稍後處理
-            </button>
-          </div>
-        </div>
-      )}
-      {mergeToast && <div className="merge-toast">🔀 {mergeToast}</div>}
-
-      {conflictCopies.length > 0 && (
-        <div className="copy-scan-banner">
-          <span className="copy-scan-title">
-            📂 偵測到 {conflictCopies.length} 個 OneDrive 衝突副本
-          </span>
-          <div className="copy-scan-list">
-            {conflictCopies.map((copy) => (
-              <div key={copy.name} className="copy-scan-item">
-                <span className="copy-scan-name" title={copy.name}>
-                  {copy.name}
-                </span>
-                <button
-                  className="btn-secondary copy-scan-btn"
-                  onClick={() => handleMergeCopy(copy)}
-                >
-                  合併此副本
-                </button>
-                <button
-                  className="remote-update-dismiss"
-                  onClick={() => handleDismissCopy(copy.name)}
-                >
-                  忽略
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {conflictEntries.length > 0 && (
-        <ConflictModal
-          conflicts={conflictEntries}
-          resolutions={conflictResolutions}
-          onChange={handleConflictChange}
-          onConfirm={handleConflictConfirm}
-          onCancel={handleConflictCancel}
-        />
-      )}
 
       {/* Multi-file mode: dept merge toast */}
       {isMultiFileMode && deptMergeToast && (
         <div className="merge-toast">🔀 {deptMergeToast}</div>
       )}
 
-      {/* Multi-file mode: remote update banners */}
-      {isMultiFileMode && deptFiles.some((f) => f.hasRemoteUpdate) && (
-        <div className="remote-update-banner">
-          {deptFiles
-            .filter((f) => f.hasRemoteUpdate)
-            .map((f) => {
-              const deptId = f.workspace.departments[0]?.id;
-              return (
-                <div
-                  key={f.subfolderName}
-                  className="remote-update-actions"
-                  style={{ marginBottom: 4 }}
-                >
-                  <span>⚡ 「{f.subfolderName}」有遠端更新</span>
-                  {f.isDirty && (
-                    <button
-                      className="btn-secondary remote-update-btn"
-                      onClick={() =>
-                        deptId &&
-                        saveDeptFile(deptId).then(() =>
-                          handleDeptRemoteRefresh(deptId, false),
-                        )
-                      }
-                    >
-                      先存檔再重新整理
-                    </button>
-                  )}
-                  <button
-                    className="btn-secondary remote-update-btn"
-                    onClick={() => deptId && handleDeptRemoteRefresh(deptId)}
-                  >
-                    {f.isDirty ? "捨棄變更並重新整理" : "重新整理"}
-                  </button>
-                  <button
-                    className="remote-update-dismiss"
-                    onClick={() =>
-                      setDeptFiles((prev) =>
-                        prev.map((d) =>
-                          d.subfolderName === f.subfolderName
-                            ? { ...d, hasRemoteUpdate: false }
-                            : d,
-                        ),
-                      )
-                    }
-                  >
-                    稍後處理
-                  </button>
-                </div>
-              );
-            })}
+      {isMultiFileMode && deptSaveToast && (
+        <div className={`inline-toast inline-toast-${deptSaveToast.tone}`}>
+          {deptSaveToast.message}
         </div>
       )}
 
@@ -2705,52 +3193,117 @@ export default function App() {
       )}
 
       <div className="app-body">
-        <Sidebar
-          workspace={effectiveWorkspace}
-          activeDeptId={activeDept?.id ?? ""}
-          activePeriodId={activePeriod?.id ?? ""}
-          data={data}
-          selectedGoalId={selectedGoalId}
-          selectedStrategyId={selectedStrategyId}
-          isActivityPage={showActivityPage}
-          readOnlyDeptIds={
-            isMultiFileMode
-              ? (deptFiles
-                  .filter((f) => f.isReadOnly)
-                  .map((f) => f.workspace.departments[0]?.id)
-                  .filter(Boolean) as string[])
-              : undefined
-          }
-          onSwitchDept={handleSwitchDept}
-          onAddDept={handleAddDept}
-          showAddDeptButton={!isMultiFileMode || isAdmin}
-          onRenameDept={handleRenameDept}
-          onDeleteDept={handleDeleteDept}
-          onSwitchPeriod={handleSwitchPeriod}
-          onAddPeriod={handleAddPeriod}
-          onCopyPeriod={handleCopyPeriod}
-          onDeletePeriod={handleDeletePeriod}
-          onSelectGoal={(id) => {
-            setSelectedGoalId(id);
-            setSelectedStrategyId(null);
-            setShowDeptSettings(false);
-            setShowActivityPage(false);
-          }}
-          onSelectStrategy={setSelectedStrategyId}
-          onSelectOverview={() => {
-            setSelectedGoalId(null);
-            setSelectedStrategyId(null);
-            setShowDeptSettings(false);
-            setShowActivityPage(false);
-          }}
-          onSelectActivities={() => {
-            setShowActivityPage(true);
-            setShowDeptSettings(false);
-            setSelectedGoalId(null);
-            setSelectedStrategyId(null);
-          }}
-        />
-        {showDeptSettings ? (
+        {!showHomePage &&
+          !showActivityPage &&
+          !showDeptSettings &&
+          !showTagManagement &&
+          !showKpiDesigner && (
+            <Sidebar
+              workspace={effectiveWorkspace}
+              activeDeptId={activeDept?.id ?? ""}
+              activePeriodId={activePeriod?.id ?? ""}
+              data={data}
+              selectedGoalId={selectedGoalId}
+              selectedStrategyId={selectedStrategyId}
+              onSwitchPeriod={handleSwitchPeriod}
+              onSelectGoal={(id) => {
+                setSelectedGoalId(id);
+                setSelectedStrategyId(null);
+                setShowDeptSettings(false);
+                setShowActivityPage(false);
+                setShowHomePage(false);
+                setShowTagManagement(false);
+              }}
+              onSelectStrategy={setSelectedStrategyId}
+              onSelectOverview={() => {
+                setSelectedGoalId(null);
+                setSelectedStrategyId(null);
+                setShowDeptSettings(false);
+                setShowActivityPage(false);
+                setShowHomePage(false);
+                setShowTagManagement(false);
+              }}
+            />
+          )}
+        {showKpiDesigner ? (
+          <KpiDesigner
+            data={data}
+            deptActivities={effectiveDeptActivities}
+            availablePeriods={activeDept?.periods ?? []}
+            initialGoalId={kpiDesignerGoalId ?? undefined}
+            isReadOnly={isActiveDeptReadOnly}
+            periodId={activePeriodId}
+            onSwitchPeriod={handleSwitchPeriod}
+            onUpdateData={updateData}
+            onDraftStateChange={(hasDraft) => {
+              kpiDesignerHasDraft.current = hasDraft;
+            }}
+            onUpdateActivity={(act) =>
+              handleUpdateDeptActivity(activeDeptId, act)
+            }
+            onAddGoal={handleAddGoal}
+            onDeleteGoal={handleDeleteGoal}
+            onAddStrategyToGoal={handleAddStrategyToGoal}
+            onDeleteStrategy={handleDeleteStrategyById}
+            onAddPeriod={(halfYear, year) =>
+              handleAddPeriod(activeDeptId, halfYear, year)
+            }
+            onCopyPeriod={(srcId, halfYear, year) =>
+              handleCopyPeriod(activeDeptId, srcId, halfYear, year)
+            }
+            onDeletePeriod={(pid) => handleDeletePeriod(activeDeptId, pid)}
+          />
+        ) : showHomePage ? (
+          <HomePage
+            onSwitchToActivities={() => {
+              setShowActivityPage(true);
+              setShowHomePage(false);
+              setShowDeptSettings(false);
+              setShowTagManagement(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+            onSwitchToOgsm={() => {
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setShowDeptSettings(false);
+              setShowTagManagement(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+            onSwitchToKpiDesigner={() => {
+              setShowKpiDesigner(true);
+              setKpiDesignerGoalId(null);
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setShowDeptSettings(false);
+              setShowTagManagement(false);
+            }}
+            onSwitchToDeptSettings={() => {
+              setShowDeptSettings(true);
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setShowTagManagement(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+            onSwitchToTagManagement={() => {
+              setShowTagManagement(true);
+              setShowDeptSettings(false);
+              setShowHomePage(false);
+              setShowActivityPage(false);
+              setSelectedGoalId(null);
+              setSelectedStrategyId(null);
+            }}
+          />
+        ) : showTagManagement ? (
+          <TagManagementPage
+            key={`${activeDeptId}:tag-management`}
+            tagDictionary={effectiveWorkspace.tagDictionary ?? []}
+            isReadOnly={false}
+            onUpdateTagDictionary={handleUpdateTagDictionary}
+          />
+        ) : showDeptSettings ? (
           <DeptSettingsPage
             key={activeDeptId}
             data={data}
@@ -2762,88 +3315,32 @@ export default function App() {
         ) : showActivityPage ? (
           <ActivityPage
             workspace={effectiveWorkspace}
+            activeDeptId={activeDeptId}
+            view={activityPageView}
+            ganttSubView={activityGanttSubView}
+            onViewChange={setActivityPageView}
+            onGanttSubViewChange={setActivityGanttSubView}
             readOnlyDeptIds={
               isMultiFileMode
-                ? (deptFiles
+                ? deptFiles
                     .filter((f) => f.isReadOnly)
                     .map((f) => f.workspace.departments[0]?.id)
-                    .filter(Boolean) as string[])
+                    .filter((id): id is string => Boolean(id))
                 : undefined
             }
-            onUpdateMeasure={handleUpdateMeasureDirect}
-            onDeleteMeasure={handleDeleteMeasureDirect}
-            onAddMeasure={handleAddMeasureDirect}
-            onJumpToMeasure={handleJumpToMeasure}
-          />
-        ) : selectedGoalId === null ? (
-          <OverviewPage
-            data={data}
-            warnDaysBefore={workspace.warnDaysBefore ?? 7}
-            onSelectGoal={(id) => {
-              setSelectedGoalId(id);
-              setSelectedStrategyId(null);
-            }}
-            onSelectStrategy={(goalId, strategyId, warnFilter) => {
-              setSelectedGoalId(goalId);
-              setSelectedStrategyId(strategyId);
-              setPendingDetailNav(
-                warnFilter ? { tab: "plans", warnFilter } : null,
-              );
-            }}
-            onSelectMeasure={(goalId, stratId, measureId) => {
-              setSelectedGoalId(goalId);
-              setSelectedStrategyId(stratId);
-              setPendingDetailNav({ tab: "plans", measureId });
-            }}
-            onEditObjective={handleEditObjective}
-            onAddGoal={handleAddGoal}
-            isReadOnly={isActiveDeptReadOnly}
+            onUpdateActivity={handleUpdateDeptActivity}
+            onDeleteActivity={handleDeleteDeptActivity}
+            onAddActivity={handleAddDeptActivity}
+            onJumpToActivity={handleJumpToActivity}
+            onJumpToOgsm={handleJumpToOgsmFromActivity}
+            initialSelectedActivityId={pendingActivityDetailId}
+            onSelectedActivityIdChange={setPendingActivityDetailId}
           />
         ) : (
-          <>
-            <StrategyList
-              goal={selectedGoal}
-              strategies={filteredStrategies}
-              selectedStrategyId={selectedStrategyId}
-              onSelectStrategy={(id, warnFilter) => {
-                setSelectedStrategyId(id);
-                setPendingDetailNav(
-                  warnFilter ? { tab: "plans", warnFilter } : null,
-                );
-              }}
-              onAddStrategy={handleAddStrategy}
-              onUpdateGoal={handleUpdateGoal}
-              onDeleteGoal={handleDeleteGoal}
-              filterOwner={filterOwner}
-              onFilterOwner={setFilterOwner}
-              teams={teams}
-              warnDaysBefore={workspace.warnDaysBefore ?? 7}
-              isReadOnly={isActiveDeptReadOnly}
-            />
-            {selectedStrategy && (
-              <DetailPanel
-                key={
-                  selectedStrategy.id +
-                  (pendingDetailNav?.warnFilter ?? "") +
-                  (pendingDetailNav?.measureId ?? "")
-                }
-                strategy={selectedStrategy}
-                onClose={() => setSelectedStrategyId(null)}
-                onUpdate={handleUpdateStrategy}
-                onDelete={() => handleDeleteStrategy(selectedStrategy.id)}
-                teams={teams}
-                allMembers={allMembers}
-                warnDaysBefore={workspace.warnDaysBefore ?? 7}
-                onUpdateWarnDaysBefore={handleUpdateWarnDaysBefore}
-                initialTab={pendingDetailNav?.tab}
-                initialWarnFilter={pendingDetailNav?.warnFilter}
-                initialMeasureId={pendingDetailNav?.measureId}
-                isReadOnly={isActiveDeptReadOnly}
-              />
-            )}
-          </>
+          ogsmSettingContent
         )}
       </div>
+      <TourOverlay />
     </div>
   );
 }

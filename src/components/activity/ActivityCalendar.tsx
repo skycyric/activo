@@ -1,167 +1,293 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ActivityWithContext } from "../ActivityPage";
 
 interface Props {
   activities: ActivityWithContext[];
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  "not-started": "#cbd5e1",
-  attention: "#fde68a",
-  "in-progress": "#93c5fd",
-  completed: "#86efac",
-};
+interface CalEntry {
+  date: string; // YYYY-MM-DD
+  activityId: string;
+  deptId: string;
+  activityName: string;
+  description: string;
+  completed: boolean;
+  activityStatus: string;
+  source: "activity" | "plan";
+  isEventStart: boolean;
+  isEventEnd: boolean;
+}
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
-function ymd(y: number, m: number, d: number): string {
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
+const STATUS_DOT: Record<string, string> = {
+  "not-started": "#94a3b8",
+  attention: "#f59e0b",
+  "in-progress": "#3b82f6",
+  completed: "#22c55e",
+};
 
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-/** First weekday (0=Sun) of given year/month */
-function firstWeekday(year: number, month: number): number {
-  return new Date(year, month - 1, 1).getDay();
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
 }
 
 export default function ActivityCalendar({
   activities,
-  onJumpToMeasure,
+  onJumpToActivity,
 }: Props) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1); // 1-based
+  const [month, setMonth] = useState(today.getMonth()); // 0-indexed
 
-  const prevMonth = () => {
-    if (month === 1) {
-      setYear((y) => y - 1);
-      setMonth(12);
-    } else setMonth((m) => m - 1);
+  // Collect calendar entries from both plan items and activity date range.
+  const entries = useMemo<CalEntry[]>(() => {
+    const result: CalEntry[] = [];
+    for (const act of activities) {
+      if (act.showActivityInCalendar && act.startDate) {
+        const startStr = act.startDate;
+        const endStr = act.endDate ?? act.startDate;
+        const start = new Date(startStr + "T00:00:00");
+        const end = new Date(endStr + "T00:00:00");
+        const cap = new Date(start.getTime() + 365 * 86400000);
+        const safeEnd = end > cap ? cap : end;
+        const cur = new Date(start);
+        while (cur <= safeEnd) {
+          const dateStr = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+          result.push({
+            activityId: act.id,
+            deptId: act.deptId,
+            activityName: act.rawText,
+            description: act.description ?? "",
+            completed: act.status === "completed",
+            activityStatus: act.status ?? "not-started",
+            source: "activity",
+            date: dateStr,
+            isEventStart: dateStr === startStr,
+            isEventEnd: dateStr === endStr,
+          });
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+
+      for (const item of act.planItems ?? []) {
+        const base = {
+          activityId: act.id,
+          deptId: act.deptId,
+          activityName: act.rawText,
+          description: item.description,
+          completed: item.completed,
+          activityStatus: act.status ?? "not-started",
+          source: "plan" as const,
+        };
+
+        // event-range entries (one per day from eventStartDate to eventEndDate)
+        if (item.showInCalendar && item.eventStartDate) {
+          const startStr = item.eventStartDate;
+          const endStr = item.eventEndDate ?? item.eventStartDate;
+          const start = new Date(startStr + "T00:00:00");
+          const end = new Date(endStr + "T00:00:00");
+          // safety cap: max 180-day range
+          const cap = new Date(start.getTime() + 180 * 86400000);
+          const safeEnd = end > cap ? cap : end;
+          const cur = new Date(start);
+          while (cur <= safeEnd) {
+            const dateStr = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+            result.push({
+              ...base,
+              date: dateStr,
+              isEventStart: dateStr === startStr,
+              isEventEnd: dateStr === endStr,
+            });
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+      }
+    }
+    result.sort((a, b) => a.date.localeCompare(b.date));
+    return result;
+  }, [activities]);
+
+  // Group by date string
+  const byDate = useMemo(() => {
+    const m = new Map<string, CalEntry[]>();
+    for (const e of entries) {
+      const list = m.get(e.date) ?? [];
+      list.push(e);
+      m.set(e.date, list);
+    }
+    return m;
+  }, [entries]);
+
+  const goMonth = (delta: number) => {
+    const d = new Date(year, month + delta, 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth());
   };
-  const nextMonth = () => {
-    if (month === 12) {
-      setYear((y) => y + 1);
-      setMonth(1);
-    } else setMonth((m) => m + 1);
-  };
 
-  const days = daysInMonth(year, month);
-  const offset = firstWeekday(year, month); // cells before day 1
+  const monthPrefix = `${pad2(year)}-${pad2(month + 1)}`;
+  const todayStr = `${pad2(today.getFullYear())}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthLabel = `${year} 年 ${month + 1} 月`;
 
-  const todayStr = ymd(
-    today.getFullYear(),
-    today.getMonth() + 1,
-    today.getDate(),
-  );
-
-  // Activities visible in this month: must overlap [month start, month end]
-  const monthStart = ymd(year, month, 1);
-  const monthEnd = ymd(year, month, days);
-
-  const visible = useMemo(
-    () =>
-      activities.filter(
-        (a) =>
-          a.startDate &&
-          a.endDate &&
-          a.startDate <= monthEnd &&
-          a.endDate >= monthStart,
-      ),
-    [activities, monthStart, monthEnd],
-  );
-
-  // For each day, get activities overlapping that day (max 3 shown)
-  const MAX_PER_DAY = 3;
-
-  const getActivitiesForDay = (dateStr: string) =>
-    visible.filter((a) => a.startDate! <= dateStr && a.endDate! >= dateStr);
-
-  // Build grid cells
-  const totalCells = Math.ceil((offset + days) / 7) * 7;
+  const thisMonthCount = entries.filter((e) =>
+    e.date.startsWith(monthPrefix),
+  ).length;
 
   return (
-    <div className="cal-outer">
-      {/* Header */}
-      <div className="cal-header">
-        <button className="cal-nav-btn" onClick={prevMonth}>
+    <div className="act-cal-outer">
+      {/* Nav bar */}
+      <div className="act-cal-nav">
+        <button className="act-cal-nav-btn" onClick={() => goMonth(-1)}>
           ◀
         </button>
-        <span className="cal-month-label">
-          {year} 年 {month} 月
-        </span>
-        <button className="cal-nav-btn" onClick={nextMonth}>
+        <span className="act-cal-month-label">{monthLabel}</span>
+        <button className="act-cal-nav-btn" onClick={() => goMonth(1)}>
           ▶
         </button>
-        <span className="cal-activity-count">
-          {visible.length} 個活動在本月
+        <button
+          className="act-cal-nav-btn act-cal-today-btn"
+          onClick={() => {
+            setYear(today.getFullYear());
+            setMonth(today.getMonth());
+          }}
+        >
+          今天
+        </button>
+        <span className="act-cal-count">
+          {thisMonthCount > 0 ? `本月 ${thisMonthCount} 個日程` : "本月無日程"}
         </span>
+        {entries.length === 0 && (
+          <span className="act-cal-hint">
+            尚無項目。可在活動基本資料勾選「📅
+            活動期間」，或在行動計畫設定執行期間後勾選「📅 月曆」。
+          </span>
+        )}
       </div>
 
-      {/* Weekday headers */}
-      <div className="cal-grid">
-        {WEEKDAYS.map((w, i) => (
-          <div key={i} className="cal-wd-hdr">
-            {w}
-          </div>
-        ))}
+      {/* Month grid */}
+      <div className="act-cal-grid-wrap">
+        {/* Weekday header */}
+        <div className="act-cal-week-header">
+          {WEEKDAYS.map((d) => (
+            <div
+              key={d}
+              className={`act-cal-weekday${d === "日" || d === "六" ? " weekend" : ""}`}
+            >
+              {d}
+            </div>
+          ))}
+        </div>
 
         {/* Day cells */}
-        {Array.from({ length: totalCells }).map((_, cellIdx) => {
-          const dayNum = cellIdx - offset + 1;
-          const isInMonth = dayNum >= 1 && dayNum <= days;
-          if (!isInMonth)
-            return <div key={cellIdx} className="cal-cell cal-cell-out" />;
+        <div className="act-cal-grid">
+          {/* leading empty cells */}
+          {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+            <div key={`e${i}`} className="act-cal-cell act-cal-cell-empty" />
+          ))}
 
-          const dateStr = ymd(year, month, dayNum);
-          const isToday = dateStr === todayStr;
-          const dayActs = getActivitiesForDay(dateStr);
-          const overflow = dayActs.length - MAX_PER_DAY;
-
-          return (
-            <div
-              key={cellIdx}
-              className={`cal-cell${isToday ? " cal-today" : ""}`}
-            >
-              <span className="cal-day-num">{dayNum}</span>
-              <div className="cal-day-acts">
-                {dayActs.slice(0, MAX_PER_DAY).map((act) => (
-                  <button
-                    key={act.id}
-                    className="cal-act-strip"
-                    style={{
-                      background: STATUS_COLOR[act.status ?? "not-started"],
-                    }}
-                    title={`${act.rawText}\n${act.startDate} → ${act.endDate}`}
-                    onClick={() =>
-                      onJumpToMeasure(
-                        act.deptId,
-                        act.periodId,
-                        act.goalId,
-                        act.strategyId,
-                        act.id,
-                      )
-                    }
-                  >
-                    {act.rawText}
-                  </button>
-                ))}
-                {overflow > 0 && (
-                  <span className="cal-act-more">+{overflow} 更多</span>
-                )}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const day = i + 1;
+            const dateStr = `${monthPrefix}-${pad2(day)}`;
+            const items = byDate.get(dateStr) ?? [];
+            const isToday = dateStr === todayStr;
+            const isWeekend = [0, 6].includes(
+              new Date(year, month, day).getDay(),
+            );
+            return (
+              <div
+                key={dateStr}
+                className={[
+                  "act-cal-cell",
+                  isToday ? "act-cal-today" : "",
+                  isWeekend ? "act-cal-weekend" : "",
+                  items.length > 0 ? "act-cal-has-items" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <span className={`act-cal-day-num${isToday ? " today" : ""}`}>
+                  {day}
+                </span>
+                <div className="act-cal-items">
+                  {items.map((entry, idx) => {
+                    const dotColor = entry.completed
+                      ? STATUS_DOT.completed
+                      : (STATUS_DOT[entry.activityStatus] ??
+                        STATUS_DOT["not-started"]);
+                    const eventMark = entry.isEventStart
+                      ? "▶"
+                      : entry.isEventEnd
+                        ? "◼"
+                        : "─";
+                    const sourceLabel =
+                      entry.source === "activity" ? "活動期間" : "執行期間";
+                    return (
+                      <button
+                        key={`${entry.activityId}-${dateStr}-${idx}`}
+                        className={[
+                          "act-cal-item",
+                          "act-cal-item-event",
+                          entry.completed ? "done" : "",
+                          entry.isEventStart ? "event-start" : "",
+                          entry.isEventEnd ? "event-end" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() =>
+                          onJumpToActivity(entry.deptId, entry.activityId)
+                        }
+                        title={`${entry.activityName}：${entry.description || "（無說明）"}（${sourceLabel}${entry.isEventStart ? "開始" : entry.isEventEnd ? "結束" : "中"}）`}
+                      >
+                        <span
+                          className="act-cal-dot"
+                          style={{ background: dotColor }}
+                        />
+                        <span className="act-cal-item-body">
+                          <span className="act-cal-event-mark">
+                            {eventMark}
+                          </span>
+                          <span className="act-cal-act-name">
+                            {entry.activityName}
+                          </span>
+                          {entry.description && (
+                            <span className="act-cal-item-desc">
+                              {entry.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="act-cal-legend">
+        {(
+          [
+            ["not-started", "未開始"],
+            ["attention", "需注意"],
+            ["in-progress", "進行中"],
+            ["completed", "已完成"],
+          ] as const
+        ).map(([status, label]) => (
+          <span key={status} className="act-cal-legend-item">
+            <span
+              className="act-cal-legend-dot"
+              style={{ background: STATUS_DOT[status] }}
+            />
+            {label}
+          </span>
+        ))}
+        <span className="act-cal-legend-hint">
+          圓點顏色 = 活動狀態・已完成項目以刪除線標示
+        </span>
       </div>
     </div>
   );

@@ -1,31 +1,19 @@
-import type { Measure } from "../../schemas/ogsm";
+import type { DeptActivity } from "../../schemas/ogsm";
 import type { ActivityWithContext } from "../ActivityPage";
 import ActivityCard from "./ActivityCard";
 
 interface Props {
   activities: ActivityWithContext[];
   allActivities: ActivityWithContext[];
-  onUpdateMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measure: Measure,
-  ) => void;
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onUpdateActivity: (deptId: string, activity: DeptActivity) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 export default function ActivityCardGrid({
   activities,
   allActivities,
-  onUpdateMeasure,
-  onJumpToMeasure,
+  onUpdateActivity,
+  onJumpToActivity,
 }: Props) {
   if (activities.length === 0) {
     return (
@@ -42,14 +30,18 @@ export default function ActivityCardGrid({
 
   return (
     <div className="card-grid">
-      {sorted.map((act) => (
-        <ActivityCard
+      {sorted.map((act, idx) => (
+        <div
           key={act.id}
-          act={act}
-          allActivities={allActivities}
-          onUpdateMeasure={onUpdateMeasure}
-          onJumpToMeasure={onJumpToMeasure}
-        />
+          data-tour={idx === 0 ? "activity-card-detail" : undefined}
+        >
+          <ActivityCard
+            act={act}
+            allActivities={allActivities}
+            onUpdateActivity={onUpdateActivity}
+            onJumpToActivity={onJumpToActivity}
+          />
+        </div>
       ))}
     </div>
   );

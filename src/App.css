@@ -1,6 +1,0 @@
-/* App-level layout, App.css is supplemental to index.css */
-.app-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}

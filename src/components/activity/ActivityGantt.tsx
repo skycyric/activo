@@ -4,13 +4,7 @@ import type { ActivityWithContext } from "../ActivityPage";
 interface Props {
   activities: ActivityWithContext[];
   allActivities: ActivityWithContext[];
-  onJumpToMeasure: (
-    deptId: string,
-    periodId: string,
-    goalId: string,
-    stratId: string,
-    measureId: string,
-  ) => void;
+  onJumpToActivity: (deptId: string, activityId: string) => void;
 }
 
 const ROW_H = 40; // px per row
@@ -46,7 +40,7 @@ function diffDays(a: Date, b: Date): number {
 export default function ActivityGantt({
   activities,
   allActivities,
-  onJumpToMeasure,
+  onJumpToActivity,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,10 +73,12 @@ export default function ActivityGantt({
     };
   }, [datedActs]);
 
-  // Choose tick scale: day / week / month
+  // Choose tick scale: day / week / biweek / month
+  // threshold tuned so tick labels never overlap at min 55px/tick spacing
   const { tickDays, tickFormat } = useMemo(() => {
-    if (totalDays <= 60) return { tickDays: 1, tickFormat: "d" };
-    if (totalDays <= 180) return { tickDays: 7, tickFormat: "w" };
+    if (totalDays <= 14) return { tickDays: 1, tickFormat: "d" };
+    if (totalDays <= 90) return { tickDays: 7, tickFormat: "w" };
+    if (totalDays <= 180) return { tickDays: 14, tickFormat: "w" };
     return { tickDays: 30, tickFormat: "m" };
   }, [totalDays]);
 
@@ -166,7 +162,12 @@ export default function ActivityGantt({
 
   // Chart width is determined by container (responsive); use percentage-based px formula
   // We'll use a fixed px-per-day based on a 900px target chart width
-  const CHART_W = Math.max(totalDays * 14, 600); // at least 14px per day
+  // Minimum 14px/day keeps bars readable; minimum 55px/tick prevents label overlap
+  const CHART_W = Math.max(
+    totalDays * 14,
+    Math.ceil(totalDays / tickDays) * 55,
+    600,
+  );
   const pxPerDay = CHART_W / totalDays;
   const totalH = datedActs.length * ROW_H;
 
@@ -186,6 +187,44 @@ export default function ActivityGantt({
           ⚠ 有 {undatedCount} 個活動未設定日期，不顯示於甘特圖中。
         </div>
       )}
+
+      {/* 顏色圖例 */}
+      <div className="gantt-legend">
+        <span className="gantt-legend-title">說明：</span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["not-started"] }}
+          />
+          未開始
+        </span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["attention"] }}
+          />
+          需注意
+        </span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["in-progress"] }}
+          />
+          進行中
+        </span>
+        <span className="gantt-legend-item">
+          <span
+            className="gantt-legend-dot"
+            style={{ background: STATUS_COLOR["completed"] }}
+          />
+          已完成
+        </span>
+        <span className="gantt-legend-item gantt-legend-overdue">
+          <span className="gantt-legend-dot gantt-legend-dot--overdue" />
+          已逾期（未完成且超過結束日）
+        </span>
+      </div>
+
       <div className="gantt-wrap" ref={containerRef}>
         {/* Left label column */}
         <div className="gantt-labels" style={{ width: LABEL_W }}>
@@ -197,15 +236,7 @@ export default function ActivityGantt({
               className="gantt-label-row"
               style={{ height: ROW_H }}
               title={act.rawText}
-              onClick={() =>
-                onJumpToMeasure(
-                  act.deptId,
-                  act.periodId,
-                  act.goalId,
-                  act.strategyId,
-                  act.id,
-                )
-              }
+              onClick={() => onJumpToActivity(act.deptId, act.id)}
             >
               <span className="gantt-label-dept">{act.deptName}</span>
               <span className="gantt-label-name">{act.rawText}</span>
@@ -214,10 +245,7 @@ export default function ActivityGantt({
         </div>
 
         {/* Right chart area */}
-        <div
-          className="gantt-chart-area"
-          style={{ overflowX: "auto", flex: 1 }}
-        >
+        <div className="gantt-chart-area" style={{ flex: 1 }}>
           <div style={{ width: CHART_W, position: "relative" }}>
             {/* Tick header */}
             <div
@@ -268,15 +296,7 @@ export default function ActivityGantt({
                       background: color,
                     }}
                     title={`${act.rawText}\n${act.startDate} → ${act.endDate}`}
-                    onClick={() =>
-                      onJumpToMeasure(
-                        act.deptId,
-                        act.periodId,
-                        act.goalId,
-                        act.strategyId,
-                        act.id,
-                      )
-                    }
+                    onClick={() => onJumpToActivity(act.deptId, act.id)}
                   >
                     <span className="gantt-bar-label">{act.rawText}</span>
                   </div>

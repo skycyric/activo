@@ -1,7 +1,18 @@
-import { describe, test, expect } from "vitest";
-import { detectConflicts, mergeWorkspaces } from "./merge";
+﻿import { describe, test, expect } from "vitest";
+import {
+  detectConflicts,
+  mergeWorkspaces,
+  trackClearedFields,
+  resolveField,
+} from "./merge";
 import { migrateOwnerToOwners } from "./storage";
-import type { WorkspaceData, Strategy, Goal } from "../schemas/ogsm";
+import type {
+  WorkspaceData,
+  Strategy,
+  Goal,
+  DeptActivity,
+  Team,
+} from "../schemas/ogsm";
 
 // ─── 測試資料工廠 ──────────────────────────────────────────────────────────────
 
@@ -36,13 +47,39 @@ function makeGoal(strategies: Strategy[], overrides: Partial<Goal> = {}): Goal {
   };
 }
 
-function makeWorkspace(goals: Goal[]): WorkspaceData {
+function makeActivity(overrides: Partial<DeptActivity> = {}): DeptActivity {
+  return {
+    id: "act1",
+    rawText: "活動A",
+    status: "in-progress",
+    owners: [],
+    kpis: [],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeTeam(overrides: Partial<Team> = {}): Team {
+  return {
+    id: "t1",
+    name: "前端小組",
+    members: [],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeWorkspace(
+  goals: Goal[],
+  activities: DeptActivity[] = [],
+): WorkspaceData {
   return {
     version: 1,
     departments: [
       {
         id: "dept1",
         name: "部門A",
+        activities,
         periods: [
           {
             id: "period1",
@@ -72,7 +109,7 @@ describe("detectConflicts", () => {
     expect(result).toHaveLength(0);
   });
 
-  test("策略 title 不同且 updatedAt 不同 → 有衝突", () => {
+  test("策略 title 不同且 updatedAt 不同 → LWW 自動解決，不通報衝突", () => {
     const local = makeWorkspace([
       makeGoal([
         makeStrategy({
@@ -89,6 +126,18 @@ describe("detectConflicts", () => {
         }),
       ]),
     ]);
+    // timestamps differ → LWW auto-resolves, no conflict modal needed
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("策略 title 不同且 updatedAt 相同 → 並發衝突，通報給使用者", () => {
+    const ts = "2026-01-02T00:00:00.000Z";
+    const local = makeWorkspace([
+      makeGoal([makeStrategy({ title: "本地版本", updatedAt: ts })]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([makeStrategy({ title: "遠端版本", updatedAt: ts })]),
+    ]);
     const result = detectConflicts(local, remote);
     expect(result).toHaveLength(1);
     expect(result[0].entityType).toBe("strategy");
@@ -97,7 +146,7 @@ describe("detectConflicts", () => {
     expect(result[0].fieldDiffs[0].remoteVal).toBe("遠端版本");
   });
 
-  test("策略 updatedAt 相同 → 不算衝突（相同版本）", () => {
+  test("策略 updatedAt 相同但內容不同 → 仍視為衝突", () => {
     const sameTime = "2026-01-02T00:00:00.000Z";
     const local = makeWorkspace([
       makeGoal([makeStrategy({ title: "本地版本", updatedAt: sameTime })]),
@@ -105,27 +154,17 @@ describe("detectConflicts", () => {
     const remote = makeWorkspace([
       makeGoal([makeStrategy({ title: "遠端版本", updatedAt: sameTime })]),
     ]);
-    // 相同 updatedAt → detectConflicts 不認為是衝突
     const result = detectConflicts(local, remote);
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
   });
 
-  test("策略 notes 不同 → fieldDiff 包含 notes", () => {
+  test("策略 notes 不同且 updatedAt 相同 → fieldDiff 包含 notes", () => {
+    const ts = "2026-01-01T00:00:00.000Z";
     const local = makeWorkspace([
-      makeGoal([
-        makeStrategy({
-          notes: "舊備註",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        }),
-      ]),
+      makeGoal([makeStrategy({ notes: "舊備註", updatedAt: ts })]),
     ]);
     const remote = makeWorkspace([
-      makeGoal([
-        makeStrategy({
-          notes: "新備註",
-          updatedAt: "2026-01-02T00:00:00.000Z",
-        }),
-      ]),
+      makeGoal([makeStrategy({ notes: "新備註", updatedAt: ts })]),
     ]);
     const result = detectConflicts(local, remote);
     expect(result).toHaveLength(1);
@@ -133,18 +172,13 @@ describe("detectConflicts", () => {
     expect(notesDiff).toBeDefined();
   });
 
-  test("目標 title 不同 → goal 衝突", () => {
+  test("目標 title 不同且 updatedAt 相同 → goal 衝突", () => {
+    const ts = "2026-01-01T00:00:00.000Z";
     const local = makeWorkspace([
-      makeGoal([], {
-        title: "本地目標",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      }),
+      makeGoal([], { title: "本地目標", updatedAt: ts }),
     ]);
     const remote = makeWorkspace([
-      makeGoal([], {
-        title: "遠端目標",
-        updatedAt: "2026-01-02T00:00:00.000Z",
-      }),
+      makeGoal([], { title: "遠端目標", updatedAt: ts }),
     ]);
     const result = detectConflicts(local, remote);
     expect(result).toHaveLength(1);
@@ -168,7 +202,25 @@ describe("detectConflicts", () => {
     expect(result).toHaveLength(0);
   });
 
-  test("多個策略各有衝突 → 全部回報", () => {
+  test("多個策略各有衝突（相同 updatedAt）→ 全部回報", () => {
+    const ts = "2026-01-01T00:00:00.000Z";
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ id: "s1", title: "S1-本地", updatedAt: ts }),
+        makeStrategy({ id: "s2", title: "S2-本地", updatedAt: ts }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ id: "s1", title: "S1-遠端", updatedAt: ts }),
+        makeStrategy({ id: "s2", title: "S2-遠端", updatedAt: ts }),
+      ]),
+    ]);
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(2);
+  });
+
+  test("多個策略各有衝突（不同 updatedAt）→ LWW 全部自動解決，不通報", () => {
     const local = makeWorkspace([
       makeGoal([
         makeStrategy({
@@ -197,8 +249,7 @@ describe("detectConflicts", () => {
         }),
       ]),
     ]);
-    const result = detectConflicts(local, remote);
-    expect(result).toHaveLength(2);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
   });
 });
 
@@ -410,10 +461,228 @@ describe("migrateOwnerToOwners", () => {
 // ─── owners 衝突偵測 ─────────────────────────────────────────────────────────
 
 describe("detectConflicts — owners 欄位", () => {
-  test("owners 陣列不同 → fieldDiff 包含 owners", () => {
+  test("owners 陣列不同且 updatedAt 相同 → fieldDiff 包含 owners", () => {
+    const ts = "2026-01-01T00:00:00.000Z";
+    const local = makeWorkspace([
+      makeGoal([makeStrategy({ owners: ["王大明"], updatedAt: ts })]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([makeStrategy({ owners: ["李小華"], updatedAt: ts })]),
+    ]);
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const ownersDiff = result[0].fieldDiffs.find((d) => d.field === "owners");
+    expect(ownersDiff).toBeDefined();
+    expect(ownersDiff?.localVal).toBe("王大明");
+    expect(ownersDiff?.remoteVal).toBe("李小華");
+  });
+});
+
+// ─── 欄位級別合併（Field-Level Merge）────────────────────────────────────────
+
+describe("欄位級別合併 — detectConflicts 不通報空值差異", () => {
+  test("一方 title 為空 → 不通報衝突（可自動合併）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ title: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端填寫的策略名稱",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("一方 notes 為空 → 不通報衝突", () => {
     const local = makeWorkspace([
       makeGoal([
         makeStrategy({
+          notes: "本地備註",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ notes: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("一方 owners 為空陣列 → 不通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ owners: [], updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          owners: ["王大明"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("一方 manualRate 為 null → 不通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ manualRate: 80, updatedAt: "2026-01-02T00:00:00.000Z" }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("雙方 title 皆非空且不同 → 仍通報衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "本地版本",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端版本",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(1);
+  });
+});
+
+describe("欄位級別合併 — mergeWorkspaces 自動填補空欄位", () => {
+  test("本地 title 為空 → 自動採用遠端 title", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ title: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端填寫的策略名稱",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.title).toBe("遠端填寫的策略名稱");
+  });
+
+  test("遠端 notes 為空 → 保留本地 notes", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "本地備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ notes: "", updatedAt: "2026-01-02T00:00:00.000Z" }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.notes).toBe("本地備註");
+  });
+
+  test("本地 owners 為空陣列 → 自動採用遠端 owners", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({ owners: [], updatedAt: "2026-01-01T00:00:00.000Z" }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          owners: ["王大明", "李小華"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.owners).toEqual(["王大明", "李小華"]);
+  });
+
+  test("本地 manualRate 為 null → 自動採用遠端設定的完成率", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({ manualRate: 75, updatedAt: "2026-01-02T00:00:00.000Z" }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.manualRate).toBe(75);
+  });
+
+  test("本地有值、遠端空值 → 保留本地值（不被空值覆蓋）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "本地策略名稱",
+          notes: "本地備註",
+          owners: ["王大明"],
+          manualRate: 60,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "",
+          notes: "",
+          owners: [],
+          manualRate: null,
+          updatedAt: "2026-01-03T00:00:00.000Z", // 遠端較新，但欄位皆為空
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.title).toBe("本地策略名稱");
+    expect(s.notes).toBe("本地備註");
+    expect(s.owners).toEqual(["王大明"]);
+    expect(s.manualRate).toBe(60);
+  });
+
+  test("雙方皆有不同值 → LWW 決定（遠端較新則採遠端）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "本地版本",
           owners: ["王大明"],
           updatedAt: "2026-01-01T00:00:00.000Z",
         }),
@@ -422,16 +691,794 @@ describe("detectConflicts — owners 欄位", () => {
     const remote = makeWorkspace([
       makeGoal([
         makeStrategy({
+          title: "遠端版本",
           owners: ["李小華"],
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.title).toBe("遠端版本");
+    expect(s.owners).toEqual(["李小華"]);
+  });
+});
+
+// ─── 新增：manualRate null↔value 衝突偵測 ────────────────────────────────────
+
+describe("detectConflicts — manualRate null↔value", () => {
+  test("local=value, remote=null（對方清除覆蓋） → 應偵測衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: 80,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "manualRate");
+    expect(diff).toBeDefined();
+    expect(diff?.localVal).toBe("80%");
+    expect(diff?.remoteVal).toBe("(自動計算)");
+  });
+
+  test("local=null, remote=value（對方新增覆蓋） → 自動填補，不算衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: 80,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    // null → value 是自動填補，不應進入衝突 modal
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("local=80, remote=90（雙方皆有值但不同） → 偵測衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: 80,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          manualRate: 90,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "manualRate");
+    expect(diff?.localVal).toBe("80%");
+    expect(diff?.remoteVal).toBe("90%");
+  });
+});
+
+// ─── 新增：無 updatedAt 的衝突偵測（M1）─────────────────────────────────────
+
+describe("detectConflicts — 無 updatedAt 時仍偵測內容差異", () => {
+  test("strategy 雙方皆無 updatedAt，title 不同 → 應偵測衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([makeStrategy({ title: "本地版本", updatedAt: undefined })]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([makeStrategy({ title: "遠端版本", updatedAt: undefined })]),
+    ]);
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    expect(result[0].fieldDiffs[0].field).toBe("title");
+  });
+
+  test("strategy 本地無 updatedAt、遠端有，title 不同 → 應偵測衝突", () => {
+    const local = makeWorkspace([
+      makeGoal([makeStrategy({ title: "本地版本", updatedAt: undefined })]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          title: "遠端版本",
           updatedAt: "2026-01-02T00:00:00.000Z",
         }),
       ]),
     ]);
     const result = detectConflicts(local, remote);
     expect(result).toHaveLength(1);
-    const ownersDiff = result[0].fieldDiffs.find((d) => d.field === "owners");
-    expect(ownersDiff).toBeDefined();
-    expect(ownersDiff?.localVal).toBe("王大明");
-    expect(ownersDiff?.remoteVal).toBe("李小華");
+  });
+
+  test("strategy 雙方 updatedAt 相同且內容也相同 → 無衝突", () => {
+    const ts = "2026-01-02T00:00:00.000Z";
+    const ws = makeWorkspace([makeGoal([makeStrategy({ updatedAt: ts })])]);
+    // 完全相同的兩份
+    expect(detectConflicts(ws, structuredClone(ws))).toHaveLength(0);
+  });
+
+  test("strategy 雙方 updatedAt 相同但 title 不同 → 通報衝突", () => {
+    const ts = "2026-01-02T00:00:00.000Z";
+    const local = makeWorkspace([
+      makeGoal([makeStrategy({ title: "本地版本", updatedAt: ts })]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([makeStrategy({ title: "遠端版本", updatedAt: ts })]),
+    ]);
+    expect(detectConflicts(local, remote)).toHaveLength(1);
+  });
+});
+
+// ─── Team 衝突偵測 ─────────────────────────────────────────────────────────────
+
+describe("detectConflicts — Teams", () => {
+  test("team name 不同且 updatedAt 相同 → 通報衝突，entityType=team", () => {
+    const ts = "2026-01-01T00:00:00.000Z";
+    const local = makeWorkspace([]);
+    local.teams = [makeTeam({ name: "本地小組", updatedAt: ts })];
+    const remote = makeWorkspace([]);
+    remote.teams = [makeTeam({ name: "遠端小組", updatedAt: ts })];
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    expect(result[0].entityType).toBe("team");
+    const diff = result[0].fieldDiffs.find((d) => d.field === "name");
+    expect(diff).toBeDefined();
+    expect(diff?.localVal).toBe("本地小組");
+    expect(diff?.remoteVal).toBe("遠端小組");
+  });
+
+  test("team name 不同且 updatedAt 不同 → LWW 自動解決，不通報", () => {
+    const local = makeWorkspace([]);
+    local.teams = [
+      makeTeam({ name: "本地小組", updatedAt: "2026-01-01T00:00:00.000Z" }),
+    ];
+    const remote = makeWorkspace([]);
+    remote.teams = [
+      makeTeam({ name: "遠端小組", updatedAt: "2026-01-02T00:00:00.000Z" }),
+    ];
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("team members 不同（雙方皆有成員） → 通報衝突", () => {
+    const local = makeWorkspace([]);
+    local.teams = [
+      makeTeam({
+        members: [{ id: "m1", name: "王大明" }],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const remote = makeWorkspace([]);
+    remote.teams = [
+      makeTeam({
+        members: [{ id: "m2", name: "李小華" }],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "members");
+    expect(diff).toBeDefined();
+  });
+
+  test("一方 name 為空 → 不通報衝突（填補行為）", () => {
+    const local = makeWorkspace([]);
+    local.teams = [
+      makeTeam({ name: "", updatedAt: "2026-01-01T00:00:00.000Z" }),
+    ];
+    const remote = makeWorkspace([]);
+    remote.teams = [
+      makeTeam({ name: "遠端小組", updatedAt: "2026-01-02T00:00:00.000Z" }),
+    ];
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("team 相同 updatedAt 但內容不同 → 通報衝突", () => {
+    const ts = "2026-01-02T00:00:00.000Z";
+    const local = makeWorkspace([]);
+    local.teams = [makeTeam({ name: "小組A", updatedAt: ts })];
+    const remote = makeWorkspace([]);
+    remote.teams = [makeTeam({ name: "小組B", updatedAt: ts })];
+    expect(detectConflicts(local, remote)).toHaveLength(1);
+  });
+
+  test("team 被 deletedIds tombstone → 不通報", () => {
+    const local = makeWorkspace([]);
+    local.teams = [
+      makeTeam({ name: "本地小組", updatedAt: "2026-01-01T00:00:00.000Z" }),
+    ];
+    local.deletedIds = ["t1"];
+    const remote = makeWorkspace([]);
+    remote.teams = [
+      makeTeam({ name: "遠端小組", updatedAt: "2026-01-02T00:00:00.000Z" }),
+    ];
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+});
+
+// ─── Activity 衝突偵測 ────────────────────────────────────────────────────────
+
+describe("detectConflicts — Activity 衝突", () => {
+  test("rawText 不同 → 通報衝突，entityType=activity", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "本地活動",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "遠端活動",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    expect(result[0].entityType).toBe("activity");
+    const diff = result[0].fieldDiffs.find((d) => d.field === "rawText");
+    expect(diff?.localVal).toBe("本地活動");
+    expect(diff?.remoteVal).toBe("遠端活動");
+  });
+
+  test("status 不同（雙方皆有值） → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          status: "in-progress",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          status: "completed",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "status");
+    expect(diff).toBeDefined();
+  });
+
+  test("owners 不同（雙方皆有值） → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          owners: ["王大明"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          owners: ["李小華"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "owners");
+    expect(diff).toBeDefined();
+    expect(diff?.localVal).toBe("王大明");
+    expect(diff?.remoteVal).toBe("李小華");
+  });
+
+  test("startDate / endDate 不同 → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          startDate: "2026-01-01",
+          endDate: "2026-03-31",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          startDate: "2026-02-01",
+          endDate: "2026-06-30",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const fields = result[0].fieldDiffs.map((d) => d.field);
+    expect(fields).toContain("startDate");
+    expect(fields).toContain("endDate");
+  });
+
+  test("budget 不同 → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [makeActivity({ budget: 100000, updatedAt: "2026-01-01T00:00:00.000Z" })],
+    );
+    const remote = makeWorkspace(
+      [],
+      [makeActivity({ budget: 200000, updatedAt: "2026-01-01T00:00:00.000Z" })],
+    );
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "budget");
+    expect(diff?.localVal).toBe("100000");
+    expect(diff?.remoteVal).toBe("200000");
+  });
+
+  test("kpis 不同 → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          kpis: [
+            {
+              id: "k1",
+              label: "交易率",
+              name: "交易率",
+              target: 10,
+              actual: 5,
+              unit: "%",
+              achievementRate: 50,
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          kpis: [
+            {
+              id: "k1",
+              label: "交易率",
+              name: "交易率",
+              target: 10,
+              actual: 8,
+              unit: "%",
+              achievementRate: 80,
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "kpis");
+    expect(diff).toBeDefined();
+  });
+
+  test("planItems 不同 → 通報衝突", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          planItems: [
+            {
+              id: "p1",
+              description: "本地計畫",
+              completed: false,
+              quarter: "Q1",
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          planItems: [
+            {
+              id: "p1",
+              description: "遠端計畫",
+              completed: false,
+              quarter: "Q1",
+            },
+          ],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+
+    const result = detectConflicts(local, remote);
+    expect(result).toHaveLength(1);
+    const diff = result[0].fieldDiffs.find((d) => d.field === "planItems");
+    expect(diff).toBeDefined();
+  });
+
+  test("一方 rawText 為空 → 不通報（填補行為）", () => {
+    const local = makeWorkspace(
+      [],
+      [makeActivity({ rawText: "", updatedAt: "2026-01-01T00:00:00.000Z" })],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "遠端活動",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ],
+    );
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("兩邊 updatedAt 相同但內容不同 → 通報衝突", () => {
+    const ts = "2026-01-02T00:00:00.000Z";
+    const local = makeWorkspace(
+      [],
+      [makeActivity({ rawText: "本地活動", updatedAt: ts })],
+    );
+    const remote = makeWorkspace(
+      [],
+      [makeActivity({ rawText: "遠端活動", updatedAt: ts })],
+    );
+    expect(detectConflicts(local, remote)).toHaveLength(1);
+  });
+
+  test("活動被 deletedIds tombstone → 不通報", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "本地活動",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    local.deletedIds = ["act1"];
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "遠端活動",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ],
+    );
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("活動只在本地存在（遠端無此 id） → 不通報", () => {
+    const local = makeWorkspace(
+      [],
+      [makeActivity({ id: "act_local_only", rawText: "僅本地活動" })],
+    );
+    const remote = makeWorkspace([], []);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+
+  test("兩端完全相同的活動 → 無衝突", () => {
+    const act = makeActivity({ rawText: "共同活動" });
+    const local = makeWorkspace([], [act]);
+    const remote = makeWorkspace([], [structuredClone(act)]);
+    expect(detectConflicts(local, remote)).toHaveLength(0);
+  });
+});
+
+// ─── mergeWorkspaces — Activities ────────────────────────────────────────────
+
+describe("mergeWorkspaces — Activities", () => {
+  test("遠端有本地沒有的新活動 → merge 後包含", () => {
+    const local = makeWorkspace([], []);
+    const newAct = makeActivity({
+      id: "act_new",
+      rawText: "遠端新活動",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    });
+    const remote = makeWorkspace([], [newAct]);
+    const { workspace, autoMerged } = mergeWorkspaces(local, remote);
+    expect(workspace.departments[0].activities).toHaveLength(1);
+    expect(workspace.departments[0].activities![0].id).toBe("act_new");
+    expect(autoMerged).toBeGreaterThan(0);
+  });
+
+  test("活動被 deletedIds tombstone → merge 後消失", () => {
+    const local = makeWorkspace([], [makeActivity()]);
+    const remote = makeWorkspace([], [makeActivity()]);
+    remote.deletedIds = ["act1"];
+    const { workspace } = mergeWorkspaces(local, remote);
+    expect(
+      workspace.departments[0].activities?.find((a) => a.id === "act1"),
+    ).toBeUndefined();
+  });
+
+  test("LWW：本地 updatedAt 較新 → 保留本地", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "本地新版",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "遠端舊版",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const { workspace } = mergeWorkspaces(local, remote);
+    expect(workspace.departments[0].activities![0].rawText).toBe("本地新版");
+  });
+
+  test("LWW：遠端 updatedAt 較新 → 採用遠端", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "本地舊版",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "遠端新版",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ],
+    );
+    const { workspace } = mergeWorkspaces(local, remote);
+    expect(workspace.departments[0].activities![0].rawText).toBe("遠端新版");
+  });
+
+  test("雙方各有不同 id 的活動 → 合併後都保留", () => {
+    const local = makeWorkspace(
+      [],
+      [makeActivity({ id: "act_L", rawText: "本地活動" })],
+    );
+    const remote = makeWorkspace(
+      [],
+      [makeActivity({ id: "act_R", rawText: "遠端活動" })],
+    );
+    const { workspace } = mergeWorkspaces(local, remote);
+    const ids = workspace.departments[0].activities!.map((a) => a.id);
+    expect(ids).toContain("act_L");
+    expect(ids).toContain("act_R");
+  });
+
+  test("activity 衝突解決：field-level remote 覆蓋指定欄位", () => {
+    const local = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "同活動",
+          budget: 100,
+          tags: ["local"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+    );
+    const remote = makeWorkspace(
+      [],
+      [
+        makeActivity({
+          rawText: "同活動",
+          budget: 200,
+          tags: ["remote"],
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ],
+    );
+
+    const { workspace } = mergeWorkspaces(local, remote, {
+      "act1.budget": "local",
+      "act1.tags": "remote",
+    });
+
+    const merged = workspace.departments[0].activities?.find(
+      (a) => a.id === "act1",
+    );
+    expect(merged?.budget).toBe(100);
+    expect(merged?.tags).toEqual(["remote"]);
+  });
+});
+
+// ─── trackClearedFields ───────────────────────────────────────────────────────
+
+describe("trackClearedFields", () => {
+  type Entity = { budget?: number; rawText?: string; clearedFields?: string[] };
+
+  test("prev 有值、next 為空 → 加入 clearedFields", () => {
+    const prev: Entity = { budget: 100 };
+    const next: Entity = { budget: undefined };
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields).toContain("budget");
+  });
+
+  test("prev 為空、next 有值 → 從 clearedFields 移除", () => {
+    const prev: Entity = { budget: undefined, clearedFields: ["budget"] };
+    const next: Entity = { budget: 200, clearedFields: ["budget"] };
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields ?? []).not.toContain("budget");
+  });
+
+  test("prev/next 都為空 → clearedFields 不新增該欄位", () => {
+    const prev: Entity = {};
+    const next: Entity = {};
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields ?? []).not.toContain("budget");
+  });
+
+  test("next[field]=0（數字零）→ 不視為空，不加入 clearedFields", () => {
+    const prev: Entity = { budget: 100 };
+    const next: Entity = { budget: 0 };
+    const result = trackClearedFields(prev, next, ["budget"]);
+    expect(result.clearedFields ?? []).not.toContain("budget");
+  });
+
+  test("next[field]=''（空字串）→ 視為空，加入 clearedFields", () => {
+    const prev: Entity = { rawText: "有值" };
+    const next: Entity = { rawText: "" };
+    const result = trackClearedFields(prev, next, ["rawText"]);
+    expect(result.clearedFields).toContain("rawText");
+  });
+});
+
+// ─── resolveField ─────────────────────────────────────────────────────────────
+
+describe("resolveField", () => {
+  test("field-level key 存在 → 回傳對應值", () => {
+    const res = resolveField({ "e1.title": "local" }, "e1", "title");
+    expect(res).toBe("local");
+  });
+
+  test("field-level 不存在、entity-level 存在 → fallback 回傳 entity-level", () => {
+    const res = resolveField({ e1: "remote" }, "e1", "title");
+    expect(res).toBe("remote");
+  });
+
+  test("兩層都不存在 → 回傳 null", () => {
+    const res = resolveField({ e2: "local" }, "e1", "title");
+    expect(res).toBeNull();
+  });
+
+  test("resolutions=undefined → 回傳 null", () => {
+    const res = resolveField(undefined, "e1", "title");
+    expect(res).toBeNull();
+  });
+});
+
+// ─── clearedFields tombstone 整合 ─────────────────────────────────────────────
+
+describe("clearedFields tombstone 整合 — mergeWorkspaces", () => {
+  test("本地刻意清空 notes（clearedFields）→ merge 不自動填補遠端值", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          clearedFields: ["notes"],
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.notes).toBe("");
+  });
+
+  test("本地 notes 為空但無 clearedFields → merge 自動填補遠端值", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const { workspace } = mergeWorkspaces(local, remote);
+    const s = workspace.departments[0].periods[0].ogsm.goals[0].strategies[0];
+    expect(s.notes).toBe("遠端備註");
+  });
+});
+
+describe("clearedFields tombstone 整合 — detectConflicts", () => {
+  test("本地刻意清空 notes → 通報衝突，localVal 為 '(已清空)'", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          clearedFields: ["notes"],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const conflicts = detectConflicts(local, remote);
+    expect(conflicts).toHaveLength(1);
+    const notesDiff = conflicts[0].fieldDiffs.find((d) => d.field === "notes");
+    expect(notesDiff).toBeDefined();
+    expect(notesDiff!.localVal).toBe("(已清空)");
+  });
+
+  test("本地 notes 為空但無 clearedFields → 不通報衝突（靜默自動合併）", () => {
+    const local = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const remote = makeWorkspace([
+      makeGoal([
+        makeStrategy({
+          notes: "遠端備註",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+      ]),
+    ]);
+    const conflicts = detectConflicts(local, remote);
+    expect(conflicts).toHaveLength(0);
   });
 });

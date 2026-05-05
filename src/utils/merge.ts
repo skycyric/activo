@@ -22,6 +22,8 @@ import type {
   Goal,
   Strategy,
   Measure,
+  DeptActivity,
+  FreeNode,
   Team,
   Department,
   PeriodData,
@@ -39,20 +41,51 @@ export interface FieldDiff {
   label: string;
   localVal: string;
   remoteVal: string;
+  /**
+   * 原始值，用於 ConflictModal 展示詳細內容。
+   * - null      = 刻意清空（tombstone）
+   * - undefined = 無需額外展示（使用 localVal/remoteVal 字串即可）
+   * - 其他值    = 實際資料，ConflictModal 會依型別做富文本渲染
+   */
+  rawLocalVal?: unknown;
+  rawRemoteVal?: unknown;
 }
 
 export interface ConflictEntry {
   id: string;
-  entityType: "goal" | "strategy" | "team";
+  entityType: "goal" | "strategy" | "team" | "activity";
   entityLabel: string;
   localUpdatedAt?: string;
   remoteUpdatedAt?: string;
   fieldDiffs: FieldDiff[];
-  localEntity: Goal | Strategy | Team;
-  remoteEntity: Goal | Strategy | Team;
+  localEntity: Goal | Strategy | Team | DeptActivity;
+  remoteEntity: Goal | Strategy | Team | DeptActivity;
 }
 
+/**
+ * ConflictResolutions key 格式：
+ *   - `"${entityId}"` → 整個實體層級覆蓋（legacy / 快捷全選）
+ *   - `"${entityId}.${field}"` → 欄位層級覆蓋（細粒度決策）
+ * 欄位層級 key 優先；fallback 實體層級 key；再 fallback LWW。
+ */
 export type ConflictResolutions = Record<string, "local" | "remote">;
+
+/**
+ * 查詢欄位層級解析結果。
+ * 優先序：field-level key (`entityId.field`) > entity-level key (`entityId`) > null（由呼叫方決定 fallback）
+ */
+export function resolveField(
+  resolutions: ConflictResolutions | undefined,
+  entityId: string,
+  field: string,
+): "local" | "remote" | null {
+  if (!resolutions) return null;
+  const fieldKey = `${entityId}.${field}`;
+  if (resolutions[fieldKey] !== undefined) return resolutions[fieldKey];
+  const entityKey = entityId;
+  if (resolutions[entityKey] !== undefined) return resolutions[entityKey];
+  return null;
+}
 
 // display helpers
 
@@ -93,24 +126,79 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
     ["notes", "備註"],
   ];
   for (const [f, label] of fields) {
-    if (String(ls[f] ?? "") !== String(rs[f] ?? "")) {
+    const lv = String(ls[f] ?? "");
+    const rv = String(rs[f] ?? "");
+    if (lv === rv) continue;
+    if (isEmpty(ls[f]) && wasClearedBy(ls, f) && !isEmpty(rs[f])) {
+      diffs.push({
+        field: f,
+        label,
+        localVal: "(已清空)",
+        remoteVal: fmt(rs[f]),
+        rawLocalVal: null,
+        rawRemoteVal: rs[f],
+      });
+      continue;
+    }
+    if (isEmpty(rs[f]) && wasClearedBy(rs, f) && !isEmpty(ls[f])) {
+      diffs.push({
+        field: f,
+        label,
+        localVal: fmt(ls[f]),
+        remoteVal: "(已清空)",
+        rawLocalVal: ls[f],
+        rawRemoteVal: null,
+      });
+      continue;
+    }
+    if (!isEmpty(ls[f]) && !isEmpty(rs[f])) {
       diffs.push({
         field: f,
         label,
         localVal: fmt(ls[f]),
         remoteVal: fmt(rs[f]),
+        rawLocalVal: ls[f],
+        rawRemoteVal: rs[f],
       });
     }
   }
-  if (JSON.stringify(ls.owners ?? []) !== JSON.stringify(rs.owners ?? [])) {
-    diffs.push({
-      field: "owners",
-      label: "負責人",
-      localVal: fmt(ls.owners ?? [], "owners"),
-      remoteVal: fmt(rs.owners ?? [], "owners"),
-    });
+  const lOwners = ls.owners ?? [];
+  const rOwners = rs.owners ?? [];
+  if (JSON.stringify(lOwners) !== JSON.stringify(rOwners)) {
+    if (isEmpty(lOwners) && wasClearedBy(ls, "owners") && !isEmpty(rOwners)) {
+      diffs.push({
+        field: "owners",
+        label: "負責人",
+        localVal: "(已清空)",
+        remoteVal: fmt(rOwners, "owners"),
+        rawLocalVal: null,
+        rawRemoteVal: rOwners,
+      });
+    } else if (
+      isEmpty(rOwners) &&
+      wasClearedBy(rs, "owners") &&
+      !isEmpty(lOwners)
+    ) {
+      diffs.push({
+        field: "owners",
+        label: "負責人",
+        localVal: fmt(lOwners, "owners"),
+        remoteVal: "(已清空)",
+        rawLocalVal: lOwners,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lOwners) && !isEmpty(rOwners)) {
+      diffs.push({
+        field: "owners",
+        label: "負責人",
+        localVal: fmt(lOwners, "owners"),
+        remoteVal: fmt(rOwners, "owners"),
+        rawLocalVal: lOwners,
+        rawRemoteVal: rOwners,
+      });
+    }
   }
-  if (ls.manualRate !== rs.manualRate) {
+  if (ls.manualRate !== rs.manualRate && !isEmpty(ls.manualRate)) {
     diffs.push({
       field: "manualRate",
       label: "完成率",
@@ -122,9 +210,47 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
         rs.manualRate !== null && rs.manualRate !== undefined
           ? `${rs.manualRate}%`
           : "(自動計算)",
+      rawLocalVal: ls.manualRate,
+      rawRemoteVal: rs.manualRate,
     });
   }
-  // 注意：measures 和 actionPlans 不在此處做衝突偵測，
+  const lAP = ls.actionPlans ?? [];
+  const rAP = rs.actionPlans ?? [];
+  if (JSON.stringify(lAP) !== JSON.stringify(rAP)) {
+    if (isEmpty(lAP) && wasClearedBy(ls, "actionPlans") && !isEmpty(rAP)) {
+      diffs.push({
+        field: "actionPlans",
+        label: "季度計畫",
+        localVal: "(已清空)",
+        remoteVal: fmt(rAP, "actionPlans"),
+        rawLocalVal: null,
+        rawRemoteVal: rAP,
+      });
+    } else if (
+      isEmpty(rAP) &&
+      wasClearedBy(rs, "actionPlans") &&
+      !isEmpty(lAP)
+    ) {
+      diffs.push({
+        field: "actionPlans",
+        label: "季度計畫",
+        localVal: fmt(lAP, "actionPlans"),
+        remoteVal: "(已清空)",
+        rawLocalVal: lAP,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lAP) && !isEmpty(rAP)) {
+      diffs.push({
+        field: "actionPlans",
+        label: "季度計畫",
+        localVal: fmt(lAP, "actionPlans"),
+        remoteVal: fmt(rAP, "actionPlans"),
+        rawLocalVal: lAP,
+        rawRemoteVal: rAP,
+      });
+    }
+  }
+  // 注意：measures 不在此處做衝突偵測，
   // mergeMeasures 會以 Measure id + updatedAt 進行細粒度合併，不需要人工介入。
   return diffs;
 }
@@ -132,41 +258,488 @@ function strategyDiffs(ls: Strategy, rs: Strategy): FieldDiff[] {
 function goalDiffs(lg: Goal, rg: Goal): FieldDiff[] {
   const diffs: FieldDiff[] = [];
   if (lg.title !== rg.title) {
-    diffs.push({
-      field: "title",
-      label: "目標名稱",
-      localVal: fmt(lg.title),
-      remoteVal: fmt(rg.title),
-    });
+    if (isEmpty(lg.title) && wasClearedBy(lg, "title") && !isEmpty(rg.title)) {
+      diffs.push({
+        field: "title",
+        label: "目標名稱",
+        localVal: "(已清空)",
+        remoteVal: fmt(rg.title),
+        rawLocalVal: null,
+        rawRemoteVal: rg.title,
+      });
+    } else if (
+      isEmpty(rg.title) &&
+      wasClearedBy(rg, "title") &&
+      !isEmpty(lg.title)
+    ) {
+      diffs.push({
+        field: "title",
+        label: "目標名稱",
+        localVal: fmt(lg.title),
+        remoteVal: "(已清空)",
+        rawLocalVal: lg.title,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lg.title) && !isEmpty(rg.title)) {
+      diffs.push({
+        field: "title",
+        label: "目標名稱",
+        localVal: fmt(lg.title),
+        remoteVal: fmt(rg.title),
+        rawLocalVal: lg.title,
+        rawRemoteVal: rg.title,
+      });
+    }
   }
-  if (lg.fullText !== rg.fullText) {
+  if ((lg.fullText ?? "") !== (rg.fullText ?? "")) {
+    if (
+      isEmpty(lg.fullText) &&
+      wasClearedBy(lg, "fullText") &&
+      !isEmpty(rg.fullText)
+    ) {
+      diffs.push({
+        field: "fullText",
+        label: "目標說明",
+        localVal: "(已清空)",
+        remoteVal: fmt(rg.fullText),
+        rawLocalVal: null,
+        rawRemoteVal: rg.fullText,
+      });
+    } else if (
+      isEmpty(rg.fullText) &&
+      wasClearedBy(rg, "fullText") &&
+      !isEmpty(lg.fullText)
+    ) {
+      diffs.push({
+        field: "fullText",
+        label: "目標說明",
+        localVal: fmt(lg.fullText),
+        remoteVal: "(已清空)",
+        rawLocalVal: lg.fullText,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lg.fullText) && !isEmpty(rg.fullText)) {
+      diffs.push({
+        field: "fullText",
+        label: "目標說明",
+        localVal: fmt(lg.fullText),
+        remoteVal: fmt(rg.fullText),
+        rawLocalVal: lg.fullText,
+        rawRemoteVal: rg.fullText,
+      });
+    }
+  }
+  const lgKpis = lg.goalKpis ?? [];
+  const rgKpis = rg.goalKpis ?? [];
+  if (JSON.stringify(lgKpis) !== JSON.stringify(rgKpis)) {
+    if (isEmpty(lgKpis) && wasClearedBy(lg, "goalKpis") && !isEmpty(rgKpis)) {
+      diffs.push({
+        field: "goalKpis",
+        label: "KPI 設計",
+        localVal: "(已清空)",
+        remoteVal: `${rgKpis.length} 層 KPI`,
+        rawLocalVal: null,
+        rawRemoteVal: rgKpis,
+      });
+    } else if (
+      isEmpty(rgKpis) &&
+      wasClearedBy(rg, "goalKpis") &&
+      !isEmpty(lgKpis)
+    ) {
+      diffs.push({
+        field: "goalKpis",
+        label: "KPI 設計",
+        localVal: `${lgKpis.length} 層 KPI`,
+        remoteVal: "(已清空)",
+        rawLocalVal: lgKpis,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lgKpis) && !isEmpty(rgKpis)) {
+      diffs.push({
+        field: "goalKpis",
+        label: "KPI 設計",
+        localVal: `${lgKpis.length} 層 KPI`,
+        remoteVal: `${rgKpis.length} 層 KPI`,
+        rawLocalVal: lgKpis,
+        rawRemoteVal: rgKpis,
+      });
+    }
+  }
+  return diffs;
+}
+
+/**
+ * 比對兩個 DeptActivity 的關鍵欄位差異，供 detectConflicts 使用。
+ * 支援 clearedFields tombstone：一方刻意清空而另一方有值時，視為衝突。
+ */
+function activityDiffs(la: DeptActivity, ra: DeptActivity): FieldDiff[] {
+  const diffs: FieldDiff[] = [];
+  const summarizeKpis = (kpis: DeptActivity["kpis"]): string => {
+    if (!kpis || kpis.length === 0) return "(無 KPI)";
+    return kpis
+      .map((k) => {
+        const name = (k.name ?? k.label ?? "KPI").trim() || "KPI";
+        const actual = k.actual ?? "-";
+        const target = k.target ?? "-";
+        return `${name} ${actual}/${target}`;
+      })
+      .join(" | ");
+  };
+
+  const pushStringDiff = (
+    field: string,
+    label: string,
+    localVal: string | undefined,
+    remoteVal: string | undefined,
+  ) => {
+    if ((localVal ?? "") === (remoteVal ?? "")) return;
+    if (isEmpty(localVal) && wasClearedBy(la, field) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: "(已清空)",
+        remoteVal: fmt(remoteVal),
+        rawLocalVal: null,
+        rawRemoteVal: remoteVal,
+      });
+    } else if (
+      isEmpty(remoteVal) &&
+      wasClearedBy(ra, field) &&
+      !isEmpty(localVal)
+    ) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal),
+        remoteVal: "(已清空)",
+        rawLocalVal: localVal,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal),
+        remoteVal: fmt(remoteVal),
+        rawLocalVal: localVal,
+        rawRemoteVal: remoteVal,
+      });
+    }
+  };
+
+  const pushNumberDiff = (
+    field: string,
+    label: string,
+    localVal: number | undefined,
+    remoteVal: number | undefined,
+  ) => {
+    if (localVal === remoteVal) return;
+    if (isEmpty(localVal) && wasClearedBy(la, field) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: "(已清空)",
+        remoteVal: String(remoteVal),
+        rawLocalVal: null,
+        rawRemoteVal: remoteVal,
+      });
+    } else if (
+      isEmpty(remoteVal) &&
+      wasClearedBy(ra, field) &&
+      !isEmpty(localVal)
+    ) {
+      diffs.push({
+        field,
+        label,
+        localVal: String(localVal),
+        remoteVal: "(已清空)",
+        rawLocalVal: localVal,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: String(localVal),
+        remoteVal: String(remoteVal),
+        rawLocalVal: localVal,
+        rawRemoteVal: remoteVal,
+      });
+    }
+  };
+
+  const pushJsonDiff = (
+    field: string,
+    label: string,
+    localVal: unknown,
+    remoteVal: unknown,
+  ) => {
+    if (JSON.stringify(localVal) === JSON.stringify(remoteVal)) return;
+    if (isEmpty(localVal) && wasClearedBy(la, field) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: "(已清空)",
+        remoteVal: fmt(remoteVal, field),
+        rawLocalVal: null,
+        rawRemoteVal: remoteVal,
+      });
+    } else if (
+      isEmpty(remoteVal) &&
+      wasClearedBy(ra, field) &&
+      !isEmpty(localVal)
+    ) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal, field),
+        remoteVal: "(已清空)",
+        rawLocalVal: localVal,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      diffs.push({
+        field,
+        label,
+        localVal: fmt(localVal, field),
+        remoteVal: fmt(remoteVal, field),
+        rawLocalVal: localVal,
+        rawRemoteVal: remoteVal,
+      });
+    }
+  };
+
+  pushStringDiff("rawText", "活動名稱", la.rawText, ra.rawText);
+  pushStringDiff("status", "狀態", la.status, ra.status);
+  pushJsonDiff("owners", "負責人", la.owners ?? [], ra.owners ?? []);
+  pushStringDiff("startDate", "開始日期", la.startDate, ra.startDate);
+  pushStringDiff("endDate", "結束日期", la.endDate, ra.endDate);
+  pushNumberDiff("budget", "預算", la.budget, ra.budget);
+  pushNumberDiff("personDays", "人天", la.personDays, ra.personDays);
+  pushNumberDiff(
+    "warnDaysBefore",
+    "預警提前天數",
+    la.warnDaysBefore,
+    ra.warnDaysBefore,
+  );
+  pushStringDiff("quarter", "季度", la.quarter, ra.quarter);
+  pushStringDiff("description", "活動說明", la.description, ra.description);
+  pushStringDiff("notes", "備註", la.notes, ra.notes);
+  pushStringDiff(
+    "lifecycleStartPeriodId",
+    "生命週期起始期別",
+    la.lifecycleStartPeriodId,
+    ra.lifecycleStartPeriodId,
+  );
+  pushStringDiff(
+    "lifecycleEndPeriodId",
+    "生命週期結束期別",
+    la.lifecycleEndPeriodId,
+    ra.lifecycleEndPeriodId,
+  );
+  pushJsonDiff(
+    "assistUnits",
+    "協助單位",
+    la.assistUnits ?? [],
+    ra.assistUnits ?? [],
+  );
+  pushJsonDiff(
+    "prerequisites",
+    "前置依賴",
+    la.prerequisites ?? [],
+    ra.prerequisites ?? [],
+  );
+  pushJsonDiff(
+    "relatedActivities",
+    "關聯活動",
+    la.relatedActivities ?? [],
+    ra.relatedActivities ?? [],
+  );
+  pushJsonDiff(
+    "dashboardLinks",
+    "儀表板連結",
+    la.dashboardLinks ?? [],
+    ra.dashboardLinks ?? [],
+  );
+  pushJsonDiff("tags", "標籤", la.tags ?? [], ra.tags ?? []);
+  pushJsonDiff("frameworks", "框架", la.frameworks ?? [], ra.frameworks ?? []);
+  pushJsonDiff("planItems", "行動計畫", la.planItems ?? [], ra.planItems ?? []);
+  const lKpis = la.kpis ?? [];
+  const rKpis = ra.kpis ?? [];
+  if (JSON.stringify(lKpis) !== JSON.stringify(rKpis)) {
     diffs.push({
-      field: "fullText",
-      label: "目標說明",
-      localVal: fmt(lg.fullText),
-      remoteVal: fmt(rg.fullText),
+      field: "kpis",
+      label: "KPI",
+      localVal: summarizeKpis(lKpis),
+      remoteVal: summarizeKpis(rKpis),
+      rawLocalVal: lKpis,
+      rawRemoteVal: rKpis,
     });
   }
   return diffs;
 }
 
+function fieldMergeActivity(
+  la: DeptActivity,
+  ra: DeptActivity,
+  entityId?: string,
+  resolutions?: ConflictResolutions,
+): { merged: DeptActivity; changed: boolean } {
+  const winner = newerOf(la, ra);
+  const merged: DeptActivity = { ...la };
+  let changed = false;
+
+  function pick<T>(field: string, localVal: T, remoteVal: T): T {
+    if (entityId) {
+      const r = resolveField(resolutions, entityId, field);
+      if (r === "local") return localVal;
+      if (r === "remote") return remoteVal;
+    }
+    return winner === ra ? remoteVal : localVal;
+  }
+
+  function mergeField<T>(
+    field: keyof DeptActivity & string,
+    localVal: T,
+    remoteVal: T,
+  ) {
+    if (JSON.stringify(localVal) === JSON.stringify(remoteVal)) return;
+
+    let nextVal = localVal;
+    if (isEmpty(localVal) && !isEmpty(remoteVal)) {
+      nextVal = remoteVal;
+    } else if (!isEmpty(localVal) && isEmpty(remoteVal)) {
+      nextVal = localVal;
+    } else if (!isEmpty(localVal) && !isEmpty(remoteVal)) {
+      nextVal = pick(field, localVal, remoteVal);
+    }
+
+    if (JSON.stringify(nextVal) !== JSON.stringify(localVal)) {
+      (merged as Record<string, unknown>)[field] = nextVal as unknown;
+      changed = true;
+    }
+  }
+
+  mergeField("rawText", la.rawText, ra.rawText);
+  mergeField("status", la.status, ra.status);
+  mergeField("owners", la.owners ?? [], ra.owners ?? []);
+  mergeField("startDate", la.startDate, ra.startDate);
+  mergeField("endDate", la.endDate, ra.endDate);
+  mergeField("budget", la.budget, ra.budget);
+  mergeField("personDays", la.personDays, ra.personDays);
+  mergeField("warnDaysBefore", la.warnDaysBefore, ra.warnDaysBefore);
+  mergeField("quarter", la.quarter, ra.quarter);
+  mergeField("description", la.description, ra.description);
+  mergeField("notes", la.notes, ra.notes);
+  mergeField("kpis", la.kpis ?? [], ra.kpis ?? []);
+  mergeField("assistUnits", la.assistUnits ?? [], ra.assistUnits ?? []);
+  mergeField("prerequisites", la.prerequisites ?? [], ra.prerequisites ?? []);
+  mergeField(
+    "relatedActivities",
+    la.relatedActivities ?? [],
+    ra.relatedActivities ?? [],
+  );
+  mergeField(
+    "dashboardLinks",
+    la.dashboardLinks ?? [],
+    ra.dashboardLinks ?? [],
+  );
+  mergeField("tags", la.tags ?? [], ra.tags ?? []);
+  mergeField("frameworks", la.frameworks ?? [], ra.frameworks ?? []);
+  mergeField("planItems", la.planItems ?? [], ra.planItems ?? []);
+  mergeField(
+    "lifecycleStartPeriodId",
+    la.lifecycleStartPeriodId,
+    ra.lifecycleStartPeriodId,
+  );
+  mergeField(
+    "lifecycleEndPeriodId",
+    la.lifecycleEndPeriodId,
+    ra.lifecycleEndPeriodId,
+  );
+
+  if (ra.updatedAt && (!la.updatedAt || ra.updatedAt > la.updatedAt)) {
+    merged.updatedAt = ra.updatedAt;
+  }
+
+  return { merged, changed };
+}
+
 function teamDiffs(lt: Team, rt: Team): FieldDiff[] {
   const diffs: FieldDiff[] = [];
   if (lt.name !== rt.name) {
-    diffs.push({
-      field: "name",
-      label: "團隊名稱",
-      localVal: fmt(lt.name),
-      remoteVal: fmt(rt.name),
-    });
+    if (isEmpty(lt.name) && wasClearedBy(lt, "name") && !isEmpty(rt.name)) {
+      diffs.push({
+        field: "name",
+        label: "團隊名稱",
+        localVal: "(已清空)",
+        remoteVal: fmt(rt.name),
+        rawLocalVal: null,
+        rawRemoteVal: rt.name,
+      });
+    } else if (
+      isEmpty(rt.name) &&
+      wasClearedBy(rt, "name") &&
+      !isEmpty(lt.name)
+    ) {
+      diffs.push({
+        field: "name",
+        label: "團隊名稱",
+        localVal: fmt(lt.name),
+        remoteVal: "(已清空)",
+        rawLocalVal: lt.name,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lt.name) && !isEmpty(rt.name)) {
+      diffs.push({
+        field: "name",
+        label: "團隊名稱",
+        localVal: fmt(lt.name),
+        remoteVal: fmt(rt.name),
+        rawLocalVal: lt.name,
+        rawRemoteVal: rt.name,
+      });
+    }
   }
-  if (JSON.stringify(lt.members) !== JSON.stringify(rt.members)) {
-    diffs.push({
-      field: "members",
-      label: "成員",
-      localVal: fmt(lt.members, "members"),
-      remoteVal: fmt(rt.members, "members"),
-    });
+  const lMembers = lt.members ?? [];
+  const rMembers = rt.members ?? [];
+  if (JSON.stringify(lMembers) !== JSON.stringify(rMembers)) {
+    if (
+      isEmpty(lMembers) &&
+      wasClearedBy(lt, "members") &&
+      !isEmpty(rMembers)
+    ) {
+      diffs.push({
+        field: "members",
+        label: "成員",
+        localVal: "(已清空)",
+        remoteVal: fmt(rMembers, "members"),
+        rawLocalVal: null,
+        rawRemoteVal: rMembers,
+      });
+    } else if (
+      isEmpty(rMembers) &&
+      wasClearedBy(rt, "members") &&
+      !isEmpty(lMembers)
+    ) {
+      diffs.push({
+        field: "members",
+        label: "成員",
+        localVal: fmt(lMembers, "members"),
+        remoteVal: "(已清空)",
+        rawLocalVal: lMembers,
+        rawRemoteVal: null,
+      });
+    } else if (!isEmpty(lMembers) && !isEmpty(rMembers)) {
+      diffs.push({
+        field: "members",
+        label: "成員",
+        localVal: fmt(lMembers, "members"),
+        remoteVal: fmt(rMembers, "members"),
+        rawLocalVal: lMembers,
+        rawRemoteVal: rMembers,
+      });
+    }
   }
   return diffs;
 }
@@ -195,7 +768,13 @@ export function detectConflicts(
         const rg = remoteGoalMap.get(lg.id);
         if (!rg || deleted.has(rg.id)) continue;
 
-        if (lg.updatedAt && rg.updatedAt && lg.updatedAt !== rg.updatedAt) {
+        // LWW gate：若兩側都有 updatedAt 且時間戳不同，代表只有一方在最後寫入後編輯過；
+        // mergeWorkspaces 的 newerOf() 可安全自動解決，不需打擾使用者。
+        // 只有「時間戳相同但內容不同」才是真正的並發衝突，需拋出給使用者裁決。
+        const goalTimestampsDiffer =
+          lg.updatedAt && rg.updatedAt && lg.updatedAt !== rg.updatedAt;
+        if (!goalTimestampsDiffer) {
+          // goalDiffs 已包含 title / fullText / goalKpis（含 tombstone 判斷）
           const diffs = goalDiffs(lg, rg);
           if (diffs.length > 0) {
             entries.push({
@@ -216,7 +795,9 @@ export function detectConflicts(
           if (deleted.has(ls.id)) continue;
           const rs = remoteStratMap.get(ls.id);
           if (!rs || deleted.has(rs.id)) continue;
-          if (ls.updatedAt && rs.updatedAt && ls.updatedAt !== rs.updatedAt) {
+          const stratTimestampsDiffer =
+            ls.updatedAt && rs.updatedAt && ls.updatedAt !== rs.updatedAt;
+          if (!stratTimestampsDiffer) {
             const diffs = strategyDiffs(ls, rs);
             if (diffs.length > 0) {
               entries.push({
@@ -241,7 +822,9 @@ export function detectConflicts(
     if (deleted.has(lt.id)) continue;
     const rt = remoteTeamMap.get(lt.id);
     if (!rt || deleted.has(rt.id)) continue;
-    if (lt.updatedAt && rt.updatedAt && lt.updatedAt !== rt.updatedAt) {
+    const teamTimestampsDiffer =
+      lt.updatedAt && rt.updatedAt && lt.updatedAt !== rt.updatedAt;
+    if (!teamTimestampsDiffer) {
       const diffs = teamDiffs(lt, rt);
       if (diffs.length > 0) {
         entries.push({
@@ -258,15 +841,435 @@ export function detectConflicts(
     }
   }
 
+  // ── DeptActivity 衝突偵測 ─────────────────────────────────────────────────
+  for (const ld of local.departments) {
+    const rd = remote.departments.find((d) => d.id === ld.id);
+    if (!rd) continue;
+    const remoteActivityMap = new Map(
+      (rd.activities ?? []).map((a) => [a.id, a]),
+    );
+    for (const la of ld.activities ?? []) {
+      if (deleted.has(la.id)) continue;
+      const ra = remoteActivityMap.get(la.id);
+      if (!ra || deleted.has(ra.id)) continue;
+      const actTimestampsDiffer =
+        la.updatedAt && ra.updatedAt && la.updatedAt !== ra.updatedAt;
+      if (!actTimestampsDiffer) {
+        const diffs = activityDiffs(la, ra);
+        if (diffs.length > 0) {
+          entries.push({
+            id: la.id,
+            entityType: "activity",
+            entityLabel: la.rawText ?? la.id,
+            localUpdatedAt: la.updatedAt,
+            remoteUpdatedAt: ra.updatedAt,
+            fieldDiffs: diffs,
+            localEntity: la,
+            remoteEntity: ra,
+          });
+        }
+      }
+    }
+  }
+
   return entries;
 }
 
 // helpers
 
 function newerOf<T extends { updatedAt?: string }>(a: T, b: T): T {
+  // Assumption: updatedAt must be UTC ISO 8601 (new Date().toISOString()).
+  // String comparison is only correct for UTC Z-suffix timestamps.
+  // Mixed timezone formats (e.g. +08:00) will produce incorrect LWW results.
   if (!a.updatedAt) return b;
   if (!b.updatedAt) return a;
   return a.updatedAt >= b.updatedAt ? a : b;
+}
+
+/**
+ * 空值判斷：null / undefined / "" / 空白字串 / 空陣列 → 視為「未填寫」。
+ * 0 與 false 不視為空值（是使用者明確設定的值）。
+ */
+function isEmpty(val: unknown): boolean {
+  if (val === null || val === undefined) return true;
+  if (typeof val === "string") return val.trim() === "";
+  if (Array.isArray(val)) return val.length === 0;
+  return false;
+}
+/**
+ * Tombstone helper: 檢查實體是否刻意清空了某個欄位。
+ * 如果是，空値就是「有意義的清空」而非「未填寫」。
+ */
+function wasClearedBy(
+  entity: { clearedFields?: string[] },
+  field: string,
+): boolean {
+  return entity.clearedFields?.includes(field) ?? false;
+}
+
+/**
+ * Tombstone 追蹤：比對前後實體，自動維護 clearedFields 陣列。
+ * - 前後有値 → 無値：將 field 加入 clearedFields
+ * - 前後均有値 / 無値 → 有値：從 clearedFields 移除
+ * - 前後均無値：不修改（從未填寫，不計入 tombstone）
+ */
+export function trackClearedFields<T extends { clearedFields?: string[] }>(
+  prev: T,
+  next: T,
+  fields: (keyof T & string)[],
+): T {
+  const cleared = new Set(next.clearedFields ?? []);
+  for (const field of fields) {
+    const prevEmpty = isEmpty(prev[field as keyof T]);
+    const nextEmpty = isEmpty(next[field as keyof T]);
+    if (!prevEmpty && nextEmpty) {
+      cleared.add(field); // 使用者刻意清空
+    } else if (!nextEmpty) {
+      cleared.delete(field); // 使用者填入了值，不再視為刻意清空
+    }
+  }
+  return {
+    ...next,
+    clearedFields: cleared.size > 0 ? Array.from(cleared) : undefined,
+  };
+}
+/**
+ * Strategy 欄位級別合併（Field-Level Merge）。
+ * 規則：
+ *   - 一方空值、另一方有值  → 自動採非空方（不計入衝突）
+ *   - 雙方皆有值且不同       → Last-Write-Wins（updatedAt 較新者優先）
+ *   - 雙方值相同             → 無變化
+ * updatedAt 取兩者最大值，確保合併結果代表最新已知狀態。
+ */
+function fieldMergeStrategy(
+  ls: Strategy,
+  rs: Strategy,
+  entityId?: string,
+  resolutions?: ConflictResolutions,
+): { merged: Strategy; changed: boolean } {
+  const winner = newerOf(ls, rs);
+  const merged: Strategy = { ...ls };
+  let changed = false;
+
+  // helper: 查欄位解析，fallback LWW
+  function pick<T>(field: string, localVal: T, remoteVal: T): T {
+    if (entityId) {
+      const r = resolveField(resolutions, entityId, field);
+      if (r === "local") return localVal;
+      if (r === "remote") return remoteVal;
+    }
+    // LWW fallback
+    return winner === rs ? remoteVal : localVal;
+  }
+
+  // title
+  if ((ls.title ?? "") !== (rs.title ?? "")) {
+    if (isEmpty(ls.title) && !isEmpty(rs.title)) {
+      if (wasClearedBy(ls, "title")) {
+        merged.title = pick("title", ls.title, rs.title);
+        if (merged.title !== ls.title) changed = true;
+      } else {
+        merged.title = rs.title;
+        changed = true;
+      }
+    } else if (!isEmpty(ls.title) && isEmpty(rs.title)) {
+      if (wasClearedBy(rs, "title")) {
+        const picked = pick("title", ls.title, rs.title);
+        if (picked !== ls.title) {
+          merged.title = picked;
+          changed = true;
+        }
+      }
+    } else if (!isEmpty(ls.title) && !isEmpty(rs.title)) {
+      merged.title = pick("title", ls.title, rs.title);
+      if (merged.title !== ls.title) changed = true;
+    }
+  }
+
+  // notes
+  if ((ls.notes ?? "") !== (rs.notes ?? "")) {
+    if (isEmpty(ls.notes) && !isEmpty(rs.notes)) {
+      if (wasClearedBy(ls, "notes")) {
+        merged.notes = pick("notes", ls.notes, rs.notes);
+        if (merged.notes !== ls.notes) changed = true;
+      } else {
+        merged.notes = rs.notes;
+        changed = true;
+      }
+    } else if (!isEmpty(ls.notes) && isEmpty(rs.notes)) {
+      if (wasClearedBy(rs, "notes")) {
+        merged.notes = pick("notes", ls.notes, rs.notes);
+        if (merged.notes !== ls.notes) changed = true;
+      }
+    } else if (!isEmpty(ls.notes) && !isEmpty(rs.notes)) {
+      merged.notes = pick("notes", ls.notes, rs.notes);
+      if (merged.notes !== ls.notes) changed = true;
+    }
+  }
+
+  // owners
+  const lOwners = ls.owners ?? [];
+  const rOwners = rs.owners ?? [];
+  if (JSON.stringify(lOwners) !== JSON.stringify(rOwners)) {
+    if (isEmpty(lOwners) && !isEmpty(rOwners)) {
+      if (wasClearedBy(ls, "owners")) {
+        merged.owners = pick("owners", lOwners, rOwners);
+        if (merged.owners !== lOwners) changed = true;
+      } else {
+        merged.owners = rOwners;
+        changed = true;
+      }
+    } else if (!isEmpty(lOwners) && isEmpty(rOwners)) {
+      if (wasClearedBy(rs, "owners")) {
+        merged.owners = pick("owners", lOwners, rOwners);
+        if (merged.owners !== lOwners) changed = true;
+      }
+    } else if (!isEmpty(lOwners) && !isEmpty(rOwners)) {
+      merged.owners = pick("owners", lOwners, rOwners);
+      if (merged.owners !== lOwners) changed = true;
+    }
+  }
+
+  // manualRate
+  if (ls.manualRate !== rs.manualRate) {
+    if (isEmpty(ls.manualRate) && !isEmpty(rs.manualRate)) {
+      merged.manualRate = rs.manualRate;
+      changed = true;
+    } else if (!isEmpty(ls.manualRate) && !isEmpty(rs.manualRate)) {
+      merged.manualRate = pick("manualRate", ls.manualRate, rs.manualRate);
+      if (merged.manualRate !== ls.manualRate) changed = true;
+    }
+  }
+
+  // actionPlans
+  const lAP = ls.actionPlans ?? [];
+  const rAP = rs.actionPlans ?? [];
+  if (JSON.stringify(lAP) !== JSON.stringify(rAP)) {
+    if (isEmpty(lAP) && !isEmpty(rAP)) {
+      if (wasClearedBy(ls, "actionPlans")) {
+        merged.actionPlans = pick("actionPlans", lAP, rAP);
+        if (merged.actionPlans !== lAP) changed = true;
+      } else {
+        merged.actionPlans = rAP;
+        changed = true;
+      }
+    } else if (!isEmpty(lAP) && isEmpty(rAP)) {
+      if (wasClearedBy(rs, "actionPlans")) {
+        merged.actionPlans = pick("actionPlans", lAP, rAP);
+        if (merged.actionPlans !== lAP) changed = true;
+      }
+    } else if (!isEmpty(lAP) && !isEmpty(rAP)) {
+      merged.actionPlans = pick("actionPlans", lAP, rAP);
+      if (merged.actionPlans !== lAP) changed = true;
+    }
+  }
+
+  // updatedAt：取兩者最大值
+  if (rs.updatedAt && (!ls.updatedAt || rs.updatedAt > ls.updatedAt)) {
+    merged.updatedAt = rs.updatedAt;
+  }
+
+  return { merged, changed };
+}
+
+/** Goal 欄位級別合併，同 fieldMergeStrategy 邏輯。 */
+function fieldMergeGoal(
+  lg: Goal,
+  rg: Goal,
+  entityId?: string,
+  resolutions?: ConflictResolutions,
+): { merged: Goal; changed: boolean } {
+  const winner = newerOf(lg, rg);
+  const merged: Goal = { ...lg };
+  let changed = false;
+
+  function pick<T>(field: string, localVal: T, remoteVal: T): T {
+    if (entityId) {
+      const r = resolveField(resolutions, entityId, field);
+      if (r === "local") return localVal;
+      if (r === "remote") return remoteVal;
+    }
+    return winner === rg ? remoteVal : localVal;
+  }
+
+  if ((lg.title ?? "") !== (rg.title ?? "")) {
+    if (isEmpty(lg.title) && !isEmpty(rg.title)) {
+      if (wasClearedBy(lg, "title")) {
+        merged.title = pick("title", lg.title, rg.title);
+        if (merged.title !== lg.title) changed = true;
+      } else {
+        merged.title = rg.title;
+        changed = true;
+      }
+    } else if (!isEmpty(lg.title) && isEmpty(rg.title)) {
+      if (wasClearedBy(rg, "title")) {
+        merged.title = pick("title", lg.title, rg.title);
+        if (merged.title !== lg.title) changed = true;
+      }
+    } else if (!isEmpty(lg.title) && !isEmpty(rg.title)) {
+      merged.title = pick("title", lg.title, rg.title);
+      if (merged.title !== lg.title) changed = true;
+    }
+  }
+
+  if ((lg.fullText ?? "") !== (rg.fullText ?? "")) {
+    if (isEmpty(lg.fullText) && !isEmpty(rg.fullText)) {
+      if (wasClearedBy(lg, "fullText")) {
+        merged.fullText = pick("fullText", lg.fullText, rg.fullText);
+        if (merged.fullText !== lg.fullText) changed = true;
+      } else {
+        merged.fullText = rg.fullText;
+        changed = true;
+      }
+    } else if (!isEmpty(lg.fullText) && isEmpty(rg.fullText)) {
+      if (wasClearedBy(rg, "fullText")) {
+        merged.fullText = pick("fullText", lg.fullText, rg.fullText);
+        if (merged.fullText !== lg.fullText) changed = true;
+      }
+    } else if (!isEmpty(lg.fullText) && !isEmpty(rg.fullText)) {
+      merged.fullText = pick("fullText", lg.fullText, rg.fullText);
+      if (merged.fullText !== lg.fullText) changed = true;
+    }
+  }
+
+  if (rg.updatedAt && (!lg.updatedAt || rg.updatedAt > lg.updatedAt)) {
+    merged.updatedAt = rg.updatedAt;
+  }
+
+  // goalKpis
+  const lgKpis = lg.goalKpis ?? [];
+  const rgKpis = rg.goalKpis ?? [];
+  if (JSON.stringify(lgKpis) !== JSON.stringify(rgKpis)) {
+    if (isEmpty(lgKpis) && !isEmpty(rgKpis)) {
+      if (wasClearedBy(lg, "goalKpis")) {
+        merged.goalKpis = pick("goalKpis", lgKpis, rgKpis);
+        if (merged.goalKpis !== lgKpis) changed = true;
+      } else {
+        merged.goalKpis = rgKpis;
+        changed = true;
+      }
+    } else if (!isEmpty(lgKpis) && isEmpty(rgKpis)) {
+      if (wasClearedBy(rg, "goalKpis")) {
+        merged.goalKpis = pick("goalKpis", lgKpis, rgKpis);
+        if (merged.goalKpis !== lgKpis) changed = true;
+      }
+    } else if (!isEmpty(lgKpis) && !isEmpty(rgKpis)) {
+      merged.goalKpis = pick("goalKpis", lgKpis, rgKpis);
+      if (merged.goalKpis !== lgKpis) changed = true;
+    }
+  }
+
+  return { merged, changed };
+}
+
+/** Team 欄位級別合併，同 fieldMergeStrategy 邏輯。 */
+function fieldMergeTeam(
+  lt: Team,
+  rt: Team,
+  entityId?: string,
+  resolutions?: ConflictResolutions,
+): { merged: Team; changed: boolean } {
+  const winner = newerOf(lt, rt);
+  const merged: Team = { ...lt };
+  let changed = false;
+
+  function pick<T>(field: string, localVal: T, remoteVal: T): T {
+    if (entityId) {
+      const r = resolveField(resolutions, entityId, field);
+      if (r === "local") return localVal;
+      if (r === "remote") return remoteVal;
+    }
+    return winner === rt ? remoteVal : localVal;
+  }
+
+  if ((lt.name ?? "") !== (rt.name ?? "")) {
+    if (isEmpty(lt.name) && !isEmpty(rt.name)) {
+      if (wasClearedBy(lt, "name")) {
+        merged.name = pick("name", lt.name, rt.name);
+        if (merged.name !== lt.name) changed = true;
+      } else {
+        merged.name = rt.name;
+        changed = true;
+      }
+    } else if (!isEmpty(lt.name) && isEmpty(rt.name)) {
+      if (wasClearedBy(rt, "name")) {
+        merged.name = pick("name", lt.name, rt.name);
+        if (merged.name !== lt.name) changed = true;
+      }
+    } else if (!isEmpty(lt.name) && !isEmpty(rt.name)) {
+      merged.name = pick("name", lt.name, rt.name);
+      if (merged.name !== lt.name) changed = true;
+    }
+  }
+
+  const lMembers = lt.members ?? [];
+  const rMembers = rt.members ?? [];
+  if (JSON.stringify(lMembers) !== JSON.stringify(rMembers)) {
+    if (isEmpty(lMembers) && !isEmpty(rMembers)) {
+      if (wasClearedBy(lt, "members")) {
+        merged.members = pick("members", lMembers, rMembers);
+        if (merged.members !== lMembers) changed = true;
+      } else {
+        merged.members = rMembers;
+        changed = true;
+      }
+    } else if (!isEmpty(lMembers) && isEmpty(rMembers)) {
+      if (wasClearedBy(rt, "members")) {
+        merged.members = pick("members", lMembers, rMembers);
+        if (merged.members !== lMembers) changed = true;
+      }
+    } else if (!isEmpty(lMembers) && !isEmpty(rMembers)) {
+      merged.members = pick("members", lMembers, rMembers);
+      if (merged.members !== lMembers) changed = true;
+    }
+  }
+
+  if (rt.updatedAt && (!lt.updatedAt || rt.updatedAt > lt.updatedAt)) {
+    merged.updatedAt = rt.updatedAt;
+  }
+
+  return { merged, changed };
+}
+
+// DeptActivity 層級合併：逐筆 by id + newerOf updatedAt（同 Measure 邏輯）
+function mergeDeptActivities(
+  local: DeptActivity[],
+  remote: DeptActivity[],
+  deleted: Set<string>,
+  resolutions?: ConflictResolutions,
+): { activities: DeptActivity[]; count: number } {
+  const safeLocal = local ?? [];
+  const filtered = safeLocal.filter((a) => !deleted.has(a.id));
+  const map = new Map<string, DeptActivity>(filtered.map((a) => [a.id, a]));
+  let count = safeLocal.length - filtered.length;
+
+  for (const ra of remote ?? []) {
+    if (deleted.has(ra.id)) {
+      if (map.delete(ra.id)) count++;
+      continue;
+    }
+    const la = map.get(ra.id);
+    if (!la) {
+      map.set(ra.id, ra);
+      count++;
+    } else {
+      const res = resolutions?.[ra.id];
+      if (res === "remote") {
+        map.set(ra.id, ra);
+        count++;
+      } else if (res === "local") {
+        // keep local
+      } else {
+        const fm = fieldMergeActivity(la, ra, ra.id, resolutions);
+        if (fm.changed) {
+          map.set(ra.id, fm.merged);
+          count++;
+        }
+      }
+    }
+  }
+
+  return { activities: Array.from(map.values()), count };
 }
 
 // Measure 層級合併：逐筆 by id，newerOf per measure
@@ -332,22 +1335,23 @@ function mergeStrategies(
       );
 
       // Strategy metadata（title / notes / owners / manualRate / actionPlans）
-      // 仍以 newerOf 或使用者選擇決定
+      // 欄位級別合併：空値自動採非空方，雙方皆有値則 LWW；使用者手動解決時採整體覆蓋
       const res = resolutions?.[rs.id];
-      let metaWinner: Strategy;
+      let mergedStratMeta: Strategy;
       let metaChanged = false;
       if (res === "local") {
-        metaWinner = ls;
+        mergedStratMeta = ls;
       } else if (res === "remote") {
-        metaWinner = rs;
+        mergedStratMeta = rs;
         metaChanged = true;
       } else {
-        metaWinner = newerOf(ls, rs);
-        metaChanged = metaWinner !== ls;
+        const fm = fieldMergeStrategy(ls, rs, rs.id, resolutions);
+        mergedStratMeta = fm.merged;
+        metaChanged = fm.changed;
       }
 
       if (metaChanged || mc > 0) {
-        map.set(rs.id, { ...metaWinner, measures: mergedMeasures });
+        map.set(rs.id, { ...mergedStratMeta, measures: mergedMeasures });
         if (metaChanged) count++;
         count += mc;
       }
@@ -384,19 +1388,23 @@ function mergeGoals(
         resolutions,
       );
       const res = resolutions?.[rg.id];
-      let metaWinner: Goal;
+      let mergedGoalMeta: Goal;
+      let metaIsChanged = false;
       if (res === "local") {
-        metaWinner = lg;
+        mergedGoalMeta = lg;
       } else if (res === "remote") {
-        metaWinner = rg;
+        mergedGoalMeta = rg;
+        metaIsChanged = true;
         count++;
       } else {
-        metaWinner = newerOf(lg, rg);
-        if (metaWinner !== lg) count++;
+        const fm = fieldMergeGoal(lg, rg, rg.id, resolutions);
+        mergedGoalMeta = fm.merged;
+        metaIsChanged = fm.changed;
+        if (metaIsChanged) count++;
       }
-      const changed = sc > 0 || metaWinner !== lg;
+      const changed = sc > 0 || metaIsChanged;
       if (changed) {
-        map.set(rg.id, { ...metaWinner, strategies });
+        map.set(rg.id, { ...mergedGoalMeta, strategies });
         count += sc;
       }
     }
@@ -432,9 +1440,9 @@ function mergeTeams(
         map.set(rt.id, rt);
         count++;
       } else {
-        const winner = newerOf(lt, rt);
-        if (winner !== lt) {
-          map.set(rt.id, winner);
+        const fm = fieldMergeTeam(lt, rt, rt.id, resolutions);
+        if (fm.changed) {
+          map.set(rt.id, fm.merged);
           count++;
         }
       }
@@ -465,9 +1473,28 @@ function mergePeriods(
         deleted,
         resolutions,
       );
-      if (gc > 0) {
-        map.set(rp.id, { ...lp, ogsm: { ...lp.ogsm, goals } });
-        count += gc;
+      // freeNodes: union by id，同 id 遠端版優先（FreeNode 無 updatedAt）
+      const lfn = lp.ogsm.freeNodes ?? [];
+      const rfn = rp.ogsm.freeNodes ?? [];
+      const fnMap = new Map<string, FreeNode>(lfn.map((n) => [n.id, n]));
+      let fnCount = 0;
+      for (const rn of rfn) {
+        if (!fnMap.has(rn.id)) {
+          fnMap.set(rn.id, rn);
+          fnCount++;
+        } else if (JSON.stringify(fnMap.get(rn.id)) !== JSON.stringify(rn)) {
+          fnMap.set(rn.id, rn);
+          fnCount++;
+        }
+      }
+      const mergedFreeNodes = Array.from(fnMap.values());
+      const totalCount = gc + fnCount;
+      if (totalCount > 0) {
+        map.set(rp.id, {
+          ...lp,
+          ogsm: { ...lp.ogsm, goals, freeNodes: mergedFreeNodes },
+        });
+        count += totalCount;
       }
     }
   }
@@ -496,9 +1523,16 @@ function mergeDepts(
         deleted,
         resolutions,
       );
-      if (pc > 0) {
-        map.set(rd.id, { ...ld, periods });
-        count += pc;
+      const { activities: mergedActivities, count: ac } = mergeDeptActivities(
+        ld.activities ?? [],
+        rd.activities ?? [],
+        deleted,
+        resolutions,
+      );
+      const totalCount = pc + ac;
+      if (totalCount > 0) {
+        map.set(rd.id, { ...ld, periods, activities: mergedActivities });
+        count += totalCount;
       }
     }
   }

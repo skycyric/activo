@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  Strategy,
+  DeptActivity,
   KPI,
-  Measure,
-  MeasureStatus,
-  Team,
-  TeamMember,
-  ActionPlan,
   PlanItem,
+  Strategy,
+  Team,
 } from "../schemas/ogsm";
-import { genId } from "../utils/csvParser";
-import { getPlanItemWarning } from "../utils/planWarnings";
+import { computeKpiAchievement } from "../utils/kpiCalc";
+import { countPlanWarnings, getPlanItemWarning } from "../utils/planWarnings";
 
 interface Props {
   strategy: Strategy;
@@ -18,2149 +15,877 @@ interface Props {
   onUpdate: (s: Strategy) => void;
   onDelete: () => void;
   teams: Team[];
-  allMembers: TeamMember[];
   warnDaysBefore: number;
   onUpdateWarnDaysBefore: (n: number) => void;
   initialTab?: "measure" | "plans" | "notes";
   initialWarnFilter?: "overdue" | "warning" | null;
   initialMeasureId?: string;
   isReadOnly?: boolean;
+  linkedDeptActivities?: DeptActivity[];
+  onToggleExcludeFromOgsm?: (
+    activityId: string,
+    exclude: boolean,
+    strategyId: string,
+  ) => void;
+  onNavigateToActivityPage?: () => void;
+  onOpenActivityDetail?: (activityId: string) => void;
+  expandedActivityId?: string | null;
+  onExpandedActivityChange?: (activityId: string | null) => void;
 }
 
-function InlineEdit({
-  value,
-  onSave,
-  className = "",
-  placeholder = "點擊編輯…",
-  multiline = false,
-  disabled = false,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  className?: string;
-  placeholder?: string;
-  multiline?: boolean;
-  disabled?: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  // 用 ref 旗標避免 Escape 後 onBlur 仍觸發 commit
-  const cancelledRef = React.useRef(false);
+type StatusKey = "not-started" | "attention" | "in-progress" | "completed";
 
-  const commit = () => {
-    if (cancelledRef.current) return;
-    onSave(draft);
-    setEditing(false);
-  };
+interface ActivityKpiDetail {
+  id: string;
+  label: string;
+  actual?: number | null;
+  target?: number | null;
+  unit?: string;
+  rate: number | null;
+}
 
-  const cancel = () => {
-    cancelledRef.current = true;
-    setDraft(value);
-    setEditing(false);
-  };
+interface ActivityAlertDetail {
+  id: string;
+  description: string;
+  warnType: "overdue" | "warning";
+  plannedEndDate: string;
+}
 
-  if (!editing) {
-    return (
-      <span
-        className={`inline-edit-view ${className}`}
-        onDoubleClick={() => {
-          if (disabled) return;
-          cancelledRef.current = false;
-          setDraft(value);
-          setEditing(true);
-        }}
-        title={disabled ? "唯讀" : "雙擊編輯"}
-      >
-        {value || (
-          <span style={{ color: "#4b5563", fontStyle: "italic" }}>
-            {placeholder.replace("點擊", "雙擊")}
-          </span>
-        )}
-      </span>
-    );
+interface TrackedActivity {
+  id: string;
+  name: string;
+  owner: string;
+  status?: StatusKey;
+  startDate?: string;
+  endDate?: string;
+  updatedAt?: string;
+  nextDueDate?: string;
+  achievedKpis: number;
+  totalKpis: number;
+  kpiProgressPct: number;
+  completedPlans: number;
+  totalPlans: number;
+  planProgressPct: number;
+  warnings: { overdue: number; warning: number };
+  kpiDetails: ActivityKpiDetail[];
+  alertItems: ActivityAlertDetail[];
+  isExcluded: boolean;
+}
+
+const LS_WIDTH_KEY = "ogsm_panel_width";
+const DEFAULT_WIDTH = 520;
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 920;
+
+function loadWidth() {
+  if (typeof window === "undefined") return DEFAULT_WIDTH;
+  const raw = window.localStorage.getItem(LS_WIDTH_KEY);
+  const parsed = raw ? Number(raw) : DEFAULT_WIDTH;
+  return Number.isFinite(parsed)
+    ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, parsed))
+    : DEFAULT_WIDTH;
+}
+
+function saveWidth(width: number) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LS_WIDTH_KEY, String(width));
+}
+
+function flattenPlanItems(activity: DeptActivity): PlanItem[] {
+  if (activity.planItems?.length) return activity.planItems;
+  return activity.actionPlans?.flatMap((plan) => plan.items ?? []) ?? [];
+}
+
+function getStatusMeta(status?: StatusKey) {
+  switch (status) {
+    case "completed":
+      return {
+        label: "已完成",
+        color: "#047857",
+        background: "#d1fae5",
+        border: "#6ee7b7",
+      };
+    case "in-progress":
+      return {
+        label: "進行中",
+        color: "#1d4ed8",
+        background: "#dbeafe",
+        border: "#93c5fd",
+      };
+    case "attention":
+      return {
+        label: "需注意",
+        color: "#b45309",
+        background: "#fef3c7",
+        border: "#fcd34d",
+      };
+    default:
+      return {
+        label: "未開始",
+        color: "#475569",
+        background: "#e2e8f0",
+        border: "#cbd5e1",
+      };
   }
-  if (multiline) {
-    return (
-      <textarea
-        className={`inline-edit-input ${className}`}
-        value={draft}
-        autoFocus
-        rows={4}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={(e) => e.target.select()}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") cancel();
-        }}
-      />
-    );
-  }
-  return (
-    <input
-      className={`inline-edit-input ${className}`}
-      value={draft}
-      autoFocus
-      onChange={(e) => setDraft(e.target.value)}
-      onFocus={(e) => e.target.select()}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        if (e.key === "Escape") cancel();
-      }}
-    />
-  );
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  kpi,
-  onUpdate,
-  onDelete,
-  linkedTotal,
-  linkedDone,
-  isReadOnly = false,
-}: {
-  kpi: KPI;
-  onUpdate: (k: KPI) => void;
-  onDelete: () => void;
-  linkedTotal?: number;
-  linkedDone?: number;
-  isReadOnly?: boolean;
-}) {
-  const isProgress = kpi.kpiType === "progress";
-  const isGrowth = kpi.kpiType === "growth";
-  const isTargetRate = kpi.kpiType === "target_rate";
-  const hasActual = kpi.actual !== null && kpi.actual !== undefined;
-
-  // 成長型：計算成長率
-  const growthRate =
-    isGrowth &&
-    kpi.baseValue != null &&
-    kpi.currentValue != null &&
-    kpi.baseValue !== 0
-      ? ((kpi.currentValue - kpi.baseValue) / kpi.baseValue) * 100
-      : null;
-  const hasGrowthTarget = isGrowth && kpi.targetGrowthRate != null;
-
-  // 圓環顯示值
-  const rawRate = isGrowth
-    ? hasGrowthTarget && growthRate !== null
-      ? (growthRate / kpi.targetGrowthRate!) * 100
-      : null
-    : isTargetRate
-      ? hasActual
-        ? kpi.targetRate != null &&
-          kpi.targetRate !== 0 &&
-          kpi.achievementRate != null
-          ? (kpi.achievementRate / kpi.targetRate) * 100
-          : kpi.achievementRate
-        : null
-      : isProgress
-        ? hasActual
-          ? kpi.actual
-          : null
-        : hasActual
-          ? kpi.achievementRate
-          : null;
-  const rate = rawRate ?? 0;
-  const rateIsNull = rawRate === null || rawRate === undefined;
-  const size = 72;
-  const r = (size - 6) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (Math.min(rate, 100) / 100) * circ;
-  const color =
-    rate >= 100
-      ? "#10b981"
-      : rate >= 70
-        ? "#6366f1"
-        : rate >= 40
-          ? "#f59e0b"
-          : rate > 0
-            ? "#ef4444"
-            : "#4b5563";
-
-  return (
-    <div className="kpi-card">
-      {/* 成長型且無目標成長率：不顯示圓環，改顯示成長率數字 */}
-      {isGrowth && !hasGrowthTarget ? (
-        <div
-          style={{
-            width: 72,
-            height: 72,
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 2,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-              color:
-                growthRate === null
-                  ? "#4b5563"
-                  : growthRate >= 0
-                    ? "#10b981"
-                    : "#ef4444",
-            }}
-          >
-            {growthRate === null
-              ? "—"
-              : `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}%`}
-          </span>
-          <span style={{ fontSize: 9, color: "#9ca3af" }}>成長率</span>
-        </div>
-      ) : (
-        <svg width={size} height={size} style={{ flexShrink: 0 }}>
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke="#e5e7eb"
-            strokeWidth={5}
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth={5}
-            strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round"
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
-            style={{ transition: "stroke-dasharray 0.8s ease" }}
-          />
-          <text
-            x={size / 2}
-            y={size / 2 + 5}
-            textAnchor="middle"
-            fill={color}
-            fontSize={11}
-            fontWeight="800"
-          >
-            {rateIsNull ? "—" : `${Math.round(rate)}%`}
-          </text>
-        </svg>
-      )}
-      <div className="kpi-card-info" style={{ flex: 1 }}>
-        <InlineEdit
-          value={kpi.label}
-          onSave={(v) => onUpdate({ ...kpi, label: v })}
-          className="kpi-label-edit"
-          placeholder="KPI 名稱"
-        />
-        {/* 類型標籤：唯讀，建立時已定，不可切換 */}
-        <span
-          style={{
-            display: "inline-block",
-            fontSize: 10,
-            padding: "1px 7px",
-            marginBottom: 4,
-            borderRadius: 10,
-            border: `1px solid ${isProgress ? "#a78bfa" : isGrowth ? "#6ee7b7" : "#d1d5db"}`,
-            background: isProgress
-              ? "#f5f3ff"
-              : isGrowth
-                ? "#ecfdf5"
-                : "#f9fafb",
-            color: isProgress ? "#7c3aed" : isGrowth ? "#059669" : "#6b7280",
-          }}
-        >
-          {isProgress ? "進度型" : isGrowth ? "成長型" : "量化型"}
-        </span>
-        {typeof linkedTotal !== "undefined" && linkedTotal > 0 && (
-          <div style={{ fontSize: 10, color: "var(--text)", marginBottom: 6 }}>
-            關聯項目：{linkedDone}/{linkedTotal} 項
-          </div>
-        )}
-        <div className="kpi-inputs">
-          {isGrowth ? (
-            /* 成長型：基期值、現值、目標成長率（選填）、成長率（唯讀） */
-            <>
-              <label className="kpi-field">
-                基期值
-                <input
-                  type="number"
-                  value={kpi.baseValue ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const baseValue =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    const cur = kpi.currentValue ?? null;
-                    const gr =
-                      baseValue != null && cur != null && baseValue !== 0
-                        ? ((cur - baseValue) / baseValue) * 100
-                        : null;
-                    const rate =
-                      gr !== null &&
-                      kpi.targetGrowthRate != null &&
-                      kpi.targetGrowthRate !== 0
-                        ? (gr / kpi.targetGrowthRate) * 100
-                        : null;
-                    onUpdate({ ...kpi, baseValue, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                現值
-                <input
-                  type="number"
-                  value={kpi.currentValue ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const currentValue =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    const base = kpi.baseValue ?? null;
-                    const gr =
-                      base != null && currentValue != null && base !== 0
-                        ? ((currentValue - base) / base) * 100
-                        : null;
-                    const rate =
-                      gr !== null &&
-                      kpi.targetGrowthRate != null &&
-                      kpi.targetGrowthRate !== 0
-                        ? (gr / kpi.targetGrowthRate) * 100
-                        : null;
-                    onUpdate({ ...kpi, currentValue, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                目標成長率
-                <input
-                  type="number"
-                  value={kpi.targetGrowthRate ?? ""}
-                  placeholder="選填"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const targetGrowthRate =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    const rate =
-                      growthRate !== null &&
-                      targetGrowthRate != null &&
-                      targetGrowthRate !== 0
-                        ? (growthRate / targetGrowthRate) * 100
-                        : null;
-                    onUpdate({
-                      ...kpi,
-                      targetGrowthRate,
-                      achievementRate: rate,
-                    });
-                  }}
-                />
-                %
-              </label>
-              <label className="kpi-field">
-                成長率
-                <span
-                  className="kpi-num-input"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    background: "#f3f4f6",
-                    cursor: "default",
-                    color:
-                      growthRate === null
-                        ? "#4b5563"
-                        : growthRate >= 0
-                          ? "#059669"
-                          : "#ef4444",
-                    fontWeight: 700,
-                  }}
-                >
-                  {growthRate === null
-                    ? "—"
-                    : `${growthRate >= 0 ? "+" : ""}${growthRate.toFixed(1)}`}
-                </span>
-                %
-              </label>
-            </>
-          ) : isTargetRate ? (
-            /* 目標率型：目標、實際、單位（同量化型）＋ 目標率輸入 */
-            <>
-              <label className="kpi-field">
-                達成率
-                <span
-                  className="kpi-num-input"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    background: "#f3f4f6",
-                    cursor: "default",
-                  }}
-                >
-                  {hasActual && kpi.achievementRate != null
-                    ? kpi.achievementRate.toFixed(1)
-                    : "—"}
-                </span>
-                %
-              </label>
-              <label className="kpi-field">
-                目標率
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.targetRate ?? ""}
-                  placeholder="選填"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const targetRate =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    onUpdate({ ...kpi, targetRate });
-                  }}
-                />
-                %
-              </label>
-              <label className="kpi-field">
-                目標值
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.target ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const target =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (target !== null && target > 0 && kpi.actual !== null)
-                      rate = (kpi.actual / target) * 100;
-                    onUpdate({ ...kpi, target, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                實際值
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.actual ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const actual =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (
-                      actual !== null &&
-                      kpi.target !== null &&
-                      kpi.target > 0
-                    )
-                      rate = (actual / kpi.target) * 100;
-                    onUpdate({ ...kpi, actual, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                單位
-                <input
-                  type="text"
-                  value={kpi.unit}
-                  placeholder="人/筆…"
-                  className="kpi-num-input"
-                  style={{ width: 44 }}
-                  onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
-                />
-              </label>
-            </>
-          ) : (
-            /* 量化型 / 進度型：原有欄位 */
-            <>
-              <label className="kpi-field">
-                {isProgress ? "進度" : "達成率"}
-                <span
-                  className="kpi-num-input"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    background: "#f3f4f6",
-                    cursor: "default",
-                  }}
-                >
-                  {hasActual && kpi.achievementRate != null
-                    ? Math.round(kpi.achievementRate)
-                    : "—"}
-                </span>
-                %
-              </label>
-              <label className="kpi-field">
-                目標
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.target ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  readOnly={isProgress}
-                  style={
-                    isProgress
-                      ? { background: "#f3f4f6", cursor: "default" }
-                      : undefined
-                  }
-                  onChange={(e) => {
-                    const target =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (target !== null && target > 0 && kpi.actual !== null)
-                      rate = (kpi.actual / target) * 100;
-                    else if (
-                      kpi.actual !== null &&
-                      (target === null || target === 0)
-                    )
-                      rate = 0;
-                    onUpdate({ ...kpi, target, achievementRate: rate });
-                  }}
-                />
-              </label>
-              <label className="kpi-field">
-                實際
-                <input
-                  type="number"
-                  min={0}
-                  value={kpi.actual ?? ""}
-                  placeholder="—"
-                  className="kpi-num-input"
-                  onChange={(e) => {
-                    const actual =
-                      e.target.value === "" ? null : parseFloat(e.target.value);
-                    let rate: number | null = null;
-                    if (
-                      actual !== null &&
-                      kpi.target !== null &&
-                      kpi.target > 0
-                    )
-                      rate = (actual / kpi.target) * 100;
-                    onUpdate({ ...kpi, actual, achievementRate: rate });
-                  }}
-                />
-              </label>
-              {!isProgress && (
-                <label className="kpi-field">
-                  單位
-                  <input
-                    type="text"
-                    value={kpi.unit}
-                    placeholder="人/筆…"
-                    className="kpi-num-input"
-                    style={{ width: 44 }}
-                    onChange={(e) => onUpdate({ ...kpi, unit: e.target.value })}
-                  />
-                </label>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      {!isReadOnly && (
-        <button className="kpi-delete-btn" onClick={onDelete} title="刪除 KPI">
-          🗑
-        </button>
-      )}
-    </div>
-  );
+function formatDateRange(startDate?: string, endDate?: string) {
+  if (startDate && endDate) return `${startDate} - ${endDate}`;
+  if (startDate) return `${startDate} 起`;
+  if (endDate) return `至 ${endDate}`;
+  return "未設定期間";
 }
 
-// ─── Helper Functions ─────────────────────────────────────────────────────────
-
-/**
- * Parse date string and return {month, day}
- */
-function parseMonthDay(s: string) {
-  // YYYY-MM-DD
-  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (iso) return { month: parseInt(iso[2]), day: parseInt(iso[3]) };
-  // MM/DD
-  const md = s.match(/^(\d{1,2})\/(\d{1,2})$/);
-  if (md) return { month: parseInt(md[1]), day: parseInt(md[2]) };
-  return null;
+function getKpiAchievementRate(kpi: KPI, siblingKpis: KPI[]) {
+  return computeKpiAchievement(kpi, siblingKpis);
 }
 
-/**
- * Check if a plan item's date range overlaps with a given quarter
- */
-function doesItemOverlapQuarter(item: PlanItem, quarter: string): boolean {
-  const endDate = item.plannedEndDate;
-  if (!endDate) return false;
-  const e = parseMonthDay(endDate);
-  if (!e) return false;
-  const qMonths: Record<string, [number, number]> = {
-    Q1: [1, 3],
-    Q2: [4, 6],
-    Q3: [7, 9],
-    Q4: [10, 12],
-  };
-  const [qStart, qEnd] = qMonths[quarter] ?? [1, 3];
-  return e.month >= qStart && e.month <= qEnd;
+function getNextDueDate(planItems: PlanItem[]): string | undefined {
+  const dueDates = planItems
+    .filter((item) => !item.completed && !!item.plannedEndDate)
+    .map((item) => item.plannedEndDate as string)
+    .sort((a, b) => a.localeCompare(b));
+  return dueDates[0];
 }
 
-function doesMeasureOverlapQuarter(
-  measure: Measure,
-  linkedItems: PlanItem[],
-  quarter: string,
-): boolean {
-  const qMonths: Record<string, [number, number]> = {
-    Q1: [1, 3],
-    Q2: [4, 6],
-    Q3: [7, 9],
-    Q4: [10, 12],
-  };
-  const [qStart, qEnd] = qMonths[quarter] ?? [1, 3];
-
-  const s = measure.startDate ? parseMonthDay(measure.startDate) : null;
-  const e = measure.endDate ? parseMonthDay(measure.endDate) : null;
-  if (s) {
-    const endMonth = e ? e.month : s.month;
-    return s.month <= qEnd && endMonth >= qStart;
-  }
-
-  // Backward-compatible fallback for old JSON where measure dates are missing.
-  return linkedItems.some((item) => doesItemOverlapQuarter(item, quarter));
+function formatUpdatedDate(updatedAt?: string): string {
+  if (!updatedAt) return "未記錄更新";
+  return updatedAt.slice(0, 10);
 }
 
-// ─── Detail Panel ──────────────────────────────────────────────────────────────
+function getActivityPriorityScore(activity: TrackedActivity): number {
+  const overdueScore = activity.warnings.overdue * 100;
+  const warningScore = activity.warnings.warning * 10;
+  const statusScore = activity.status === "completed" ? 0 : 1;
+  return overdueScore + warningScore + statusScore;
+}
 
 export default function DetailPanel({
   strategy,
   onClose,
-  onUpdate,
-  onDelete,
-  teams,
-  allMembers,
   warnDaysBefore,
-  onUpdateWarnDaysBefore,
-  initialTab,
   initialWarnFilter,
-  initialMeasureId,
-  isReadOnly = false,
+  linkedDeptActivities,
+  onNavigateToActivityPage,
+  onOpenActivityDetail,
+  expandedActivityId,
+  onExpandedActivityChange,
 }: Props) {
-  const [tab, setTab] = useState<"measure" | "plans" | "notes">(
-    initialMeasureId ? "plans" : (initialTab ?? "measure"),
-  );
-  const [warnFilter, setWarnFilter] = useState<"overdue" | "warning" | null>(
-    initialWarnFilter ?? null,
-  );
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [filterOwner, setFilterOwner] = useState<string>("all");
-  const [showFilters, setShowFilters] = useState(false);
-  const [ownerDropOpen, setOwnerDropOpen] = useState(false);
-  const ownerDropRef = useRef<HTMLDivElement>(null);
-  const [planSectionCollapsed, setPlanSectionCollapsed] = useState<
-    Record<string, boolean>
-  >(() => {
-    const map: Record<string, boolean> = {};
-    strategy.measures.forEach((m) => {
-      if (initialMeasureId) {
-        // Only expand the target measure, collapse the rest
-        map[m.id] = m.id !== initialMeasureId;
-      } else {
-        // If opened with a warnFilter, expand all sections so filtered items are visible
-        map[m.id] = initialWarnFilter ? false : true;
-      }
-    });
-    return map;
-  });
-  useEffect(() => {
-    if (!ownerDropOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        ownerDropRef.current &&
-        !ownerDropRef.current.contains(e.target as Node)
-      )
-        setOwnerDropOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [ownerDropOpen]);
-
-  const [warnDaysLocal, setWarnDaysLocal] = useState<string>(
-    String(warnDaysBefore),
-  );
-  useEffect(() => {
-    setWarnDaysLocal(String(warnDaysBefore));
-  }, [warnDaysBefore]);
-
-  const [panelWidth, setPanelWidth] = useState(() => {
-    const saved = localStorage.getItem("ogsm_panel_width");
-    return saved ? parseInt(saved, 10) : 800;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("ogsm_panel_width", panelWidth.toString());
-    } catch {
-      // best-effort; ignore quota or privacy-mode errors
-    }
-  }, [panelWidth]);
-
+  const [panelWidth, setPanelWidth] = useState(loadWidth);
+  const [activeWarnFilter, setActiveWarnFilter] = useState<
+    "overdue" | "warning" | null
+  >(initialWarnFilter ?? null);
+  const [internalExpandedActivityId, setInternalExpandedActivityId] = useState<
+    string | null
+  >(null);
   const dragCtrlRef = useRef<AbortController | null>(null);
+  const activitySectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => saveWidth(panelWidth), [panelWidth]);
+
   useEffect(
     () => () => {
       dragCtrlRef.current?.abort();
     },
     [],
   );
+
+  // Derived state: sync warn filter from prop; reset when strategy changes.
+  // Using render-phase setState (React "getDerivedStateFromProps" pattern) to
+  // avoid a cascading setState-in-effect render cycle.
+  const [warnFilterSyncKey, setWarnFilterSyncKey] = useState(
+    `${strategy.id}:${initialWarnFilter ?? ""}`,
+  );
+  const currentWarnFilterSyncKey = `${strategy.id}:${initialWarnFilter ?? ""}`;
+  if (warnFilterSyncKey !== currentWarnFilterSyncKey) {
+    setWarnFilterSyncKey(currentWarnFilterSyncKey);
+    setActiveWarnFilter(initialWarnFilter ?? null);
+  }
+
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
       dragCtrlRef.current?.abort();
-      const ctrl = new AbortController();
-      dragCtrlRef.current = ctrl;
-      const startX = e.clientX;
-      const startWidth = panelWidth;
-      document.addEventListener(
-        "mousemove",
-        (moveEvent: MouseEvent) => {
-          // Panel is on right edge, deltaX < 0 means drag left -> width increases
-          const newWidth = Math.max(
-            400,
-            Math.min(1200, startWidth - (moveEvent.clientX - startX)),
-          );
-          setPanelWidth(newWidth);
-        },
-        { signal: ctrl.signal },
-      );
-      document.addEventListener("mouseup", () => ctrl.abort(), {
-        signal: ctrl.signal,
+      const controller = new AbortController();
+      dragCtrlRef.current = controller;
+
+      const handleMove = (moveEvent: MouseEvent) => {
+        const nextWidth = window.innerWidth - moveEvent.clientX;
+        setPanelWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, nextWidth)));
+      };
+
+      const handleUp = () => {
+        controller.abort();
+        dragCtrlRef.current = null;
+      };
+
+      window.addEventListener("mousemove", handleMove, {
+        signal: controller.signal,
+      });
+      window.addEventListener("mouseup", handleUp, {
+        once: true,
+        signal: controller.signal,
       });
     },
-    [panelWidth],
+    [],
   );
 
-  // KPI helpers
-  const updateKPI = (msrId: string, kpiId: string, updated: KPI) => {
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((m) =>
-        m.id !== msrId
-          ? m
-          : {
-              ...m,
-              kpis: m.kpis.map((k) => (k.id === kpiId ? updated : k)),
-            },
-      ),
-    });
-  };
-  const deleteKPI = (msrId: string, kpiId: string) => {
-    const kpiLabel =
-      strategy.measures
-        .find((m) => m.id === msrId)
-        ?.kpis.find((k) => k.id === kpiId)?.label ?? "此 KPI";
-    if (!window.confirm(`確定要刪除「${kpiLabel}」嗎？`)) return;
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((m) =>
-        m.id !== msrId
-          ? m
-          : { ...m, kpis: m.kpis.filter((k) => k.id !== kpiId) },
-      ),
-    });
-  };
-  // addKPI removed — KPIs should be added under a specific Measure via UI
+  const effectiveExpandedActivityId =
+    expandedActivityId ?? internalExpandedActivityId;
 
-  // ─── Action Plan helpers ──────────────────────────────────────────────────────
-
-  const addChecklistItemToMeasure = (msrId: string) => {
-    const newItem: PlanItem = {
-      id: genId("item"),
-      description: "",
-      owner: "",
-      completed: false,
-      linkedMeasureId: msrId,
-    };
-    const existingAp = strategy.actionPlans.find(
-      (p) => p.quarter === selectedQuarter,
-    );
-    if (existingAp) {
-      // Add item to the existing plan, preserving all other plans
-      const newActionPlans = strategy.actionPlans.map((p) =>
-        p.id === existingAp.id ? { ...p, items: [...p.items, newItem] } : p,
-      );
-      onUpdate({ ...strategy, actionPlans: newActionPlans });
-    } else {
-      const ap: ActionPlan = {
-        id: genId("plan"),
-        quarter: selectedQuarter,
-        title: selectedQuarter + " 計畫",
-        items: [newItem],
-      };
-      onUpdate({
-        ...strategy,
-        actionPlans: [...strategy.actionPlans, ap],
-      });
-    }
-  };
-
-  const updatePlanItem = (id: string, patch: Partial<PlanItem>) => {
-    onUpdate({
-      ...strategy,
-      actionPlans: strategy.actionPlans.map((p) => ({
-        ...p,
-        items: p.items.map((it) => (it.id === id ? { ...it, ...patch } : it)),
-      })),
-    });
-  };
-
-  const quarterFromDate = (dateStr: string): string | null => {
-    const m = dateStr.match(/^(\d{4})-(\d{1,2})-\d{1,2}$/);
-    if (!m) return null;
-    const month = parseInt(m[2]);
-    if (month <= 3) return "Q1";
-    if (month <= 6) return "Q2";
-    if (month <= 9) return "Q3";
-    return "Q4";
-  };
-
-  const updatePlannedEndDate = (id: string, newDate: string) => {
-    const currentAp = strategy.actionPlans.find((p) =>
-      p.items.some((i) => i.id === id),
-    );
-    if (!currentAp) {
-      updatePlanItem(id, { plannedEndDate: newDate });
-      return;
-    }
-    const targetQ = newDate ? quarterFromDate(newDate) : null;
-    if (!targetQ || targetQ === currentAp.quarter) {
-      updatePlanItem(id, { plannedEndDate: newDate });
-      return;
-    }
-    // Move item to the matching quarter's ActionPlan
-    const item = currentAp.items.find((i) => i.id === id);
-    if (!item) return;
-    const updatedItem = { ...item, plannedEndDate: newDate };
-    let newPlans = strategy.actionPlans.map((p) =>
-      p.id === currentAp.id
-        ? { ...p, items: p.items.filter((i) => i.id !== id) }
-        : p,
-    );
-    const targetAp = newPlans.find((p) => p.quarter === targetQ);
-    if (targetAp) {
-      newPlans = newPlans.map((p) =>
-        p.id === targetAp.id ? { ...p, items: [...p.items, updatedItem] } : p,
-      );
-    } else {
-      newPlans = [
-        ...newPlans,
-        {
-          id: genId("plan"),
-          quarter: targetQ,
-          title: targetQ + " 計畫",
-          items: [updatedItem],
-        },
-      ];
-    }
-    onUpdate({ ...strategy, actionPlans: newPlans });
-  };
-
-  const deletePlanItem = (id: string, desc: string) => {
-    if (!window.confirm(`確定要刪除「${desc || "此項目"}」嗎？`)) return;
-    onUpdate({
-      ...strategy,
-      actionPlans: strategy.actionPlans.map((p) => ({
-        ...p,
-        items: p.items.filter((it) => it.id !== id),
-      })),
-    });
-  };
-
-  const updateMeasureDateRange = (
-    measureId: string,
-    patch: Partial<Pick<Measure, "startDate" | "endDate">>,
-  ) => {
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((ms) =>
-        ms.id === measureId ? { ...ms, ...patch } : ms,
-      ),
-    });
-  };
-
-  const renderPlanItemRow = (
-    item: PlanItem,
-    extra?: React.ReactNode,
-    readOnly: boolean = false,
-  ) => {
-    const warn = getPlanItemWarning(item, warnDaysBefore);
-    let daysLeft: number | null = null;
-    if (warn === "warning" && item.plannedEndDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const end = new Date(item.plannedEndDate);
-      end.setHours(0, 0, 0, 0);
-      daysLeft = Math.ceil((end.getTime() - today.getTime()) / 86400000);
-    }
-    const isActualLate =
-      !!item.actualEndDate &&
-      !!item.plannedEndDate &&
-      item.actualEndDate > item.plannedEndDate;
-    return (
-      <tr
-        key={item.id}
-        className={`${item.completed ? "plan-row-done" : ""}${warn === "overdue" ? " plan-row-overdue" : warn === "warning" ? " plan-row-warning" : ""}${readOnly ? " plan-row-readonly" : ""}`}
-      >
-        <td className="plan-tbl-check">
-          <input
-            type="checkbox"
-            disabled={readOnly}
-            checked={item.completed}
-            onChange={() =>
-              !readOnly &&
-              updatePlanItem(item.id, { completed: !item.completed })
-            }
-          />
-        </td>
-        <td className="plan-tbl-name">
-          {warn === "overdue" && (
-            <span className="plan-warn-badge plan-warn-overdue" title="已逾期">
-              🔴
-            </span>
-          )}
-          {warn === "warning" && (
-            <span
-              className="plan-warn-badge plan-warn-near"
-              title={`距截止日 ${daysLeft} 天`}
-            >
-              ⚠️{daysLeft}d
-            </span>
-          )}
-          {extra}
-          <input
-            className="plan-tbl-desc"
-            disabled={readOnly}
-            value={item.description}
-            placeholder="新項目"
-            onChange={(e) =>
-              !readOnly &&
-              updatePlanItem(item.id, { description: e.target.value })
-            }
-          />
-        </td>
-        <td>
-          <input
-            type="date"
-            className="plan-tbl-date"
-            disabled={readOnly}
-            value={item.plannedEndDate ?? ""}
-            title="預計完成"
-            onChange={(e) =>
-              !readOnly && updatePlannedEndDate(item.id, e.target.value)
-            }
-          />
-        </td>
-        <td>
-          <input
-            type="date"
-            className={`plan-tbl-date plan-tbl-actual${isActualLate ? " plan-tbl-date--late" : ""}`}
-            disabled={readOnly}
-            value={item.actualEndDate ?? ""}
-            title="實際完成"
-            onChange={(e) =>
-              !readOnly &&
-              updatePlanItem(item.id, { actualEndDate: e.target.value })
-            }
-          />
-        </td>
-        <td>
-          <input
-            className="plan-tbl-notes"
-            disabled={readOnly}
-            value={item.notes ?? ""}
-            placeholder="備註"
-            onChange={(e) =>
-              !readOnly && updatePlanItem(item.id, { notes: e.target.value })
-            }
-          />
-        </td>
-        <td className="plan-tbl-del">
-          <button
-            className="plan-item-del"
-            disabled={readOnly}
-            onClick={() =>
-              !readOnly && deletePlanItem(item.id, item.description)
-            }
-          >
-            🗑
-          </button>
-        </td>
-      </tr>
-    );
-  };
-
-  function planItemMatchesFilter(item: PlanItem): boolean {
-    const q = searchQuery.trim().toLowerCase();
-    const textOk = !q || item.description.toLowerCase().includes(q);
-    if (!textOk) return false;
-    if (warnFilter) {
-      const w = getPlanItemWarning(item, warnDaysBefore);
-      return w === warnFilter;
-    }
-    return true;
-  }
-
-  // Plan helpers (plans are managed via Measures and fixed quarters)
-
-  const quarters = ["Q1", "Q2", "Q3", "Q4"];
-  const preferred = strategy.measures[0]?.quarter;
-  const [selectedQuarter, setSelectedQuarter] = useState<string>(
-    preferred && quarters.includes(preferred) ? preferred : "Q1",
+  const setExpandedActivity = useCallback(
+    (activityId: string | null) => {
+      if (onExpandedActivityChange) {
+        onExpandedActivityChange(activityId);
+        return;
+      }
+      setInternalExpandedActivityId(activityId);
+    },
+    [onExpandedActivityChange],
   );
 
-  // Drag & drop for measures (move or copy)
-  const dragMsrId = useRef<string | null>(null);
-  const onMeasureDragStart = (e: React.DragEvent, msrId: string) => {
-    const copy = e.ctrlKey || e.metaKey; // Ctrl/Cmd to copy
-    e.dataTransfer.setData(
-      "application/ogsm-measure",
-      `${msrId}|${copy ? "copy" : "move"}`,
-    );
-    e.dataTransfer.effectAllowed = copy ? "copy" : "move";
-    dragMsrId.current = msrId;
-  };
-  const onMeasureDragEnd = () => {
-    dragMsrId.current = null;
-  };
-  const onMeasureDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-  const onMeasureDrop = (e: React.DragEvent, targetQuarter: string) => {
-    e.preventDefault();
-    const payload = e.dataTransfer.getData("application/ogsm-measure");
-    if (!payload) return;
-    const [msrId, mode] = payload.split("|");
-    const src = strategy.measures.find((m) => m.id === msrId);
-    if (!src) return;
-    if (mode === "copy") {
-      const copy: Measure = {
-        ...src,
-        id: genId("msr"),
-        quarter: targetQuarter,
-        status: "not-started",
-        kpis: src.kpis.map((k) => ({
-          ...k,
-          id: genId("kpi"),
-          actual: null,
-          achievementRate: null,
-          currentValue: null,
-        })),
-      };
-      onUpdate({ ...strategy, measures: [...strategy.measures, copy] });
-    } else {
-      onUpdate({
-        ...strategy,
-        measures: strategy.measures.map((m) =>
-          m.id === msrId ? { ...m, quarter: targetQuarter } : m,
-        ),
-      });
+  // Derived state: reset expansion when strategy changes (uncontrolled mode only).
+  const [prevStrategyId, setPrevStrategyId] = useState<string | undefined>(
+    strategy?.id,
+  );
+  if (prevStrategyId !== strategy?.id) {
+    setPrevStrategyId(strategy?.id);
+    if (expandedActivityId === undefined) {
+      setInternalExpandedActivityId(null);
     }
-  };
-
-  const copyMeasure = (msrId: string) => {
-    const src = strategy.measures.find((m) => m.id === msrId);
-    if (!src) return;
-    const copy: Measure = {
-      ...src,
-      id: genId("msr"),
-      status: "not-started",
-      kpis: src.kpis.map((k) => ({
-        ...k,
-        id: genId("kpi"),
-        actual: null,
-        achievementRate: null,
-        currentValue: null,
-      })),
-    };
-    onUpdate({ ...strategy, measures: [...strategy.measures, copy] });
-  };
-
-  // Measure helpers (活動/項目)
-  // Owner helpers
-  const ownersList = strategy.owners;
-  const setOwners = (names: string[]) =>
-    onUpdate({ ...strategy, owners: names });
-  const removeOwner = (name: string) =>
-    setOwners(ownersList.filter((n) => n !== name));
-
-  const addMeasure = (quarter?: string) => {
-    const nm: Measure = {
-      id: genId("msr"),
-      rawText: "新活動",
-      kpis: [],
-      quarter: quarter ?? selectedQuarter,
-      status: "not-started",
-    };
-    onUpdate({ ...strategy, measures: [...strategy.measures, nm] });
-  };
-
-  const deleteMeasure = (msrId: string) => {
-    const linkedCount = strategy.actionPlans
-      .flatMap((p) => p.items)
-      .filter((i) => i.linkedMeasureId === msrId).length;
-    const msrName =
-      strategy.measures.find((m) => m.id === msrId)?.rawText || "此活動";
-    const msg =
-      linkedCount > 0
-        ? `確定要刪除「${msrName}」嗎？\n將同時刪除 ${linkedCount} 筆關聯的行動計畫項目。`
-        : `確定要刪除「${msrName}」嗎？`;
-    if (!window.confirm(msg)) return;
-    const newMeasures = strategy.measures.filter((m) => m.id !== msrId);
-    const newActionPlans = strategy.actionPlans.map((p) => ({
-      ...p,
-      items: p.items.filter((i) => i.linkedMeasureId !== msrId),
-    }));
-    onUpdate({
-      ...strategy,
-      measures: newMeasures,
-      actionPlans: newActionPlans,
-    });
-  };
-
-  const addKpiToMeasure = (
-    msrId: string,
-    kpiType: "value" | "progress" | "growth" | "target_rate",
-  ) => {
-    const labelMap = {
-      progress: "新進度指標",
-      growth: "新成長指標",
-      target_rate: "新目標率指標",
-      value: "新 KPI",
-    } as const;
-    const newKpi: KPI = {
-      id: genId("kpi"),
-      label: labelMap[kpiType],
-      target: kpiType === "progress" ? 100 : null,
-      actual: null,
-      unit: "%",
-      achievementRate: null,
-      kpiType,
-      ...(kpiType === "growth"
-        ? { baseValue: null, currentValue: null, targetGrowthRate: null }
-        : {}),
-      ...(kpiType === "target_rate" ? { targetRate: null } : {}),
-    };
-    onUpdate({
-      ...strategy,
-      measures: strategy.measures.map((m) =>
-        m.id === msrId ? { ...m, kpis: [...m.kpis, newKpi] } : m,
-      ),
-    });
-    setKpiDropdownMsrId(null);
-  };
-
-  const defaultCollapsed = () => {
-    const map: Record<string, boolean> = {};
-    strategy.measures.forEach((m) => {
-      map[m.id] = true;
-    });
-    return map;
-  };
-  const [measureCollapsed, setMeasureCollapsed] =
-    useState<Record<string, boolean>>(defaultCollapsed);
-
-  // 新增 KPI Dropdown：記錄目前展開選單的 measure id
-  const [kpiDropdownMsrId, setKpiDropdownMsrId] = useState<string | null>(null);
-
-  const allKpisCount = strategy.measures.reduce((n, m) => n + m.kpis.length, 0);
-  // Plan items count
-  const totalItems = strategy.actionPlans.flatMap((p) => p.items).length;
-  const doneItems = strategy.actionPlans
-    .flatMap((p) => p.items)
-    .filter((i) => i.completed).length;
-  const progressRate =
-    totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
-  const progressColor =
-    progressRate >= 100
-      ? "#10b981"
-      : progressRate >= 70
-        ? "#6366f1"
-        : progressRate >= 40
-          ? "#f59e0b"
-          : progressRate > 0
-            ? "#ef4444"
-            : "#4b5563";
-
-  // ─── Filter helpers ──────────────────────────────────────────────────────────
-  const hasActiveFilter =
-    searchQuery.trim() !== "" || filterOwner !== "all" || warnFilter !== null;
-
-  // Collect unique owners from measures + plan items
-  const measureOwners = Array.from(
-    new Set(
-      strategy.measures
-        .map((m) => m.owner?.trim())
-        .concat(
-          strategy.actionPlans
-            .flatMap((p) => p.items)
-            .map((i) => i.owner?.trim()),
-        )
-        .filter(Boolean) as string[],
-    ),
-  ).sort();
-
-  function measureMatchesFilter(m: Measure): boolean {
-    const q = searchQuery.trim().toLowerCase();
-    const ownerOk =
-      filterOwner === "all" || (m.owner ?? "").includes(filterOwner);
-    const textOk =
-      !q ||
-      (m.rawText ?? "").toLowerCase().includes(q) ||
-      (m.owner ?? "").toLowerCase().includes(q);
-    if (!ownerOk || !textOk) return false;
-    // warnFilter：該分區必須有至少一個命中的 plan item，否則整區隱藏
-    if (warnFilter) {
-      const linkedItems = strategy.actionPlans
-        .flatMap((p) => p.items)
-        .filter((i) => i.linkedMeasureId === m.id);
-      return linkedItems.some(
-        (i) => getPlanItemWarning(i, warnDaysBefore) === warnFilter,
-      );
-    }
-    return true;
   }
 
-  const clearFilters = () => {
-    setSearchQuery("");
-    setFilterOwner("all");
-  };
+  const trackedActivities = useMemo<TrackedActivity[]>(() => {
+    if (linkedDeptActivities?.length) {
+      return linkedDeptActivities.map((activity) => {
+        const planItems = flattenPlanItems(activity);
+        const activityWarnDays = Math.max(0, activity.warnDaysBefore ?? 3);
+        const kpis = activity.kpis ?? [];
+        const achievedKpis = kpis.filter(
+          (kpi) => (getKpiAchievementRate(kpi, kpis) ?? 0) >= 100,
+        ).length;
+        const completedPlans = planItems.filter(
+          (item) => item.completed,
+        ).length;
+        const warnings = countPlanWarnings(planItems, activityWarnDays);
+        const kpiDetails = kpis.map((kpi) => ({
+          id: kpi.id,
+          label: kpi.name || kpi.label || "(未命名 KPI)",
+          actual: kpi.actual,
+          target: kpi.target,
+          unit: kpi.unit,
+          rate: getKpiAchievementRate(kpi, kpis),
+        }));
+        const alertItems = planItems
+          .map((item) => ({
+            id: item.id,
+            description: item.description || "(未命名項目)",
+            warnType: getPlanItemWarning(item, activityWarnDays),
+            plannedEndDate: item.plannedEndDate ?? "",
+          }))
+          .filter(
+            (item): item is ActivityAlertDetail =>
+              item.warnType === "overdue" || item.warnType === "warning",
+          );
+        const isExcluded =
+          activity.dashboardLinks?.find(
+            (link) => link.type === "ogsm" && link.strategyId === strategy.id,
+          )?.exclude ?? false;
+
+        return {
+          id: activity.id,
+          name: activity.rawText || "(未命名活動)",
+          owner: activity.owner ?? "",
+          status: activity.status,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          updatedAt: activity.updatedAt,
+          nextDueDate: getNextDueDate(planItems),
+          achievedKpis,
+          totalKpis: kpis.length,
+          kpiProgressPct:
+            kpis.length > 0
+              ? Math.round((achievedKpis / kpis.length) * 100)
+              : 0,
+          completedPlans,
+          totalPlans: planItems.length,
+          planProgressPct:
+            planItems.length > 0
+              ? Math.round((completedPlans / planItems.length) * 100)
+              : 0,
+          warnings,
+          kpiDetails,
+          alertItems,
+          isExcluded,
+        };
+      });
+    }
+
+    return strategy.measures.map((measure) => {
+      const planItems = strategy.actionPlans
+        .flatMap((plan) => plan.items)
+        .filter((item) => item.linkedMeasureId === measure.id);
+      const kpis = measure.kpis ?? [];
+      const achievedKpis = kpis.filter(
+        (kpi) => (getKpiAchievementRate(kpi, kpis) ?? 0) >= 100,
+      ).length;
+      const completedPlans = planItems.filter((item) => item.completed).length;
+      const warnings = countPlanWarnings(planItems, warnDaysBefore);
+      const kpiDetails = kpis.map((kpi) => ({
+        id: kpi.id,
+        label: kpi.name || kpi.label || "(未命名 KPI)",
+        actual: kpi.actual,
+        target: kpi.target,
+        unit: kpi.unit,
+        rate: getKpiAchievementRate(kpi, kpis),
+      }));
+      const alertItems = planItems
+        .map((item) => ({
+          id: item.id,
+          description: item.description || "(未命名項目)",
+          warnType: getPlanItemWarning(item, warnDaysBefore),
+          plannedEndDate: item.plannedEndDate ?? "",
+        }))
+        .filter(
+          (item): item is ActivityAlertDetail =>
+            item.warnType === "overdue" || item.warnType === "warning",
+        );
+
+      return {
+        id: measure.id,
+        name: measure.rawText || "(未命名活動)",
+        owner: measure.owner ?? "",
+        status: measure.status,
+        startDate: measure.startDate,
+        endDate: measure.endDate,
+        updatedAt: undefined,
+        nextDueDate: getNextDueDate(planItems),
+        achievedKpis,
+        totalKpis: kpis.length,
+        kpiProgressPct:
+          kpis.length > 0 ? Math.round((achievedKpis / kpis.length) * 100) : 0,
+        completedPlans,
+        totalPlans: planItems.length,
+        planProgressPct:
+          planItems.length > 0
+            ? Math.round((completedPlans / planItems.length) * 100)
+            : 0,
+        warnings,
+        kpiDetails,
+        alertItems,
+        isExcluded: false,
+      };
+    });
+  }, [linkedDeptActivities, strategy, warnDaysBefore]);
+
+  const summary = useMemo(() => {
+    const activityCount = trackedActivities.length;
+    const totalKpis = trackedActivities.reduce(
+      (sum, activity) => sum + activity.totalKpis,
+      0,
+    );
+    const achievedKpis = trackedActivities.reduce(
+      (sum, activity) => sum + activity.achievedKpis,
+      0,
+    );
+    const totalPlans = trackedActivities.reduce(
+      (sum, activity) => sum + activity.totalPlans,
+      0,
+    );
+    const completedPlans = trackedActivities.reduce(
+      (sum, activity) => sum + activity.completedPlans,
+      0,
+    );
+    const overduePlans = trackedActivities.reduce(
+      (sum, activity) => sum + activity.warnings.overdue,
+      0,
+    );
+    const warningPlans = trackedActivities.reduce(
+      (sum, activity) => sum + activity.warnings.warning,
+      0,
+    );
+    const statusSummary = trackedActivities.reduce(
+      (acc, activity) => {
+        const status = activity.status ?? "not-started";
+        acc[status] += 1;
+        return acc;
+      },
+      {
+        "not-started": 0,
+        attention: 0,
+        "in-progress": 0,
+        completed: 0,
+      } as Record<StatusKey, number>,
+    );
+
+    return {
+      activityCount,
+      totalKpis,
+      achievedKpis,
+      totalPlans,
+      completedPlans,
+      overduePlans,
+      warningPlans,
+      statusSummary,
+      kpiRate:
+        totalKpis > 0 ? Math.round((achievedKpis / totalKpis) * 100) : null,
+      planRate:
+        totalPlans > 0 ? Math.round((completedPlans / totalPlans) * 100) : null,
+    };
+  }, [trackedActivities]);
+
+  const displayActivities = useMemo(() => {
+    return [...trackedActivities].sort((a, b) => {
+      const scoreDiff =
+        getActivityPriorityScore(b) - getActivityPriorityScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+
+      const aDue = a.nextDueDate ?? "9999-12-31";
+      const bDue = b.nextDueDate ?? "9999-12-31";
+      return aDue.localeCompare(bDue);
+    });
+  }, [trackedActivities]);
+
+  const filteredActivities = useMemo(() => {
+    if (!activeWarnFilter) return displayActivities;
+    return displayActivities.filter((activity) =>
+      activeWarnFilter === "overdue"
+        ? activity.warnings.overdue > 0
+        : activity.warnings.warning > 0,
+    );
+  }, [activeWarnFilter, displayActivities]);
+
+  useEffect(() => {
+    if (!activeWarnFilter) return;
+    const targetActivity = filteredActivities[0];
+    activitySectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    if (!targetActivity) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExpandedActivity(targetActivity.id);
+    // filteredActivities and setExpandedActivity are intentionally the only
+    // reactive deps; effectiveExpandedActivityId must NOT be included here —
+    // adding it would cause the effect to fire on every manual expansion and
+    // force the view back to the first filtered activity, preventing the user
+    // from opening any other card while a filter is active.
+  }, [activeWarnFilter, filteredActivities, setExpandedActivity]);
 
   return (
-    <aside className="detail-panel" style={{ width: panelWidth }}>
+    <aside
+      className="detail-panel detail-panel-dashboard"
+      style={{ width: panelWidth }}
+      data-tour="ogsm-strategy-detail"
+      data-testid="ogsm-strategy-detail"
+    >
       <div className="panel-resizer" onMouseDown={handleMouseDown} />
-      {/* Header */}
-      <div className="detail-header">
+
+      <div className="detail-header detail-header-dashboard">
         <div className="detail-header-toprow">
-          <InlineEdit
-            value={strategy.title}
-            onSave={(v) => onUpdate({ ...strategy, title: v })}
-            className="detail-title-edit"
-            placeholder="策略名稱"
-            disabled={isReadOnly}
-          />
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              flexShrink: 0,
-              alignItems: "flex-end",
-            }}
-          >
-            <button className="detail-close" onClick={onClose}>
-              ✕
-            </button>
-            {!isReadOnly && (
+          <div className="detail-dashboard-title-wrap">
+            <div className="detail-dashboard-label">策略活動儀表板</div>
+            <div className="detail-dashboard-title" title={strategy.title}>
+              {strategy.title || "（未命名策略）"}
+            </div>
+          </div>
+          <button className="detail-close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        {strategy.owners.length > 0 && (
+          <div className="detail-meta detail-dashboard-owners">
+            {strategy.owners.map((owner) => (
+              <span key={owner} className="owner-chip">
+                {owner}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="detail-body detail-body-dashboard">
+        <section className="detail-dashboard-summary">
+          <div className="detail-dashboard-summary-grid">
+            <article className="detail-summary-card">
+              <span className="detail-summary-label">活動數</span>
+              <strong className="detail-summary-value">
+                {summary.activityCount}
+              </strong>
+              <span className="detail-summary-sub">此策略底下的追蹤活動</span>
+            </article>
+            <article className="detail-summary-card">
+              <span className="detail-summary-label">KPI 達成狀況</span>
+              <strong className="detail-summary-value">
+                {summary.totalKpis > 0
+                  ? `${summary.achievedKpis}/${summary.totalKpis}`
+                  : "—"}
+              </strong>
+              <span className="detail-summary-sub">
+                {summary.kpiRate !== null
+                  ? `達成率 ${summary.kpiRate}%`
+                  : "尚無 KPI"}
+              </span>
+            </article>
+            <article className="detail-summary-card">
+              <span className="detail-summary-label">行動計畫</span>
+              <strong className="detail-summary-value">
+                {summary.totalPlans > 0
+                  ? `${summary.completedPlans}/${summary.totalPlans}`
+                  : "—"}
+              </strong>
+              <span className="detail-summary-sub">
+                {summary.planRate !== null
+                  ? `完成率 ${summary.planRate}%`
+                  : "尚無行動項目"}
+              </span>
+            </article>
+            <article className="detail-summary-card detail-summary-card-alert">
+              <span className="detail-summary-label">警示</span>
+              <strong className="detail-summary-value">
+                {summary.overduePlans + summary.warningPlans}
+              </strong>
+              <span className="detail-summary-sub">
+                🔴 {summary.overduePlans} / ⚠️ {summary.warningPlans}
+              </span>
+            </article>
+          </div>
+
+          <div className="detail-dashboard-status-row">
+            {[
+              { key: "not-started", label: "未開始" },
+              { key: "attention", label: "需注意" },
+              { key: "in-progress", label: "進行中" },
+              { key: "completed", label: "已完成" },
+            ].map(({ key, label }) => (
+              <div key={key} className="detail-status-pill">
+                <span className="detail-status-pill-label">{label}</span>
+                <strong className="detail-status-pill-value">
+                  {summary.statusSummary[key as StatusKey]}
+                </strong>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section
+          ref={activitySectionRef}
+          className="detail-dashboard-activity-section"
+          data-tour="ogsm-linked-activity-dashboard"
+        >
+          <div className="detail-dashboard-section-head">
+            <div>
+              <div className="detail-dashboard-section-title">活動清單</div>
+              <div className="detail-dashboard-section-subtitle">
+                先看摘要數據，展開後查看該活動的進行狀況；若要修改，請使用明確的編輯按鈕
+              </div>
+              <div className="detail-dashboard-filter-row">
+                <button
+                  className={`detail-dashboard-filter-btn${activeWarnFilter === null ? " active" : ""}`}
+                  onClick={() => setActiveWarnFilter(null)}
+                >
+                  全部 {displayActivities.length}
+                </button>
+                <button
+                  className={`detail-dashboard-filter-btn overdue${activeWarnFilter === "overdue" ? " active" : ""}`}
+                  onClick={() => setActiveWarnFilter("overdue")}
+                >
+                  🔴 逾期
+                  {
+                    displayActivities.filter(
+                      (activity) => activity.warnings.overdue > 0,
+                    ).length
+                  }
+                </button>
+                <button
+                  className={`detail-dashboard-filter-btn warning${activeWarnFilter === "warning" ? " active" : ""}`}
+                  onClick={() => setActiveWarnFilter("warning")}
+                >
+                  ⚠️ 預警
+                  {
+                    displayActivities.filter(
+                      (activity) => activity.warnings.warning > 0,
+                    ).length
+                  }
+                </button>
+              </div>
+            </div>
+            {onNavigateToActivityPage && (
               <button
-                className="detail-del-btn"
-                onClick={onDelete}
-                title="刪除策略"
+                className="detail-dashboard-link-btn"
+                onClick={onNavigateToActivityPage}
               >
-                🗑 刪除
+                前往活動總覽 →
               </button>
             )}
           </div>
-        </div>
 
-        <div className="detail-meta">
-          {teams.length > 0 ? (
-            <div className="owners-editor" ref={ownerDropRef}>
-              {ownersList.map((name) => (
-                <span key={name} className="owner-chip">
-                  {name}
-                  {!isReadOnly && (
-                    <button
-                      className="owner-chip-remove"
-                      onClick={() => removeOwner(name)}
-                      title="移除"
-                    >
-                      ×
-                    </button>
-                  )}
-                </span>
-              ))}
-              {!isReadOnly &&
-                teams.filter((t) => !ownersList.includes(t.name)).length >
-                  0 && (
-                  <div className="owner-add-wrap">
-                    <button
-                      className="owner-add-btn"
-                      onClick={() => setOwnerDropOpen((v) => !v)}
-                    >
-                      ＋ 負責單位
-                    </button>
-                    {ownerDropOpen && (
-                      <div className="owner-dropdown">
-                        {teams
-                          .filter((t) => !ownersList.includes(t.name))
-                          .map((t) => (
-                            <button
-                              key={t.id}
-                              className="owner-dropdown-item"
-                              onClick={() => {
-                                setOwners([...ownersList, t.name]);
-                                setOwnerDropOpen(false);
-                              }}
-                            >
-                              {t.name}
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              {ownersList.length === 0 && (
-                <span className="owner-placeholder">選擇負責單位…</span>
-              )}
+          {displayActivities.length === 0 ? (
+            <div className="detail-dashboard-empty">
+              尚無連結活動。請至活動總覽新增活動，並選擇此策略為連結目標。
+            </div>
+          ) : filteredActivities.length === 0 ? (
+            <div className="detail-dashboard-empty">
+              目前沒有符合{activeWarnFilter === "overdue" ? "逾期" : "預警"}
+              條件的活動。
             </div>
           ) : (
-            <InlineEdit
-              value={strategy.owners[0] ?? ""}
-              onSave={(v) => onUpdate({ ...strategy, owners: v ? [v] : [] })}
-              className="owner-chip owner-edit"
-              placeholder="負責單位"
-              disabled={isReadOnly}
-            />
-          )}
-        </div>
+            <div className="detail-dashboard-activity-list">
+              {filteredActivities.map((activity) => {
+                const status = getStatusMeta(activity.status);
+                const isExpanded = effectiveExpandedActivityId === activity.id;
 
-        {/* 進度指標 */}
-        <div className="detail-dual-rate">
-          <div className="dual-rate-item">
-            <span className="dual-rate-num" style={{ color: progressColor }}>
-              {totalItems > 0 ? `${progressRate}%` : "—"}
-            </span>
-            <div className="dual-rate-meta">
-              <span className="dual-rate-badge progress-badge">📋 進度</span>
-              <span className="dual-rate-sub">
-                {doneItems}/{totalItems} 項
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="detail-filter-bar">
-        <div className="detail-filter-row">
-          <div className="detail-filter-search-wrap">
-            <span className="detail-filter-icon">🔍</span>
-            <input
-              className="detail-filter-search"
-              placeholder="搜尋活動或負責人…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button
-                className="detail-filter-clear-x"
-                onClick={() => setSearchQuery("")}
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <button
-            className={`detail-filter-toggle ${showFilters ? "active" : ""}`}
-            onClick={() => setShowFilters((v) => !v)}
-            title="進階篩選"
-          >
-            ▼ 篩選
-          </button>
-          {hasActiveFilter && (
-            <button className="detail-filter-clear-all" onClick={clearFilters}>
-              清除篩選
-            </button>
-          )}
-        </div>
-        {showFilters && (
-          <div className="detail-filter-expanded">
-            <label className="detail-filter-label">
-              <span>主責者</span>
-              <select
-                className="detail-filter-select"
-                value={filterOwner}
-                onChange={(e) => setFilterOwner(e.target.value)}
-              >
-                <option value="all">全部</option>
-                {measureOwners.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="detail-tabs">
-        <button
-          className={`detail-tab ${tab === "measure" ? "active" : ""}`}
-          onClick={() => setTab("measure")}
-        >
-          📊 成效指標 {allKpisCount > 0 ? `(${allKpisCount})` : ""}
-        </button>
-        <button
-          className={`detail-tab ${tab === "plans" ? "active" : ""}`}
-          onClick={() => setTab("plans")}
-        >
-          📅 行動計劃 {totalItems > 0 ? `${doneItems}/${totalItems}` : ""}
-        </button>
-        <button
-          className={`detail-tab ${tab === "notes" ? "active" : ""}`}
-          onClick={() => setTab("notes")}
-        >
-          📝 備註
-        </button>
-      </div>
-
-      <div className="detail-body">
-        {tab === "measure" && (
-          <div>
-            {/* 衡量指標（活動/項目 -> KPI） */}
-            <div className="msec-header">
-              <span className="msec-badge msec-effect">衡量指標</span>
-              <span className="msec-desc">
-                活動/專案可新增、刪除與摺疊，每個活動可包含多個 KPI，
-                目前以季度欄位管理。
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 8,
-              }}
-            >
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {quarters.map((q) => (
-                  <button
-                    key={q}
-                    className={`detail-tab quarter-drop-tab ${selectedQuarter === q ? "active" : ""}`}
-                    onClick={() => setSelectedQuarter(q)}
-                    onDragOver={(e) => {
-                      if (q !== selectedQuarter) {
-                        e.preventDefault();
-                        e.currentTarget.classList.add("drag-over");
-                      }
-                    }}
-                    onDragLeave={(e) => {
-                      e.currentTarget.classList.remove("drag-over");
-                    }}
-                    onDrop={(e) => {
-                      e.currentTarget.classList.remove("drag-over");
-                      if (q !== selectedQuarter) {
-                        onMeasureDrop(e, q);
-                      }
-                    }}
+                return (
+                  <article
+                    key={activity.id}
+                    className="detail-activity-row-card"
                   >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className="measure-list"
-              onDragOver={onMeasureDragOver}
-              onDrop={(e) => onMeasureDrop(e, selectedQuarter)}
-            >
-              {strategy.measures
-                .filter((m) => {
-                  // Hide if doesn't match search/filter
-                  if (hasActiveFilter && !measureMatchesFilter(m)) return false;
-                  return (m.quarter ?? selectedQuarter) === selectedQuarter;
-                })
-                .map((m) => {
-                  const collapsed = !!measureCollapsed[m.id];
-                  return (
-                    <div
-                      key={m.id}
-                      className="measure-block"
-                      style={{ marginBottom: 12 }}
-                    >
-                      <div
-                        className="plan-section-header"
-                        style={{ alignItems: "center" }}
+                    <div className="detail-activity-row-main">
+                      <button
+                        className="detail-activity-row-summary"
+                        onClick={() =>
+                          setExpandedActivity(isExpanded ? null : activity.id)
+                        }
                       >
-                        <span
-                          className="measure-drag-handle"
-                          title="拖曳移動到其他季度（按住 Ctrl 為複製）"
-                          draggable
-                          onDragStart={(e) => onMeasureDragStart(e, m.id)}
-                          onDragEnd={onMeasureDragEnd}
-                        >
-                          ⠿
-                        </span>
-                        <span
-                          className={`plan-collapse-arrow${collapsed ? " collapsed" : ""}`}
-                          onClick={() =>
-                            setMeasureCollapsed((s) => ({
-                              ...s,
-                              [m.id]: !s[m.id],
-                            }))
-                          }
-                          style={{ cursor: "pointer" }}
-                        >
-                          ▾
-                        </span>
-                        <InlineEdit
-                          value={m.rawText || ""}
-                          onSave={(v) =>
-                            onUpdate({
-                              ...strategy,
-                              measures: strategy.measures.map((ms) =>
-                                ms.id === m.id ? { ...ms, rawText: v } : ms,
-                              ),
-                            })
-                          }
-                          className="plan-title-edit"
-                          placeholder="活動名稱/專案名稱"
-                          disabled={isReadOnly}
-                        />
-                        {allMembers.length > 0 ? (
-                          <select
-                            className="owner-select"
-                            value={m.owner ?? ""}
-                            disabled={isReadOnly}
-                            onChange={(e) =>
-                              onUpdate({
-                                ...strategy,
-                                measures: strategy.measures.map((ms) =>
-                                  ms.id === m.id
-                                    ? { ...ms, owner: e.target.value }
-                                    : ms,
-                                ),
-                              })
-                            }
+                        <div className="detail-activity-row-left">
+                          <span
+                            className="detail-activity-status"
+                            style={{
+                              color: status.color,
+                              background: status.background,
+                              borderColor: status.border,
+                            }}
                           >
-                            <option value="">選擇主責者</option>
-                            {teams.map((t) => (
-                              <optgroup key={t.id} label={t.name}>
-                                {t.members.map((mb) => (
-                                  <option key={mb.id} value={mb.name}>
-                                    {mb.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        ) : (
-                          <InlineEdit
-                            value={m.owner ?? ""}
-                            onSave={(v) =>
-                              onUpdate({
-                                ...strategy,
-                                measures: strategy.measures.map((ms) =>
-                                  ms.id === m.id ? { ...ms, owner: v } : ms,
-                                ),
-                              })
-                            }
-                            className="owner-chip owner-edit"
-                            placeholder="主責者"
-                            disabled={isReadOnly}
-                          />
-                        )}
-                        <label className="measure-date-label">
-                          最後更新
-                          <input
-                            type="date"
-                            className="measure-date-input"
-                            value={(m.updatedAt ?? "").slice(0, 10)}
-                            title="最後更新日期"
-                            onChange={(e) =>
-                              onUpdate({
-                                ...strategy,
-                                measures: strategy.measures.map((ms) =>
-                                  ms.id === m.id
-                                    ? {
-                                        ...ms,
-                                        updatedAt: e.target.value
-                                          ? new Date(
-                                              e.target.value,
-                                            ).toISOString()
-                                          : undefined,
-                                      }
-                                    : ms,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
-                        <select
-                          className="measure-status-select"
-                          value={m.status ?? "not-started"}
-                          style={{
-                            color:
-                              (m.status ?? "not-started") === "completed"
-                                ? "#059669"
-                                : (m.status ?? "not-started") === "attention"
-                                  ? "#b45309"
-                                  : (m.status ?? "not-started") ===
-                                      "in-progress"
-                                    ? "#2563eb"
-                                    : "#6b7280",
-                            borderColor:
-                              (m.status ?? "not-started") === "completed"
-                                ? "#a7f3d0"
-                                : (m.status ?? "not-started") === "attention"
-                                  ? "#fcd34d"
-                                  : (m.status ?? "not-started") ===
-                                      "in-progress"
-                                    ? "#bfdbfe"
-                                    : "#d1d5db",
-                            background:
-                              (m.status ?? "not-started") === "completed"
-                                ? "#ecfdf5"
-                                : (m.status ?? "not-started") === "attention"
-                                  ? "#fffbeb"
-                                  : (m.status ?? "not-started") ===
-                                      "in-progress"
-                                    ? "#eff6ff"
-                                    : "#f9fafb",
-                          }}
-                          onChange={(e) =>
-                            onUpdate({
-                              ...strategy,
-                              measures: strategy.measures.map((ms) =>
-                                ms.id === m.id
-                                  ? {
-                                      ...ms,
-                                      status: e.target.value as MeasureStatus,
-                                    }
-                                  : ms,
-                              ),
-                            })
-                          }
-                        >
-                          <option value="not-started">未開始</option>
-                          <option value="attention">需注意</option>
-                          <option value="in-progress">進行中</option>
-                          <option value="completed">已完成</option>
-                        </select>
-                        <div
-                          style={{
-                            marginLeft: "auto",
-                            display: "flex",
-                            gap: 8,
-                          }}
-                        >
-                          {!isReadOnly && (
-                            <button
-                              className="detail-add-btn"
-                              onClick={() => copyMeasure(m.id)}
-                              title="複製此活動"
-                              style={{ padding: "6px 10px" }}
-                            >
-                              📋 複製
-                            </button>
-                          )}
-                          {!isReadOnly && (
-                            <div style={{ position: "relative" }}>
-                              <button
-                                className="detail-add-btn"
-                                style={{ padding: "6px 10px" }}
-                                onClick={() =>
-                                  setKpiDropdownMsrId(
-                                    kpiDropdownMsrId === m.id ? null : m.id,
-                                  )
-                                }
-                              >
-                                + 新增 KPI ▾
-                              </button>
-                              {kpiDropdownMsrId === m.id && (
-                                <>
-                                  {/* 點擊外部關閉 */}
-                                  <div
-                                    style={{
-                                      position: "fixed",
-                                      inset: 0,
-                                      zIndex: 99,
-                                    }}
-                                    onClick={() => setKpiDropdownMsrId(null)}
-                                  />
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: "calc(100% + 4px)",
-                                      right: 0,
-                                      zIndex: 100,
-                                      background: "#fff",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 8,
-                                      boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-                                      minWidth: 130,
-                                      overflow: "hidden",
-                                    }}
-                                  >
-                                    {(
-                                      [
-                                        ["value", "📐 量化型"],
-                                        ["progress", "📊 進度型"],
-                                        ["growth", "📈 成長型"],
-                                        ["target_rate", "🎯 目標率型"],
-                                      ] as const
-                                    ).map(([type, label]) => (
-                                      <button
-                                        key={type}
-                                        style={{
-                                          display: "block",
-                                          width: "100%",
-                                          padding: "9px 14px",
-                                          textAlign: "left",
-                                          background: "none",
-                                          border: "none",
-                                          fontSize: 13,
-                                          cursor: "pointer",
-                                          color: "#374151",
-                                        }}
-                                        onMouseEnter={(e) =>
-                                          ((
-                                            e.currentTarget as HTMLButtonElement
-                                          ).style.background = "#f3f4f6")
-                                        }
-                                        onMouseLeave={(e) =>
-                                          ((
-                                            e.currentTarget as HTMLButtonElement
-                                          ).style.background = "none")
-                                        }
-                                        onClick={() => {
-                                          addKpiToMeasure(m.id, type);
-                                        }}
-                                      >
-                                        {label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </>
+                            {status.label}
+                          </span>
+                          <div className="detail-activity-row-title-block">
+                            <div className="detail-activity-card-title">
+                              {activity.name}
+                            </div>
+                            <div className="detail-activity-row-sub">
+                              主責：{activity.owner || "未指定"} ・{" "}
+                              {formatDateRange(
+                                activity.startDate,
+                                activity.endDate,
                               )}
                             </div>
-                          )}
-                          {!isReadOnly && (
-                            <button
-                              className="plan-del-btn"
-                              onClick={() => deleteMeasure(m.id)}
-                              title="刪除活動"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {!collapsed && (
-                        <div className="kpi-list-wrap">
-                          <div className="kpi-list">
-                            {m.kpis.map((k) => {
-                              const linkedItems = strategy.actionPlans
-                                .flatMap((p) => p.items)
-                                .filter((i) => i.linkedMeasureId === m.id);
-                              const linkedTotal = linkedItems.length;
-                              const linkedDone = linkedItems.filter(
-                                (i) => i.completed,
-                              ).length;
-                              return (
-                                <KpiCard
-                                  key={k.id}
-                                  kpi={k}
-                                  linkedTotal={linkedTotal}
-                                  linkedDone={linkedDone}
-                                  onUpdate={(updated) =>
-                                    updateKPI(m.id, k.id, updated)
-                                  }
-                                  onDelete={() => deleteKPI(m.id, k.id)}
-                                  isReadOnly={isReadOnly}
-                                />
-                              );
-                            })}
+                            <div className="detail-activity-row-meta">
+                              更新：{formatUpdatedDate(activity.updatedAt)}
+                              {activity.nextDueDate
+                                ? ` ・ 下一到期：${activity.nextDueDate}`
+                                : " ・ 無待辦到期日"}
+                            </div>
                           </div>
-                          {m.kpis.length === 0 && (
-                            <p className="kpi-list-empty">
-                              尚未新增 KPI，點擊「新增 KPI」開始記錄。
-                            </p>
+                        </div>
+                        <div className="detail-activity-row-stats">
+                          <span className="detail-activity-row-stat">
+                            KPI{" "}
+                            {activity.totalKpis > 0
+                              ? `${activity.achievedKpis}/${activity.totalKpis}`
+                              : "—"}
+                          </span>
+                          <span className="detail-activity-row-stat">
+                            計畫{" "}
+                            {activity.totalPlans > 0
+                              ? `${activity.completedPlans}/${activity.totalPlans}`
+                              : "—"}
+                          </span>
+                          <span className="detail-activity-row-stat detail-activity-row-alert">
+                            警示{" "}
+                            {activity.warnings.overdue +
+                              activity.warnings.warning}
+                          </span>
+                          <span className="detail-activity-row-arrow">
+                            {isExpanded ? "▲" : "▼"}
+                          </span>
+                        </div>
+                      </button>
+
+                      {(onOpenActivityDetail || onNavigateToActivityPage) && (
+                        <button
+                          className="detail-dashboard-link-btn detail-dashboard-link-btn-inline"
+                          onClick={() => {
+                            if (onOpenActivityDetail) {
+                              onOpenActivityDetail(activity.id);
+                              return;
+                            }
+                            onNavigateToActivityPage?.();
+                          }}
+                        >
+                          編輯活動（前往活動總覽）
+                        </button>
+                      )}
+                    </div>
+
+                    {isExpanded && (
+                      <div className="detail-activity-row-detail">
+                        <div className="detail-activity-detail-meta">
+                          {activity.isExcluded ? (
+                            <span className="detail-activity-ogsm detail-activity-ogsm-excluded">
+                              已排除 OGSM
+                            </span>
+                          ) : (
+                            <span className="detail-activity-ogsm">
+                              計入 OGSM
+                            </span>
+                          )}
+                          <span className="detail-activity-meta-item">
+                            KPI 達成率 {activity.kpiProgressPct}%
+                          </span>
+                          <span className="detail-activity-meta-item">
+                            行動計畫完成率 {activity.planProgressPct}%
+                          </span>
+                          {activity.nextDueDate && (
+                            <span className="detail-activity-meta-item">
+                              下一到期：{activity.nextDueDate}
+                            </span>
                           )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              {!isReadOnly && (
-                <button className="detail-add-btn" onClick={() => addMeasure()}>
-                  + 新增活動（於所選季度）
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
-        {tab === "plans" && (
-          <div className="plans-tab-content">
-            {warnFilter && (
-              <div className="plan-warn-filter-bar">
-                <span
-                  className={`meta-tag ${warnFilter === "overdue" ? "meta-warn-overdue" : "meta-warn-near"}`}
-                >
-                  {warnFilter === "overdue" ? "🔴 逾期篩選中" : "⚠️ 預警篩選中"}
-                </span>
-                <button
-                  className="plan-warn-filter-clear"
-                  onClick={() => setWarnFilter(null)}
-                >
-                  ✕ 清除篩選
-                </button>
-              </div>
-            )}
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              {quarters.map((q) => (
-                <button
-                  key={q}
-                  className={`detail-tab ${selectedQuarter === q ? "active" : ""}`}
-                  onClick={() => setSelectedQuarter(q)}
-                >
-                  {q}
-                </button>
-              ))}
-              <label
-                className="plan-warn-setting"
-                style={{ marginLeft: "auto" }}
-                title="距預計完成日幾天內未完成時顯示警告"
-              >
-                ⏰ 預警
-                <input
-                  type="number"
-                  className="plan-warn-days-input"
-                  min={1}
-                  max={60}
-                  value={warnDaysLocal}
-                  onChange={(e) => setWarnDaysLocal(e.target.value)}
-                  onBlur={() =>
-                    onUpdateWarnDaysBefore(
-                      Math.max(1, parseInt(warnDaysLocal) || 7),
-                    )
-                  }
-                />
-                天前
-              </label>
-            </div>
+                        <div className="detail-activity-progress-stack">
+                          <div className="detail-activity-progress-line">
+                            <span className="detail-activity-progress-label">
+                              KPI 進度
+                            </span>
+                            <div className="detail-activity-progress-bar">
+                              <div
+                                className="detail-activity-progress-fill kpi"
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, activity.kpiProgressPct))}%`,
+                                }}
+                              />
+                            </div>
+                            <strong className="detail-activity-progress-value">
+                              {activity.kpiProgressPct}%
+                            </strong>
+                          </div>
+                          <div className="detail-activity-progress-line">
+                            <span className="detail-activity-progress-label">
+                              計畫進度
+                            </span>
+                            <div className="detail-activity-progress-bar">
+                              <div
+                                className="detail-activity-progress-fill plan"
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, activity.planProgressPct))}%`,
+                                }}
+                              />
+                            </div>
+                            <strong className="detail-activity-progress-value">
+                              {activity.planProgressPct}%
+                            </strong>
+                          </div>
+                        </div>
 
-            {/* For the selected quarter, show each Measure's checklist items */}
-            {strategy.measures
-              .filter((m) => {
-                // Hide if doesn't match search filter
-                if (hasActiveFilter && !measureMatchesFilter(m)) return false;
-                // Show measure if it belongs to this quarter
-                if ((m.quarter ?? selectedQuarter) === selectedQuarter)
-                  return true;
-                // Otherwise, use activity (Measure) date range to decide cross-quarter visibility.
-                const linkedItems = strategy.actionPlans
-                  .flatMap((p) => p.items)
-                  .filter((i) => i.linkedMeasureId === m.id);
-                const hasOverlap = doesMeasureOverlapQuarter(
-                  m,
-                  linkedItems,
-                  selectedQuarter,
-                );
-                return hasOverlap;
-              })
-              .map((m) => {
-                const linkedItems = strategy.actionPlans
-                  .flatMap((p) => p.items)
-                  .filter((i) => i.linkedMeasureId === m.id);
-                const measureOverlapsSelectedQuarter =
-                  doesMeasureOverlapQuarter(m, linkedItems, selectedQuarter);
-                const itemsForMeasure = linkedItems
-                  .filter((i) => {
-                    // Item belongs to this quarter's ActionPlan,
-                    // or this activity spans into the selected quarter.
-                    const inQuarterPlan = strategy.actionPlans
-                      .filter((p) => p.quarter === selectedQuarter)
-                      .flatMap((p) => p.items)
-                      .some((pi) => pi.id === i.id);
-                    return inQuarterPlan || measureOverlapsSelectedQuarter;
-                  })
-                  .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
-                // Deduplicate and sort by planned end date
-                const seen = new Set<string>();
-                const dedupItems = itemsForMeasure
-                  .filter((i) => {
-                    if (seen.has(i.id)) return false;
-                    seen.add(i.id);
-                    return true;
-                  })
-                  .sort((a, b) => {
-                    if (!a.plannedEndDate && !b.plannedEndDate) return 0;
-                    if (!a.plannedEndDate) return 1;
-                    if (!b.plannedEndDate) return -1;
-                    return a.plannedEndDate.localeCompare(b.plannedEndDate);
-                  });
-                const isFromOtherQuarter =
-                  (m.quarter ?? selectedQuarter) !== selectedQuarter;
-                const doneCount = dedupItems.filter(
-                  (it) => it.completed,
-                ).length;
-                const totalCount = dedupItems.length;
-                const sectionCollapsed = !!planSectionCollapsed[m.id];
-                const sectionProgress =
-                  totalCount > 0
-                    ? Math.round((doneCount / totalCount) * 100)
-                    : 0;
-                return (
-                  <div key={m.id} className="plan-section-card">
-                    <div
-                      className="plan-section-card-header"
-                      onClick={() =>
-                        setPlanSectionCollapsed((s) => ({
-                          ...s,
-                          [m.id]: !s[m.id],
-                        }))
-                      }
-                    >
-                      <span
-                        className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
-                      >
-                        ▾
-                      </span>
-                      {isFromOtherQuarter && (
-                        <span
-                          className="synced-badge synced-badge-sm"
-                          title={`來源: ${m.quarter}`}
-                        >
-                          ↩ {m.quarter}
-                        </span>
-                      )}
-                      <span className="plan-section-card-title">
-                        {m.rawText || "活動"}
-                      </span>
-                      <span
-                        className="plan-section-date-range"
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="date"
-                          className="plan-section-date-input"
-                          value={m.startDate ?? ""}
-                          title="活動開始日"
-                          onChange={(e) =>
-                            updateMeasureDateRange(m.id, {
-                              startDate: e.target.value || undefined,
-                            })
-                          }
-                        />
-                        <span className="plan-section-date-sep">~</span>
-                        <input
-                          type="date"
-                          className="plan-section-date-input"
-                          value={m.endDate ?? ""}
-                          title="活動結束日"
-                          onChange={(e) =>
-                            updateMeasureDateRange(m.id, {
-                              endDate: e.target.value || undefined,
-                            })
-                          }
-                        />
-                      </span>
-                      {m.owner && (
-                        <span className="plan-section-card-owner">
-                          {m.owner}
-                        </span>
-                      )}
-                      <span className="plan-section-card-count">
-                        {doneCount}/{totalCount}
-                      </span>
-                      <div className="plan-section-card-bar">
-                        <div
-                          className="plan-section-card-bar-fill"
-                          style={{
-                            width: `${sectionProgress}%`,
-                            background:
-                              sectionProgress >= 100
-                                ? "#10b981"
-                                : sectionProgress > 0
-                                  ? "#6366f1"
-                                  : "#e5e7eb",
-                          }}
-                        />
-                      </div>
-                    </div>
-                    {!sectionCollapsed && (
-                      <div className="plan-section-card-body">
-                        <table className="plan-table">
-                          <thead>
-                            <tr>
-                              <th>✓</th>
-                              <th>項目名稱</th>
-                              <th>預計完成</th>
-                              <th>實際完成</th>
-                              <th>備註</th>
-                              <th />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {dedupItems.map((item) => {
-                              const itemSourceQuarter =
-                                strategy.actionPlans.find((p) =>
-                                  p.items.some((pi) => pi.id === item.id),
-                                )?.quarter;
-                              const isFromOtherQ =
-                                itemSourceQuarter !== selectedQuarter;
-                              return renderPlanItemRow(
-                                item,
-                                isFromOtherQ && itemSourceQuarter ? (
-                                  <span
-                                    className="synced-badge synced-badge-sm"
-                                    title={`來源: ${itemSourceQuarter}（唯讀）`}
+                        <div className="detail-activity-detail-grid">
+                          <div className="detail-activity-detail-block">
+                            <div className="detail-activity-detail-title">
+                              KPI 進行狀況
+                            </div>
+                            {activity.kpiDetails.length === 0 ? (
+                              <div className="detail-activity-detail-empty">
+                                尚無 KPI
+                              </div>
+                            ) : (
+                              <div className="detail-activity-kpi-list">
+                                {activity.kpiDetails.map((kpi) => (
+                                  <div
+                                    key={kpi.id}
+                                    className="detail-activity-kpi-item"
                                   >
-                                    ↩ {itemSourceQuarter}
-                                  </span>
-                                ) : null,
-                                isFromOtherQ,
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                        {!isReadOnly && (
-                          <button
-                            className="plan-add-item"
-                            onClick={() => addChecklistItemToMeasure(m.id)}
-                          >
-                            + 新增項目
-                          </button>
-                        )}
+                                    <span className="detail-activity-kpi-name">
+                                      {kpi.label}
+                                    </span>
+                                    <span className="detail-activity-kpi-metric">
+                                      {kpi.actual ?? "—"}/{kpi.target ?? "—"}
+                                      {kpi.unit ? ` ${kpi.unit}` : ""}
+                                    </span>
+                                    <span
+                                      className="detail-activity-kpi-rate"
+                                      style={{
+                                        color:
+                                          kpi.rate !== null && kpi.rate >= 100
+                                            ? "#059669"
+                                            : kpi.rate !== null &&
+                                                kpi.rate >= 70
+                                              ? "#6366f1"
+                                              : kpi.rate !== null &&
+                                                  kpi.rate >= 40
+                                                ? "#d97706"
+                                                : "#6b7280",
+                                      }}
+                                    >
+                                      {kpi.rate !== null
+                                        ? `${Math.round(kpi.rate)}%`
+                                        : "—"}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="detail-activity-detail-block">
+                            <div className="detail-activity-detail-title">
+                              行動計畫進行狀況
+                            </div>
+                            {activity.totalPlans === 0 ? (
+                              <div className="detail-activity-detail-empty">
+                                尚無行動項目
+                              </div>
+                            ) : (
+                              <>
+                                <div className="detail-activity-plan-summary">
+                                  完成 {activity.completedPlans}/
+                                  {activity.totalPlans} ・ 🔴{" "}
+                                  {activity.warnings.overdue} ・ ⚠️{" "}
+                                  {activity.warnings.warning}
+                                </div>
+                                {activity.alertItems.length > 0 ? (
+                                  <div className="detail-activity-alert-list">
+                                    {activity.alertItems
+                                      .slice(0, 4)
+                                      .map((item) => (
+                                        <div
+                                          key={item.id}
+                                          className="detail-activity-alert-item"
+                                        >
+                                          <span
+                                            className={`detail-activity-alert-badge ${item.warnType === "overdue" ? "overdue" : "warning"}`}
+                                          >
+                                            {item.warnType === "overdue"
+                                              ? "逾期"
+                                              : "預警"}
+                                          </span>
+                                          <span className="detail-activity-alert-text">
+                                            {item.description}
+                                          </span>
+                                          {item.plannedEndDate && (
+                                            <span className="detail-activity-alert-date">
+                                              {item.plannedEndDate}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ))}
+                                  </div>
+                                ) : (
+                                  <div className="detail-activity-detail-empty">
+                                    目前沒有逾期或預警項目
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
-                  </div>
+                  </article>
                 );
               })}
-
-            {/* Unlinked items — items without linkedMeasureId */}
-            {(() => {
-              const unlinkedItems = strategy.actionPlans
-                .flatMap((p) => p.items)
-                .filter((i) => !i.linkedMeasureId)
-                .filter((i) => {
-                  const inQuarterPlan = strategy.actionPlans
-                    .filter((p) => p.quarter === selectedQuarter)
-                    .flatMap((p) => p.items)
-                    .some((pi) => pi.id === i.id);
-                  return (
-                    inQuarterPlan || doesItemOverlapQuarter(i, selectedQuarter)
-                  );
-                })
-                .filter((i) => !hasActiveFilter || planItemMatchesFilter(i));
-              // Deduplicate and sort by planned end date
-              const seen = new Set<string>();
-              const dedupUnlinked = unlinkedItems
-                .filter((i) => {
-                  if (seen.has(i.id)) return false;
-                  seen.add(i.id);
-                  return true;
-                })
-                .sort((a, b) => {
-                  if (!a.plannedEndDate && !b.plannedEndDate) return 0;
-                  if (!a.plannedEndDate) return 1;
-                  if (!b.plannedEndDate) return -1;
-                  return a.plannedEndDate.localeCompare(b.plannedEndDate);
-                });
-              if (dedupUnlinked.length === 0) return null;
-              const doneCount = dedupUnlinked.filter(
-                (it) => it.completed,
-              ).length;
-              const totalCount = dedupUnlinked.length;
-              const sectionCollapsed = !!planSectionCollapsed["__unlinked__"];
-              const sectionProgress =
-                totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-              return (
-                <div className="plan-section-card">
-                  <div
-                    className="plan-section-card-header"
-                    onClick={() =>
-                      setPlanSectionCollapsed((s) => ({
-                        ...s,
-                        ["__unlinked__"]: !s["__unlinked__"],
-                      }))
-                    }
-                  >
-                    <span
-                      className={`plan-collapse-arrow${sectionCollapsed ? " collapsed" : ""}`}
-                    >
-                      ▾
-                    </span>
-                    <span className="plan-section-card-title">未分類項目</span>
-                    <span className="plan-section-card-count">
-                      {doneCount}/{totalCount}
-                    </span>
-                    <div className="plan-section-card-bar">
-                      <div
-                        className="plan-section-card-bar-fill"
-                        style={{
-                          width: `${sectionProgress}%`,
-                          background:
-                            sectionProgress >= 100
-                              ? "#10b981"
-                              : sectionProgress > 0
-                                ? "#6366f1"
-                                : "#e5e7eb",
-                        }}
-                      />
-                    </div>
-                  </div>
-                  {!sectionCollapsed && (
-                    <div className="plan-section-card-body">
-                      <table className="plan-table">
-                        <thead>
-                          <tr>
-                            <th>✓</th>
-                            <th>項目名稱</th>
-                            <th>預計完成</th>
-                            <th>實際完成</th>
-                            <th>備註</th>
-                            <th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dedupUnlinked.map((item) =>
-                            renderPlanItemRow(item, undefined, false),
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
-        {tab === "notes" && (
-          <div className="notes-wrap">
-            <InlineEdit
-              value={strategy.notes}
-              multiline
-              onSave={(v) => onUpdate({ ...strategy, notes: v })}
-              className="notes-textarea"
-              placeholder="在此記錄備注、決策或補充說明…"
-              disabled={isReadOnly}
-            />
-          </div>
-        )}
+            </div>
+          )}
+        </section>
       </div>
     </aside>
   );
