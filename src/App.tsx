@@ -678,86 +678,6 @@ export default function App() {
     };
   }, [applyBrowserRoute, currentRouteState]);
 
-  const POLL_INTERVAL_MS = 8_000;
-
-  // ─── 多檔模式背景輪詢：每 8 秒偵測 OneDrive 衝突副本 ────────────────
-  // 遠端更新偵測已移除：儲存時的雙重 meta probe + ConflictModal 機制即可
-  // 保護多人協作一致性，不需在瀏覽期間主動拉取遠端。
-  useEffect(() => {
-    if (!fsSupported || !isMultiFileMode) return;
-
-    let polling = false;
-    const poll = async () => {
-      if (polling) return;
-      if (conflictDeptId) return; // 衝突 modal 開著時跳過
-      polling = true;
-      try {
-        for (const f of deptFilesRef.current) {
-          if (f.isReadOnly || f.syncStatus === "saving") continue;
-          const deptId = f.workspace.departments[0]?.id;
-          if (!deptId) continue;
-
-          // 偵測 OneDrive 衝突副本
-          try {
-            const copies = await scanForConflictCopies(
-              f.subDirHandle,
-              "data.json",
-            );
-            if (copies.length > 0) {
-              setDeptFiles((prev) =>
-                prev.map((d) => {
-                  if (d.workspace.departments[0]?.id !== deptId) return d;
-                  const prevNames = new Set(
-                    d.conflictCopies.map((c) => c.name),
-                  );
-                  const newOnes = copies.filter((c) => !prevNames.has(c.name));
-                  return newOnes.length > 0
-                    ? {
-                        ...d,
-                        conflictCopies: [...d.conflictCopies, ...newOnes],
-                      }
-                    : d;
-                }),
-              );
-            }
-          } catch {
-            // best-effort
-          }
-        }
-      } finally {
-        polling = false;
-      }
-    };
-
-    const onWindowFocus = () => {
-      void poll();
-    };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void poll();
-      }
-    };
-
-    // 進入 multi-file 後先跑一次，避免要等下一個 interval
-    void poll();
-    const timer = setInterval(() => {
-      void poll();
-    }, POLL_INTERVAL_MS);
-    window.addEventListener("focus", onWindowFocus);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("focus", onWindowFocus);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [
-    fsSupported,
-    isMultiFileMode,
-    conflictDeptId,
-    showDeptSaveToast,
-    setDeptFiles,
-  ]);
-
   // ─── Multi-file mode handlers ─────────────────────────────────────────
   const handleLinkRootFolder = useCallback(async () => {
     const rootHandle = await pickRootFolder();
@@ -861,6 +781,35 @@ export default function App() {
           validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk2");
         }
 
+        // ── 掃衝突副本（OneDrive 產生的 data - PC.json）───────────────
+        let conflictCopies: { handle: FileSystemFileHandle; name: string }[] =
+          [];
+        try {
+          conflictCopies = await scanForConflictCopies(
+            freshEntry.subDirHandle,
+            "data.json",
+          );
+          if (conflictCopies.length > 0) {
+            setDeptFiles((prev) =>
+              prev.map((f) => {
+                if (f.workspace.departments[0]?.id !== deptId) return f;
+                const prevNames = new Set(f.conflictCopies.map((c) => c.name));
+                const newOnes = conflictCopies.filter(
+                  (c) => !prevNames.has(c.name),
+                );
+                return newOnes.length > 0
+                  ? {
+                      ...f,
+                      conflictCopies: [...f.conflictCopies, ...newOnes],
+                    }
+                  : f;
+              }),
+            );
+          }
+        } catch {
+          // best-effort
+        }
+
         // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
         const probe = evaluateSaveConflictProbe({
           firstMeta,
@@ -869,9 +818,12 @@ export default function App() {
           loadedVersion: freshEntry.version ?? -1,
           onDiskVersion: onDisk.version,
         });
+        // 有衝突副本也視為需要衝突偵測
+        const shouldDetectConflict =
+          probe.shouldDetectConflict || conflictCopies.length > 0;
         let toWrite = freshEntry.workspace;
 
-        if (probe.shouldDetectConflict) {
+        if (shouldDetectConflict) {
           const conflicts = detectConflicts(freshEntry.workspace, onDisk);
           if (conflicts.length > 0) {
             // 暫停存檔，開衝突 modal（lock 先釋放，避免佔用）
