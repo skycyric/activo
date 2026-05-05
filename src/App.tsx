@@ -48,6 +48,8 @@ import {
   scanDeptJsons,
   probeWritable,
   writeJsonFileInDir,
+  acquireLock,
+  releaseLock,
 } from "./utils/fileSync";
 import {
   mergeWorkspaces,
@@ -93,7 +95,7 @@ import {
 } from "./utils/appRoute";
 
 type SyncStatus = "unlinked" | "pending" | "saving" | "saved" | "error";
-type SaveDeptResult = "saved" | "skipped" | "conflict" | "error";
+type SaveDeptResult = "saved" | "skipped" | "conflict" | "locked" | "error";
 type InlineToastTone = "success" | "warning" | "error";
 type RemoteRefreshOptions = { confirmIfDirty?: boolean; silent?: boolean };
 
@@ -821,37 +823,38 @@ export default function App() {
         ),
       );
 
+      // ── 嘗試取得 advisory lock ──────────────────────────────────
+      const lockResult = await acquireLock(entry.subDirHandle);
+      if (!lockResult.ok) {
+        setDeptFiles((prev) =>
+          prev.map((f) =>
+            f.workspace.departments[0]?.id === deptId
+              ? { ...f, syncStatus: "pending" as SyncStatus }
+              : f,
+          ),
+        );
+        return "locked" as SaveDeptResult;
+      }
+
       try {
-        // ── 第一次讀磁碟 ─────────────────────────────────────────────
-        const firstMeta = await readDataFileMeta(entry.handle);
-        const diskText = await readDataFile(entry.handle);
-        let onDisk: WorkspaceData = JSON.parse(diskText);
-        normalizeWorkspaceData(onDisk);
-        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
-
-        // ── 等待 3 秒讓 OneDrive 同步（二次確認窗口）─────────────────
-        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-
-        // ── 重新取最新本地狀態（避免等待期間的編輯遺失）──────────────
+        // ── 重新取最新本地狀態（acquireLock 等待期間可能有新編輯）───
         const freshEntry = deptFilesRef.current.find(
           (f) => f.workspace.departments[0]?.id === deptId,
         );
         if (!freshEntry) {
-          // dept was unlinked while the 3 s wait was in progress; reset status
-          setDeptFiles((prev) =>
-            prev.map((f) =>
-              f.workspace.departments[0]?.id === deptId
-                ? { ...f, syncStatus: "error" as SyncStatus }
-                : f,
-            ),
-          );
           return "error" as SaveDeptResult;
         }
 
-        // ── 第二次讀 meta：若期間有人更新，重新讀磁碟 ─────────────────
+        // ── 讀取磁碟（兩次 meta probe 確認期間無人再寫入）────────────
+        const firstMeta = await readDataFileMeta(freshEntry.handle);
+        const diskText = await readDataFile(freshEntry.handle);
+        let onDisk: WorkspaceData = JSON.parse(diskText);
+        normalizeWorkspaceData(onDisk);
+        validateOrWarn(WorkspaceDataSchema, onDisk, "saveDept-disk1");
+
         const secondMeta = await readDataFileMeta(freshEntry.handle);
-        const diskWasModified = secondMeta !== firstMeta;
-        if (diskWasModified) {
+        if (secondMeta !== firstMeta) {
+          // 讀取期間磁碟又被改過（極罕見），重新讀一次
           const freshText = await readDataFile(freshEntry.handle);
           onDisk = JSON.parse(freshText);
           normalizeWorkspaceData(onDisk);
@@ -859,16 +862,11 @@ export default function App() {
         }
 
         // ── 版本比較 + 衝突偵測 ──────────────────────────────────────
-        // 同時比對「本機最後已知 lastModified」，避免漏掉
-        //「在本次 save 開始前就已被遠端更新」的情境。
-        // diskWasModified 涵蓋版號相同但磁碟已被動過的情況（兩人同時存檔導致
-        // 版號相同但內容不同），任一條件成立都進行衝突偵測。
-        const loadedVer = freshEntry.version ?? -1;
         const probe = evaluateSaveConflictProbe({
           firstMeta,
           secondMeta,
           knownLastModified: freshEntry.lastModified,
-          loadedVersion: loadedVer,
+          loadedVersion: freshEntry.version ?? -1,
           onDiskVersion: onDisk.version,
         });
         let toWrite = freshEntry.workspace;
@@ -876,7 +874,8 @@ export default function App() {
         if (probe.shouldDetectConflict) {
           const conflicts = detectConflicts(freshEntry.workspace, onDisk);
           if (conflicts.length > 0) {
-            // 暫停存檔，開衝突 modal
+            // 暫停存檔，開衝突 modal（lock 先釋放，避免佔用）
+            await releaseLock(freshEntry.subDirHandle);
             conflictDeptDiskWsRef.current = onDisk;
             setConflictDeptId(deptId);
             setConflictDeptEntries(conflicts);
@@ -904,10 +903,10 @@ export default function App() {
           }
         }
 
-        // ── 寫入 ────────────────────────────────────────────────────
+        // ── 寫入（版本號取兩側最大值 + 1，避免版號倒退）──────────────
         const payload: WorkspaceData = {
           ...toWrite,
-          version: (freshEntry.version ?? 1) + 1,
+          version: Math.max(freshEntry.version ?? 0, onDisk.version ?? 0) + 1,
           savedAt: new Date().toISOString(),
         };
         await writeDataFile(
@@ -940,6 +939,14 @@ export default function App() {
           ),
         );
         return "error" as SaveDeptResult;
+      } finally {
+        // 確保 lock 一定被釋放（衝突分支已提前釋放，重複 removeEntry 是 no-op）
+        const currentEntry = deptFilesRef.current.find(
+          (f) => f.workspace.departments[0]?.id === deptId,
+        );
+        if (currentEntry) {
+          await releaseLock(currentEntry.subDirHandle);
+        }
       }
     },
     [setDeptFiles],
@@ -1197,7 +1204,7 @@ export default function App() {
           );
           const payload: WorkspaceData = {
             ...merged,
-            version: (entry.version ?? 1) + 1,
+            version: Math.max(entry.version ?? 0, remote.version ?? 0) + 1,
             savedAt: new Date().toISOString(),
           };
           await writeDataFile(entry.handle, JSON.stringify(payload, null, 2));
@@ -1254,6 +1261,11 @@ export default function App() {
         `「${entry.subfolderName}」發生衝突，請先完成衝突處理。`,
         "warning",
       );
+    } else if (result === "locked") {
+      showDeptSaveToast(
+        `「${entry.subfolderName}」正在被其他人儲存中，請稍後再試。`,
+        "warning",
+      );
     } else if (result === "error") {
       showDeptSaveToast(`「${entry.subfolderName}」儲存失敗。`, "error");
     }
@@ -1280,6 +1292,13 @@ export default function App() {
       if (result === "conflict") {
         showDeptSaveToast(
           `已儲存 ${savedNames.length} 個部門；「${entry.subfolderName}」發生衝突，批次儲存已暫停。`,
+          "warning",
+        );
+        return;
+      }
+      if (result === "locked") {
+        showDeptSaveToast(
+          `已儲存 ${savedNames.length} 個部門；「${entry.subfolderName}」正在被其他人儲存中，批次儲存已暫停。`,
           "warning",
         );
         return;

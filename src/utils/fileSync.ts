@@ -398,3 +398,167 @@ export async function probeWritable(
     return false;
   }
 }
+
+// ── Advisory Lock File ────────────────────────────────────────────────────
+//
+// Prevents concurrent writes that cause OneDrive to generate conflict copies
+// (e.g. "data - DESKTOP-ABC.json").  All cooperating clients must use
+// acquireLock / releaseLock around every write to data.json.
+//
+// Limitation: the lock file itself travels through OneDrive, so there is a
+// small propagation window (~sync latency) where two clients could both see
+// "no lock" simultaneously.  We mitigate this with a write-then-verify step:
+// after writing our lock we wait briefly and re-read to confirm ownership.
+// This is a best-effort advisory mechanism, not a hard OS mutex.
+
+export const LOCK_FILE_NAME = "data.lock";
+/** How long (ms) a lock is considered fresh.  Stale locks are auto-broken. */
+export const LOCK_TTL_MS = 60_000;
+/** Delay (ms) after writing our lock before re-reading to verify ownership. */
+const LOCK_VERIFY_DELAY_MS = 800;
+
+export interface LockFileContent {
+  /** Opaque ID identifying this browser session (not the user). */
+  writerId: string;
+  /** ISO timestamp when the lock was created. */
+  at: string;
+  /**
+   * Monotonic counter (Date.now()) used to distinguish two clients that happen
+   * to write their lock file within the same millisecond.
+   */
+  nonce: number;
+}
+
+/** Return a stable writer ID for this browser session (sessionStorage). */
+let _writerId: string | null = null;
+export function getWriterId(): string {
+  if (_writerId) return _writerId;
+  const stored = sessionStorage.getItem("ogsm_writer_id");
+  if (stored) {
+    _writerId = stored;
+    return _writerId;
+  }
+  const id = crypto.randomUUID();
+  sessionStorage.setItem("ogsm_writer_id", id);
+  _writerId = id;
+  return _writerId;
+}
+
+/** Read an existing lock file; returns null if absent or unreadable. */
+export async function readLockFile(
+  subDirHandle: FileSystemDirectoryHandle,
+  lockFileName = LOCK_FILE_NAME,
+): Promise<LockFileContent | null> {
+  try {
+    const fh = await subDirHandle.getFileHandle(lockFileName, {
+      create: false,
+    });
+    const file = await fh.getFile();
+    const text = await file.text();
+    return JSON.parse(text) as LockFileContent;
+  } catch {
+    return null;
+  }
+}
+
+/** Write (overwrite) the lock file. */
+async function writeLockFile(
+  subDirHandle: FileSystemDirectoryHandle,
+  content: LockFileContent,
+  lockFileName = LOCK_FILE_NAME,
+): Promise<void> {
+  const fh = await subDirHandle.getFileHandle(lockFileName, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(JSON.stringify(content));
+  await writable.close();
+}
+
+/** Delete the lock file (best-effort; does not throw). */
+export async function releaseLock(
+  subDirHandle: FileSystemDirectoryHandle,
+  lockFileName = LOCK_FILE_NAME,
+): Promise<void> {
+  try {
+    await subDirHandle.removeEntry(lockFileName);
+  } catch {
+    // best-effort
+  }
+}
+
+/** True when the lock is older than LOCK_TTL_MS (treat as abandoned). */
+export function isLockStale(
+  lock: LockFileContent,
+  ttlMs = LOCK_TTL_MS,
+): boolean {
+  return Date.now() - new Date(lock.at).getTime() > ttlMs;
+}
+
+export type AcquireLockResult =
+  | { ok: true; lock: LockFileContent }
+  | {
+      ok: false;
+      reason: "locked-by-other" | "verify-failed" | "error";
+      existingLock?: LockFileContent;
+    };
+
+/**
+ * Try to acquire the advisory lock for a department subfolder.
+ *
+ * Steps:
+ * 1. Read existing lock → bail if fresh and owned by someone else.
+ * 2. Write our lock.
+ * 3. Wait LOCK_VERIFY_DELAY_MS for OneDrive to potentially propagate a
+ *    concurrent lock from another client.
+ * 4. Re-read → if the nonce changed, another client raced us; back off.
+ *
+ * Caller MUST call releaseLock() after the write is complete (success or fail).
+ */
+export async function acquireLock(
+  subDirHandle: FileSystemDirectoryHandle,
+  lockFileName = LOCK_FILE_NAME,
+): Promise<AcquireLockResult> {
+  try {
+    // 1. Check for existing lock
+    const existing = await readLockFile(subDirHandle, lockFileName);
+    if (
+      existing &&
+      !isLockStale(existing) &&
+      existing.writerId !== getWriterId()
+    ) {
+      return { ok: false, reason: "locked-by-other", existingLock: existing };
+    }
+
+    // 2. Write our lock
+    const myLock: LockFileContent = {
+      writerId: getWriterId(),
+      at: new Date().toISOString(),
+      nonce: Date.now(),
+    };
+    await writeLockFile(subDirHandle, myLock, lockFileName);
+
+    // 3. Wait briefly so OneDrive can surface a concurrent lock
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, LOCK_VERIFY_DELAY_MS),
+    );
+
+    // 4. Re-read to verify ownership
+    const current = await readLockFile(subDirHandle, lockFileName);
+    if (
+      !current ||
+      current.nonce !== myLock.nonce ||
+      current.writerId !== myLock.writerId
+    ) {
+      // Another client overwrote our lock — back off
+      return {
+        ok: false,
+        reason: "verify-failed",
+        existingLock: current ?? undefined,
+      };
+    }
+
+    return { ok: true, lock: myLock };
+  } catch (e) {
+    console.error("[acquireLock] error", e);
+    return { ok: false, reason: "error" };
+  }
+}
